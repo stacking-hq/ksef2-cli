@@ -8,13 +8,11 @@ from typing import Annotated, Any
 import typer
 
 from ksef2_cli.config import FORM_SCHEMA_NAMES
-from ksef2_cli.context import get_authenticated_client, run_command
+from ksef2_cli.context import run_authenticated, run_command
 from ksef2_cli.io import _write_json
 from ksef2_cli.parsing import _parse_form_schema
 from ksef2_cli.rendering import _render
-from ksef2_cli.sdk_models import (
-    _state_from_file,
-)
+from ksef2_cli.sdk_models import _state_from_file
 
 app = typer.Typer(help='Open, resume, and operate online invoice sessions.')
 
@@ -28,11 +26,11 @@ def online_open(
     """Open an online session and optionally save resumable state."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+        def open_session(auth: Any) -> Any:
             session = auth.online_session(form_code=_parse_form_schema(form))
-            state = session.get_state()
+            return session.get_state()
+
+        state = run_authenticated(ctx, open_session)
         if state_file:
             _write_json(state_file, state)
         return {"state_file": str(state_file) if state_file else None, "state": state}
@@ -61,9 +59,7 @@ def online_send(
     """Send one or more invoice XML files through an online session."""
 
     def operation() -> dict[str, Any]:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+        def send_invoices(auth: Any) -> tuple[list[dict[str, Any]], Any]:
             if state_file:
                 session = auth.resume_online_session(_state_from_file(state_file))
             else:
@@ -82,11 +78,14 @@ def online_send(
                         result = session.send_invoice(invoice_xml=xml)
                     results.append({"file": str(invoice_path), "result": result})
                 state = session.get_state()
-                if save_state:
-                    _write_json(save_state, state)
+                return results, state
             finally:
                 if not keep_open:
                     session.close()
+
+        results, state = run_authenticated(ctx, send_invoices)
+        if save_state:
+            _write_json(save_state, state)
         return {
             "state_file": str(save_state) if save_state else None,
             "closed": not keep_open,
@@ -104,10 +103,10 @@ def online_status(
     """Fetch current status for a resumed online session."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.resume_online_session(_state_from_file(state_file)).get_status()
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.resume_online_session(_state_from_file(state_file)).get_status(),
+        )
 
     _render(ctx, run_command(ctx, operation), title="Online Session Status")
 
@@ -123,13 +122,13 @@ def online_list(
     """List invoices submitted in an online session."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+        def list_session_invoices(auth: Any) -> Any:
             session = auth.resume_online_session(_state_from_file(state_file))
             if failed:
                 return session.list_failed_invoices(page_size=page_size, continuation_token=continuation_token)
             return session.list_invoices(page_size=page_size, continuation_token=continuation_token)
+
+        return run_authenticated(ctx, list_session_invoices)
 
     _render(
         ctx,
@@ -152,9 +151,7 @@ def online_invoice_status(
     """Fetch or wait for one invoice status within an online session."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+        def get_session_invoice_status(auth: Any) -> Any:
             session = auth.resume_online_session(_state_from_file(state_file))
             if wait:
                 return session.wait_for_invoice_ready(
@@ -163,6 +160,8 @@ def online_invoice_status(
                     poll_interval=poll_interval,
                 )
             return session.get_invoice_status(invoice_reference_number=invoice_reference)
+
+        return run_authenticated(ctx, get_session_invoice_status)
 
     _render(ctx, run_command(ctx, operation), title="Invoice Status")
 
@@ -180,15 +179,15 @@ def online_upo(
     def operation() -> dict[str, Any]:
         if bool(invoice_reference) == bool(ksef_number):
             raise ValueError("Provide exactly one of --invoice-reference or --ksef-number.")
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+
+        def get_upo(auth: Any) -> bytes:
             session = auth.resume_online_session(_state_from_file(state_file))
             if invoice_reference:
-                content = session.get_invoice_upo_by_reference(invoice_reference_number=invoice_reference)
-            else:
-                assert ksef_number is not None
-                content = session.get_invoice_upo_by_ksef_number(ksef_number=ksef_number)
+                return session.get_invoice_upo_by_reference(invoice_reference_number=invoice_reference)
+            assert ksef_number is not None
+            return session.get_invoice_upo_by_ksef_number(ksef_number=ksef_number)
+
+        content = run_authenticated(ctx, get_upo)
         output_file.parent.mkdir(parents=True, exist_ok=True)
         output_file.write_bytes(content)
         return {"path": str(output_file), "bytes": len(content)}
@@ -204,11 +203,8 @@ def online_close(
     """Close a resumed online session."""
 
     def operation() -> dict[str, str]:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
         state = _state_from_file(state_file)
-        with client:
-            auth.resume_online_session(state).close()
+        run_authenticated(ctx, lambda auth: auth.resume_online_session(state).close())
         return {"reference_number": state.reference_number, "closed": "true"}
 
     _render(ctx, run_command(ctx, operation), title="Closed Online Session")
