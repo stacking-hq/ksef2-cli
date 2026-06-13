@@ -7,11 +7,9 @@ from typing import Annotated, Any
 
 import typer
 
-from ksef2_cli.context import get_authenticated_client, run_command
+from ksef2_cli.context import run_authenticated, run_command
 from ksef2_cli.rendering import _render
-from ksef2_cli.sdk_models import (
-    _offset_params,
-)
+from ksef2_cli.sdk_models import _offset_params
 
 app = typer.Typer(help='Manage MCU certificates.')
 
@@ -21,10 +19,7 @@ def certificates_limits(ctx: typer.Context) -> None:
     """Read certificate enrollment and issuance limits."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.certificates.get_limits()
+        return run_authenticated(ctx, lambda auth: auth.certificates.get_limits())
 
     _render(ctx, run_command(ctx, operation), title="Certificate Limits")
 
@@ -34,10 +29,7 @@ def certificates_enrollment_data(ctx: typer.Context) -> None:
     """Read subject data required for certificate enrollment CSR generation."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.certificates.get_enrollment_data()
+        return run_authenticated(ctx, lambda auth: auth.certificates.get_enrollment_data())
 
     _render(ctx, run_command(ctx, operation), title="Certificate Enrollment Data")
 
@@ -54,15 +46,15 @@ def certificates_enroll(
 
     def operation() -> Any:
         csr = csr_file.read_text(encoding="utf-8").strip()
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.certificates.enroll(
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.certificates.enroll(
                 certificate_name=name,
                 certificate_type=certificate_type,
                 csr=csr,
                 valid_from=valid_from,
-            )
+            ),
+        )
 
     _render(ctx, run_command(ctx, operation), title="Certificate Enrollment")
 
@@ -75,10 +67,10 @@ def certificates_enrollment_status(
     """Fetch certificate enrollment status."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.certificates.get_enrollment_status(reference_number=reference_number)
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.certificates.get_enrollment_status(reference_number=reference_number),
+        )
 
     _render(ctx, run_command(ctx, operation), title="Certificate Enrollment Status")
 
@@ -102,9 +94,8 @@ def certificates_list(
 
         params = _offset_params(page_size, page_offset)
         serial = validate_certificate_serial_number(serial_number) if serial_number else None
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+
+        def list_certificates(auth: Any) -> Any:
             if all_pages:
                 return list(
                     auth.certificates.all(
@@ -124,6 +115,8 @@ def certificates_list(
                 expires_after=expires_after,
                 params=params,
             )
+
+        return run_authenticated(ctx, list_certificates)
 
     _render(
         ctx,
@@ -149,10 +142,10 @@ def certificates_retrieve(
         from ksef2.domain.models.certificates import validate_certificate_serial_number
 
         serials = [validate_certificate_serial_number(value) for value in serial_numbers]
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            result = auth.certificates.retrieve(certificate_serial_numbers=serials)
+        result = run_authenticated(
+            ctx,
+            lambda auth: auth.certificates.retrieve(certificate_serial_numbers=serials),
+        )
         if output_dir:
             output_dir.mkdir(parents=True, exist_ok=True)
             for certificate in result.certificates:
@@ -181,10 +174,10 @@ def certificates_revoke(
         from ksef2.domain.models.certificates import validate_certificate_serial_number
 
         serial = validate_certificate_serial_number(serial_number)
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            auth.certificates.revoke(certificate_serial_number=serial, reason=reason)
+        run_authenticated(
+            ctx,
+            lambda auth: auth.certificates.revoke(certificate_serial_number=serial, reason=reason),
+        )
         return {"serial_number": serial_number, "reason": reason, "revoked": "true"}
 
     _render(ctx, run_command(ctx, operation), title="Revoked Certificate")
