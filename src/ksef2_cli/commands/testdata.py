@@ -7,7 +7,7 @@ from typing import Annotated, Any
 
 import typer
 
-from ksef2_cli.context import create_client, run_command
+from ksef2_cli.context import run_client, run_command
 from ksef2_cli.rendering import _render
 
 app = typer.Typer(help='Manage TEST-environment test data.')
@@ -36,13 +36,16 @@ def testdata_create_subject(
             except ValueError as exc:
                 raise ValueError("--subunit must use NIP:description format.") from exc
             subunits.append(SubUnit(subject_nip=subject_nip, description=subunit_description))
-        with create_client(ctx) as client:
-            client.testdata.create_subject(
+
+        run_client(
+            ctx,
+            lambda client: client.testdata.create_subject(
                 nip=nip,
                 subject_type=subject_type,
                 description=description,
                 subunits=subunits or None,
-            )
+            ),
+        )
         return {"nip": nip, "created": "true"}
 
     _render(ctx, run_command(ctx, operation), title="Created Test Subject")
@@ -56,8 +59,7 @@ def testdata_delete_subject(
     """Delete a TEST subject."""
 
     def operation() -> dict[str, str]:
-        with create_client(ctx) as client:
-            client.testdata.delete_subject(nip=nip)
+        run_client(ctx, lambda client: client.testdata.delete_subject(nip=nip))
         return {"nip": nip, "deleted": "true"}
 
     _render(ctx, run_command(ctx, operation), title="Deleted Test Subject")
@@ -75,14 +77,16 @@ def testdata_create_person(
     """Create a TEST person."""
 
     def operation() -> dict[str, str]:
-        with create_client(ctx) as client:
-            client.testdata.create_person(
+        run_client(
+            ctx,
+            lambda client: client.testdata.create_person(
                 nip=nip,
                 pesel=pesel,
                 description=description,
                 is_bailiff=is_bailiff,
                 is_deceased=is_deceased,
-            )
+            ),
+        )
         return {"nip": nip, "pesel": pesel, "created": "true"}
 
     _render(ctx, run_command(ctx, operation), title="Created Test Person")
@@ -96,8 +100,7 @@ def testdata_delete_person(
     """Delete a TEST person."""
 
     def operation() -> dict[str, str]:
-        with create_client(ctx) as client:
-            client.testdata.delete_person(nip=nip)
+        run_client(ctx, lambda client: client.testdata.delete_person(nip=nip))
         return {"nip": nip, "deleted": "true"}
 
     _render(ctx, run_command(ctx, operation), title="Deleted Test Person")
@@ -111,8 +114,7 @@ def testdata_enable_attachments(
     """Enable attachments for a TEST subject."""
 
     def operation() -> dict[str, str]:
-        with create_client(ctx) as client:
-            client.testdata.enable_attachments(nip=nip)
+        run_client(ctx, lambda client: client.testdata.enable_attachments(nip=nip))
         return {"nip": nip, "attachments": "enabled"}
 
     _render(ctx, run_command(ctx, operation), title="Enabled Attachments")
@@ -128,8 +130,10 @@ def testdata_revoke_attachments(
 
     def operation() -> dict[str, str | None]:
         parsed_date = date.fromisoformat(expected_end_date) if expected_end_date else None
-        with create_client(ctx) as client:
-            client.testdata.revoke_attachments(nip=nip, expected_end_date=parsed_date)
+        run_client(
+            ctx,
+            lambda client: client.testdata.revoke_attachments(nip=nip, expected_end_date=parsed_date),
+        )
         return {"nip": nip, "expected_end_date": expected_end_date, "attachments": "revoked"}
 
     _render(ctx, run_command(ctx, operation), title="Revoked Attachments")
@@ -147,8 +151,7 @@ def testdata_block_context(
         from ksef2.domain.models.testdata import AuthContextIdentifier
 
         context = AuthContextIdentifier(type=context_type, value=context_value)
-        with create_client(ctx) as client:
-            client.testdata.block_context(context=context)
+        run_client(ctx, lambda client: client.testdata.block_context(context=context))
         return {"context_type": context_type, "context_value": context_value, "blocked": "true"}
 
     _render(ctx, run_command(ctx, operation), title="Blocked Context")
@@ -166,8 +169,7 @@ def testdata_unblock_context(
         from ksef2.domain.models.testdata import AuthContextIdentifier
 
         context = AuthContextIdentifier(type=context_type, value=context_value)
-        with create_client(ctx) as client:
-            client.testdata.unblock_context(context=context)
+        run_client(ctx, lambda client: client.testdata.unblock_context(context=context))
         return {"context_type": context_type, "context_value": context_value, "blocked": "false"}
 
     _render(ctx, run_command(ctx, operation), title="Unblocked Context")
@@ -193,12 +195,14 @@ def testdata_grant_permissions(
         permissions = [Permission(type=item, description=description) for item in permission]
         grant_to = Identifier(type=grant_to_type, value=grant_to_value)
         in_context_of = Identifier(type=context_type, value=context_value)
-        with create_client(ctx) as client:
-            client.testdata.grant_permissions(
+        run_client(
+            ctx,
+            lambda client: client.testdata.grant_permissions(
                 permissions=permissions,
                 grant_to=grant_to,
                 in_context_of=in_context_of,
-            )
+            ),
+        )
         return {"grant_to": grant_to, "in_context_of": in_context_of, "permissions": permissions}
 
     _render(ctx, run_command(ctx, operation), title="Granted Test Permissions", items_key="permissions")
@@ -219,11 +223,13 @@ def testdata_revoke_permissions(
 
         revoke_from = Identifier(type=revoke_from_type, value=revoke_from_value)
         in_context_of = Identifier(type=context_type, value=context_value)
-        with create_client(ctx) as client:
-            client.testdata.revoke_permissions(
+        run_client(
+            ctx,
+            lambda client: client.testdata.revoke_permissions(
                 revoke_from=revoke_from,
                 in_context_of=in_context_of,
-            )
+            ),
+        )
         return {"revoke_from": revoke_from, "in_context_of": in_context_of, "revoked": "true"}
 
     _render(ctx, run_command(ctx, operation), title="Revoked Test Permissions")
