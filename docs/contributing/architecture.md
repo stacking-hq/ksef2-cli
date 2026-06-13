@@ -48,7 +48,7 @@ src/ksef2_cli/
 2. A command module receives `ctx: typer.Context`.
 3. `app.py` merges CLI options, environment variables, and local config defaults.
 4. Authenticated commands call `run_authenticated(ctx, operation)` from `context.py`; use `get_authenticated_client(ctx)` only when a command truly needs direct access to the SDK client lifecycle.
-5. Public commands call `create_client(ctx)`.
+5. Public commands call `run_client(ctx, operation)` from `context.py`.
 6. SDK calls are wrapped with `run_command(ctx, operation)` for consistent error handling.
 7. Results are passed to `_render(...)` for table or JSON output.
 

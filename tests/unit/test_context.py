@@ -101,6 +101,15 @@ def test_runtime_overrides_supply_fake_clients() -> None:
     assert runtime.auth == auth
 
 
+def test_run_client_enters_client_context() -> None:
+    client = FakeClient()
+    ctx = ctx_for(settings(runtime_overrides=RuntimeOverrides(client_factory=lambda: client)))
+
+    assert context.run_client(ctx, lambda sdk_client: sdk_client) is client
+    assert client.entered == 1
+    assert client.exited == 1
+
+
 def test_run_authenticated_enters_client_context() -> None:
     client = FakeClient()
     auth = {"auth": True}

@@ -43,6 +43,13 @@ def create_client(ctx: typer.Context) -> Any:
     return Client(environment=environment)
 
 
+def run_client(ctx: typer.Context, operation: Callable[[Any], T]) -> T:
+    """Run SDK client work inside the client's context manager."""
+
+    with create_client(ctx) as client:
+        return operation(client)
+
+
 def fail(message: str, *, code: int = 1) -> None:
     """Print a user-facing error and exit."""
 

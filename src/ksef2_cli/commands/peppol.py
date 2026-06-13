@@ -6,7 +6,7 @@ from typing import Annotated, Any
 
 import typer
 
-from ksef2_cli.context import create_client, run_command
+from ksef2_cli.context import run_client, run_command
 from ksef2_cli.rendering import _render
 from ksef2_cli.sdk_models import (
     _offset_params,
@@ -25,11 +25,14 @@ def peppol_providers(
     """List PEPPOL providers."""
 
     def operation() -> Any:
-        with create_client(ctx) as client:
-            params = _offset_params(page_size, page_offset)
+        params = _offset_params(page_size, page_offset)
+
+        def query_providers(client: Any) -> Any:
             if all_pages:
                 return list(client.peppol.all(params=params))
             return client.peppol.query(params=params)
+
+        return run_client(ctx, query_providers)
 
     _render(
         ctx,

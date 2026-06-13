@@ -6,7 +6,7 @@ from typing import Annotated, Any
 
 import typer
 
-from ksef2_cli.context import authenticate_client, create_client, fail, run_command
+from ksef2_cli.context import authenticate_client, fail, run_client, run_command
 from ksef2_cli.rendering import _render
 
 app = typer.Typer(help='Authenticate and refresh KSeF access tokens.')
@@ -17,9 +17,11 @@ def auth_login(ctx: typer.Context) -> None:
     """Authenticate with the configured method and print access/refresh tokens."""
 
     def operation() -> Any:
-        with create_client(ctx) as client:
+        def login(client: Any) -> Any:
             auth = authenticate_client(ctx, client)
             return auth.auth_tokens
+
+        return run_client(ctx, login)
 
     _render(ctx, run_command(ctx, operation), title="Auth Tokens")
 
@@ -37,7 +39,9 @@ def auth_refresh(
     def operation() -> Any:
         if not refresh_token:
             fail("Provide --refresh-token or KSEF2_REFRESH_TOKEN.")
-        with create_client(ctx) as client:
-            return client.authentication.refresh(refresh_token=refresh_token)
+        return run_client(
+            ctx,
+            lambda client: client.authentication.refresh(refresh_token=refresh_token),
+        )
 
     _render(ctx, run_command(ctx, operation), title="Refreshed Token")
