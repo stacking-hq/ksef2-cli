@@ -101,6 +101,19 @@ def test_runtime_overrides_supply_fake_clients() -> None:
     assert runtime.auth == auth
 
 
+def test_run_authenticated_enters_client_context() -> None:
+    client = FakeClient()
+    auth = {"auth": True}
+    overrides = RuntimeOverrides(
+        authenticated_client_factory=lambda: SimpleNamespace(client=client, auth=auth),
+    )
+    ctx = ctx_for(settings(runtime_overrides=overrides))
+
+    assert context.run_authenticated(ctx, lambda authenticated: authenticated["auth"]) is True
+    assert client.entered == 1
+    assert client.exited == 1
+
+
 def test_run_command_formats_errors(capsys) -> None:
     ctx = ctx_for(settings())
 

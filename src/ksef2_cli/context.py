@@ -135,6 +135,14 @@ def get_authenticated_client(ctx: typer.Context) -> AuthenticatedContext:
     return AuthenticatedContext(client=client, auth=authenticate_client(ctx, client))
 
 
+def run_authenticated(ctx: typer.Context, operation: Callable[[Any], T]) -> T:
+    """Run authenticated SDK work inside the client's context manager."""
+
+    runtime = get_authenticated_client(ctx)
+    with runtime.client:
+        return operation(runtime.auth)
+
+
 def read_model(ctx: typer.Context, path: Any, model_type: type[Any]) -> Any:
     """Read a model payload, using a runtime fake when supplied by tests."""
 

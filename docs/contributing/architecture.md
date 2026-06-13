@@ -47,7 +47,7 @@ src/ksef2_cli/
 1. `app.py` builds the root `Typer` app and stores global `Settings` on `ctx.obj`.
 2. A command module receives `ctx: typer.Context`.
 3. `app.py` merges CLI options, environment variables, and local config defaults.
-4. Authenticated commands call `get_authenticated_client(ctx)` from `context.py`.
+4. Authenticated commands call `run_authenticated(ctx, operation)` from `context.py`; use `get_authenticated_client(ctx)` only when a command truly needs direct access to the SDK client lifecycle.
 5. Public commands call `create_client(ctx)`.
 6. SDK calls are wrapped with `run_command(ctx, operation)` for consistent error handling.
 7. Results are passed to `_render(...)` for table or JSON output.

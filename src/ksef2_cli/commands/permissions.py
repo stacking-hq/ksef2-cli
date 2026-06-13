@@ -2,27 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import date
 from pathlib import Path
 from typing import Annotated, Any
 
 import typer
 from pydantic import BaseModel
 
-from ksef2_cli.config import FORM_SCHEMA_NAMES
-from ksef2_cli.context import get_authenticated_client, read_model, run_command
-from ksef2_cli.io import _read_model, _write_json
-from ksef2_cli.parsing import _parse_form_schema, _parse_optional_bool, _safe_filename
+from ksef2_cli.context import read_model, run_authenticated, run_command
 from ksef2_cli.rendering import _render
-from ksef2_cli.sdk_models import (
-    _batch_session_ref,
-    _build_invoice_filter,
-    _export_handle_to_dict,
-    _invoice_metadata_params,
-    _load_export_handle,
-    _offset_params,
-    _state_from_file,
-)
+from ksef2_cli.sdk_models import _offset_params
 
 app = typer.Typer(help='Grant, query, and revoke permissions.')
 
@@ -32,10 +20,7 @@ def permissions_attachment_status(ctx: typer.Context) -> None:
     """Read attachment permission status."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.permissions.get_attachment_permission_status()
+        return run_authenticated(ctx, lambda auth: auth.permissions.get_attachment_permission_status())
 
     _render(ctx, run_command(ctx, operation), title="Attachment Permission Status")
 
@@ -48,10 +33,10 @@ def permissions_operation_status(
     """Read async permission operation status."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.permissions.get_operation_status(reference_number=reference_number)
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.permissions.get_operation_status(reference_number=reference_number),
+        )
 
     _render(ctx, run_command(ctx, operation), title="Permission Operation Status")
 
@@ -65,10 +50,10 @@ def permissions_entity_roles(
     """List roles assigned to the authenticated entity."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.permissions.get_entity_roles(params=_offset_params(page_size, page_offset))
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.permissions.get_entity_roles(params=_offset_params(page_size, page_offset)),
+        )
 
     _render(ctx, run_command(ctx, operation), title="Entity Roles", items_key="roles")
 
@@ -88,17 +73,17 @@ def permissions_grant_person(
     def operation() -> Any:
         if not permission:
             raise ValueError("At least one --permission is required.")
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.permissions.grant_person(
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.permissions.grant_person(
                 subject_type=subject_type,
                 subject_value=subject_value,
                 permissions=permission,
                 description=description,
                 first_name=first_name,
                 last_name=last_name,
-            )
+            ),
+        )
 
     _render(ctx, run_command(ctx, operation), title="Permission Grant")
 
@@ -120,15 +105,15 @@ def permissions_grant_entity(
         from ksef2.domain.models.permissions import EntityPermission
 
         permissions = [EntityPermission(type=item, can_delegate=can_delegate) for item in permission]
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.permissions.grant_entity(
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.permissions.grant_entity(
                 subject_value=subject_value,
                 permissions=permissions,
                 description=description,
                 entity_name=entity_name,
-            )
+            ),
+        )
 
     _render(ctx, run_command(ctx, operation), title="Permission Grant")
 
@@ -145,16 +130,16 @@ def permissions_grant_authorization(
     """Grant invoice authorization rights to an entity."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.permissions.grant_authorization(
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.permissions.grant_authorization(
                 subject_type=subject_type,
                 subject_value=subject_value,
                 permission=permission,
                 description=description,
                 entity_name=entity_name,
-            )
+            ),
+        )
 
     _render(ctx, run_command(ctx, operation), title="Authorization Grant")
 
@@ -176,10 +161,9 @@ def permissions_grant_indirect(
     def operation() -> Any:
         if not permission:
             raise ValueError("At least one --permission is required.")
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.permissions.grant_indirect(
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.permissions.grant_indirect(
                 subject_type=subject_type,
                 subject_value=subject_value,
                 permissions=permission,
@@ -188,7 +172,8 @@ def permissions_grant_indirect(
                 last_name=last_name,
                 target_type=target_type,
                 target_value=target_value,
-            )
+            ),
+        )
 
     _render(ctx, run_command(ctx, operation), title="Indirect Permission Grant")
 
@@ -208,10 +193,9 @@ def permissions_grant_subunit(
     """Grant subunit permissions."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.permissions.grant_subunit(
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.permissions.grant_subunit(
                 subject_type=subject_type,
                 subject_value=subject_value,
                 context_type=context_type,
@@ -220,7 +204,8 @@ def permissions_grant_subunit(
                 first_name=first_name,
                 last_name=last_name,
                 subunit_name=subunit_name,
-            )
+            ),
+        )
 
     _render(ctx, run_command(ctx, operation), title="Subunit Permission Grant")
 
@@ -237,14 +222,14 @@ def permissions_grant_eu_entity(
     def operation() -> Any:
         if not permission:
             raise ValueError("At least one --permission is required.")
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.permissions.grant_eu_entity(
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.permissions.grant_eu_entity(
                 subject_value=subject_value,
                 permissions=permission,
                 description=description,
-            )
+            ),
+        )
 
     _render(ctx, run_command(ctx, operation), title="EU Entity Permission Grant")
 
@@ -261,16 +246,16 @@ def permissions_grant_eu_admin(
     """Grant EU-entity administration rights."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.permissions.grant_eu_entity_administration(
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.permissions.grant_eu_entity_administration(
                 subject_value=subject_value,
                 context_type=context_type,
                 context_value=context_value,
                 description=description,
                 eu_entity_name=eu_entity_name,
-            )
+            ),
+        )
 
     _render(ctx, run_command(ctx, operation), title="EU Entity Administration Grant")
 
@@ -314,11 +299,13 @@ def permissions_query(
         except KeyError as exc:
             raise ValueError(f"Unsupported query kind: {kind}") from exc
         query = read_model(ctx, payload_file, model_type)
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            method = getattr(auth.permissions, method_name)
-            return method(query=query, params=_offset_params(page_size, page_offset))
+        return run_authenticated(
+            ctx,
+            lambda auth: getattr(auth.permissions, method_name)(
+                query=query,
+                params=_offset_params(page_size, page_offset),
+            ),
+        )
 
     items_key = query_map.get(kind, (None, None, None))[2]
     _render(ctx, run_command(ctx, operation), title="Permission Query", items_key=items_key)
@@ -332,10 +319,10 @@ def permissions_revoke_common(
     """Revoke a common permission grant."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.permissions.revoke_common(permission_id=permission_id)
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.permissions.revoke_common(permission_id=permission_id),
+        )
 
     _render(ctx, run_command(ctx, operation), title="Permission Revocation")
 
@@ -348,9 +335,9 @@ def permissions_revoke_authorization(
     """Revoke an authorization permission grant."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.permissions.revoke_authorization(permission_id=permission_id)
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.permissions.revoke_authorization(permission_id=permission_id),
+        )
 
     _render(ctx, run_command(ctx, operation), title="Authorization Revocation")
