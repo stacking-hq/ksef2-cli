@@ -6,7 +6,7 @@ from typing import Annotated, Any
 
 import typer
 
-from ksef2_cli.context import get_authenticated_client, run_command
+from ksef2_cli.context import run_authenticated, run_command
 from ksef2_cli.rendering import _render
 
 app = typer.Typer(help='Inspect authentication and historical invoice sessions.')
@@ -22,13 +22,13 @@ def sessions_auth_list(
     """List active authentication sessions."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+        def list_sessions(auth: Any) -> Any:
             if all_pages:
                 pages = list(auth.sessions.all(page_size=page_size))
                 return [item for page in pages for item in page.items]
             return auth.sessions.query(page_size=page_size, continuation_token=continuation_token)
+
+        return run_authenticated(ctx, list_sessions)
 
     _render(
         ctx,
@@ -47,10 +47,10 @@ def sessions_auth_close(
     """Close an authentication session by reference number."""
 
     def operation() -> dict[str, str]:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            auth.sessions.close(reference_number=reference_number)
+        run_authenticated(
+            ctx,
+            lambda auth: auth.sessions.close(reference_number=reference_number),
+        )
         return {"reference_number": reference_number, "closed": "true"}
 
     _render(ctx, run_command(ctx, operation), title="Closed Authentication Session")
@@ -61,10 +61,7 @@ def sessions_auth_terminate_current(ctx: typer.Context) -> None:
     """Terminate the current authentication session."""
 
     def operation() -> dict[str, str]:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            auth.sessions.terminate_current()
+        run_authenticated(ctx, lambda auth: auth.sessions.terminate_current())
         return {"terminated_current": "true"}
 
     _render(ctx, run_command(ctx, operation), title="Terminated Current Session")
@@ -90,13 +87,13 @@ def sessions_invoice_list(
             statuses=status or None,
             page_size=page_size,
         )
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+        def list_invoice_sessions(auth: Any) -> Any:
             if all_pages:
                 pages = list(auth.invoice_sessions.all(session_type=session_type, params=params))
                 return [session for page in pages for session in page.sessions]
             return auth.invoice_sessions.query(session_type=session_type, params=params)
+
+        return run_authenticated(ctx, list_invoice_sessions)
 
     _render(
         ctx,

@@ -6,7 +6,7 @@ from typing import Annotated, Any
 
 import typer
 
-from ksef2_cli.context import get_authenticated_client, run_command
+from ksef2_cli.context import run_authenticated, run_command
 from ksef2_cli.rendering import _render
 
 app = typer.Typer(help='Manage KSeF authorization tokens.')
@@ -26,10 +26,10 @@ def tokens_generate(
     def operation() -> Any:
         if not permission:
             raise ValueError("At least one --permission is required.")
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.tokens.generate(permissions=permission, description=description)
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.tokens.generate(permissions=permission, description=description),
+        )
 
     _render(ctx, run_command(ctx, operation), title="Generated Token")
 
@@ -56,13 +56,13 @@ def tokens_list(
             author_identifier_type=author_identifier_type,
             page_size=page_size,
         )
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+        def list_tokens(auth: Any) -> Any:
             if all_pages:
                 pages = list(auth.tokens.list_all(params=params))
                 return [token for page in pages for token in page.tokens]
             return auth.tokens.list_page(params=params)
+
+        return run_authenticated(ctx, list_tokens)
 
     _render(
         ctx,
@@ -81,10 +81,10 @@ def tokens_status(
     """Fetch token status."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.tokens.status(reference_number=reference_number)
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.tokens.status(reference_number=reference_number),
+        )
 
     _render(ctx, run_command(ctx, operation), title="Token Status")
 
@@ -97,10 +97,10 @@ def tokens_revoke(
     """Revoke a KSeF authorization token."""
 
     def operation() -> dict[str, str]:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            auth.tokens.revoke(reference_number=reference_number)
+        run_authenticated(
+            ctx,
+            lambda auth: auth.tokens.revoke(reference_number=reference_number),
+        )
         return {"reference_number": reference_number, "revoked": "true"}
 
     _render(ctx, run_command(ctx, operation), title="Revoked Token")

@@ -8,7 +8,7 @@ from typing import Annotated, Any
 import typer
 from pydantic import BaseModel
 
-from ksef2_cli.context import get_authenticated_client, read_model, run_command
+from ksef2_cli.context import read_model, run_authenticated, run_command
 from ksef2_cli.rendering import _render
 
 app = typer.Typer(help='Read and manage effective KSeF limits.')
@@ -22,9 +22,7 @@ def limits_get(
     """Read effective limits."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+        def read_limits(auth: Any) -> Any:
             if kind == "api":
                 return auth.limits.get_api_rate_limits()
             if kind == "context":
@@ -32,6 +30,8 @@ def limits_get(
             if kind == "subject":
                 return auth.limits.get_subject_limits()
             raise ValueError("kind must be one of: api, context, subject.")
+
+        return run_authenticated(ctx, read_limits)
 
     _render(ctx, run_command(ctx, operation), title=f"{kind.title()} Limits")
 
@@ -58,10 +58,10 @@ def limits_set(
         except KeyError as exc:
             raise ValueError("kind must be one of: api, context, subject.") from exc
         limits = read_model(ctx, payload_file, model_type)
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            getattr(auth.limits, method_name)(limits=limits)
+        run_authenticated(
+            ctx,
+            lambda auth: getattr(auth.limits, method_name)(limits=limits),
+        )
         return {"kind": kind, "updated": "true"}
 
     _render(ctx, run_command(ctx, operation), title="Updated Limits")
@@ -75,9 +75,7 @@ def limits_reset(
     """Reset TEST-environment override limits."""
 
     def operation() -> dict[str, str]:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+        def reset_limits(auth: Any) -> None:
             if kind == "api":
                 auth.limits.reset_api_rate_limits()
             elif kind == "session":
@@ -86,6 +84,8 @@ def limits_reset(
                 auth.limits.reset_subject_limits()
             else:
                 raise ValueError("kind must be one of: api, session, subject.")
+
+        run_authenticated(ctx, reset_limits)
         return {"kind": kind, "reset": "true"}
 
     _render(ctx, run_command(ctx, operation), title="Reset Limits")
@@ -96,10 +96,7 @@ def limits_production_rate_limits(ctx: typer.Context) -> None:
     """Set TEST API rate limits to production-like values."""
 
     def operation() -> dict[str, str]:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            auth.limits.set_production_rate_limits()
+        run_authenticated(ctx, lambda auth: auth.limits.set_production_rate_limits())
         return {"api_rate_limits": "production"}
 
     _render(ctx, run_command(ctx, operation), title="Production Rate Limits")
