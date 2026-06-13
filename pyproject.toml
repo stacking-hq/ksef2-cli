@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ksef2-cli"
+version = "0.1.0"
+description = "Command-line interface for the ksef2 Python SDK"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.1,<8.2",
+    "ksef2>=0.17.0",
+    "markdown-it-py>=3,<4",
+    "rich>=13.7,<14",
+    "typer>=0.12,<0.13",
+]
+
+[project.scripts]
+ksef2 = "ksef2_cli.app:main"
+ksef2-cli = "ksef2_cli.app:main"
+
+[project.urls]
+Documentation = "https://docs.ksef2.dev/cli/"
+Repository = "https://github.com/stacking-hq/ksef2-cli"
+Issues = "https://github.com/stacking-hq/ksef2-cli/issues"
+
+[dependency-groups]
+dev = [
+    "coverage>=7.14,<8",
+    "pytest>=9.0.3",
+]
+
+[tool.coverage.run]
+source = ["src/ksef2_cli"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: direct tests for helpers and internal logic",
+    "component: fake-backed CLI/component tests",
+    "e2e: installed CLI and real external-system smoke tests",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ksef2_cli"]
