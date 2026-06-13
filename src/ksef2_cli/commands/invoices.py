@@ -8,7 +8,7 @@ from typing import Annotated, Any
 import typer
 
 from ksef2_cli.config import FORM_SCHEMA_NAMES
-from ksef2_cli.context import get_authenticated_client, run_command
+from ksef2_cli.context import run_authenticated, run_command
 from ksef2_cli.io import _write_json
 from ksef2_cli.parsing import _parse_optional_bool, _safe_filename
 from ksef2_cli.rendering import _render
@@ -80,12 +80,13 @@ def invoices_metadata(
             is_self_invoicing=_parse_optional_bool(self_invoicing, option_name="--self-invoicing"),
         )
         params = _invoice_metadata_params(page_size, page_offset, sort_order)
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+
+        def query_invoices(auth: Any) -> Any:
             if all_pages:
                 return list(auth.invoices.all_metadata(filters=filters, params=params))
             return auth.invoices.query_metadata(filters=filters, params=params)
+
+        return run_authenticated(ctx, query_invoices)
 
     _render(
         ctx,
@@ -111,17 +112,16 @@ def invoices_download(
     """Download processed invoice XML by KSeF number."""
 
     def operation() -> dict[str, Any]:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+        def download_invoice(auth: Any) -> bytes:
             if wait:
-                content = auth.invoices.wait_for_invoice_download(
+                return auth.invoices.wait_for_invoice_download(
                     ksef_number=ksef_number,
                     timeout=timeout,
                     poll_interval=poll_interval,
                 )
-            else:
-                content = auth.invoices.download_invoice(ksef_number=ksef_number)
+            return auth.invoices.download_invoice(ksef_number=ksef_number)
+
+        content = run_authenticated(ctx, download_invoice)
         target = output_file or Path(_safe_filename(ksef_number, ".xml"))
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
@@ -169,14 +169,14 @@ def invoices_export(
             has_attachment=None,
             is_self_invoicing=None,
         )
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            handle = auth.invoices.schedule_export(
+        handle = run_authenticated(
+            ctx,
+            lambda auth: auth.invoices.schedule_export(
                 filters=filters,
                 only_metadata=only_metadata,
                 compression_type=compression_type,
-            )
+            ),
+        )
         payload = _export_handle_to_dict(handle)
         if handle_file:
             _write_json(handle_file, payload)
@@ -194,10 +194,10 @@ def invoices_export_status(
     """Fetch invoice export status."""
 
     def operation() -> Any:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            return auth.invoices.get_export_status(reference_number=reference_number)
+        return run_authenticated(
+            ctx,
+            lambda auth: auth.invoices.get_export_status(reference_number=reference_number),
+        )
 
     _render(ctx, run_command(ctx, operation), title="Export Status")
 
@@ -215,9 +215,8 @@ def invoices_export_fetch(
 
     def operation() -> dict[str, Any]:
         handle = _load_export_handle(handle_file)
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+
+        def fetch_export(auth: Any) -> list[Path]:
             if wait:
                 package = auth.invoices.wait_for_export_package(
                     reference_number=handle.reference_number,
@@ -234,6 +233,9 @@ def invoices_export_fetch(
                 export=handle,
                 target_directory=output_dir,
             )
+            return paths
+
+        paths = run_authenticated(ctx, fetch_export)
         return {
             "reference_number": handle.reference_number,
             "paths": [str(path) for path in paths],
@@ -281,9 +283,8 @@ def invoices_export_download(
             has_attachment=None,
             is_self_invoicing=None,
         )
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+
+        def download_export(auth: Any) -> tuple[Any, list[Path]]:
             handle = auth.invoices.schedule_export(
                 filters=filters,
                 only_metadata=only_metadata,
@@ -301,6 +302,9 @@ def invoices_export_download(
                 export=handle,
                 target_directory=output_dir,
             )
+            return handle, paths
+
+        handle, paths = run_authenticated(ctx, download_export)
         return {
             "reference_number": handle.reference_number,
             "handle_file": str(handle_file) if handle_file else None,
