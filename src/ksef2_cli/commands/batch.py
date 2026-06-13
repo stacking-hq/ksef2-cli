@@ -8,13 +8,11 @@ from typing import Annotated, Any
 import typer
 
 from ksef2_cli.config import FORM_SCHEMA_NAMES
-from ksef2_cli.context import get_authenticated_client, run_command
+from ksef2_cli.context import run_authenticated, run_command
 from ksef2_cli.io import _write_json
 from ksef2_cli.parsing import _parse_form_schema
 from ksef2_cli.rendering import _render
-from ksef2_cli.sdk_models import (
-    _batch_session_ref,
-)
+from ksef2_cli.sdk_models import _batch_session_ref
 
 app = typer.Typer(help='Submit and inspect batch invoice sessions.')
 
@@ -34,8 +32,6 @@ def batch_submit(
     """Prepare, upload, close, and optionally wait for a batch session."""
 
     def operation() -> dict[str, Any]:
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
         kwargs: dict[str, Any] = {
             "invoice_paths": invoice_paths,
             "form_code": _parse_form_schema(form),
@@ -43,7 +39,8 @@ def batch_submit(
         }
         if max_part_size is not None:
             kwargs["max_part_size"] = max_part_size
-        with client:
+
+        def submit_batch(auth: Any) -> tuple[Any, Any]:
             prepared = auth.batch.prepare_batch_from_paths(**kwargs)
             state = auth.batch.submit_prepared_batch(prepared_batch=prepared)
             status = (
@@ -55,6 +52,9 @@ def batch_submit(
                 if wait
                 else None
             )
+            return state, status
+
+        state, status = run_authenticated(ctx, submit_batch)
         if state_file:
             _write_json(state_file, state)
         return {"state_file": str(state_file) if state_file else None, "state": state, "status": status}
@@ -75,9 +75,8 @@ def batch_status(
 
     def operation() -> Any:
         session_ref = _batch_session_ref(reference, state_file)
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+
+        def get_batch_status(auth: Any) -> Any:
             if wait:
                 return auth.batch.wait_for_completion(
                     session=session_ref,
@@ -85,6 +84,8 @@ def batch_status(
                     poll_interval=poll_interval,
                 )
             return auth.batch.get_status(session=session_ref)
+
+        return run_authenticated(ctx, get_batch_status)
 
     _render(ctx, run_command(ctx, operation), title="Batch Status")
 
@@ -102,9 +103,8 @@ def batch_list(
 
     def operation() -> Any:
         session_ref = _batch_session_ref(reference, state_file)
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
+
+        def list_batch_invoices(auth: Any) -> Any:
             if failed:
                 return auth.batch.list_failed_invoices(
                     session=session_ref,
@@ -116,6 +116,8 @@ def batch_list(
                 page_size=page_size,
                 continuation_token=continuation_token,
             )
+
+        return run_authenticated(ctx, list_batch_invoices)
 
     _render(
         ctx,
@@ -138,10 +140,10 @@ def batch_upo(
 
     def operation() -> dict[str, Any]:
         session_ref = _batch_session_ref(reference, state_file)
-        runtime = get_authenticated_client(ctx)
-        client, auth = runtime.client, runtime.auth
-        with client:
-            content = auth.batch.get_upo(session=session_ref, upo_reference_number=upo_reference)
+        content = run_authenticated(
+            ctx,
+            lambda auth: auth.batch.get_upo(session=session_ref, upo_reference_number=upo_reference),
+        )
         output_file.parent.mkdir(parents=True, exist_ok=True)
         output_file.write_bytes(content)
         return {"path": str(output_file), "bytes": len(content)}
