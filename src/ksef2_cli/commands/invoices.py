@@ -91,9 +91,7 @@ def invoices_metadata(
     _render(
         ctx,
         run_command(ctx, operation),
-        title="Invoices",
         items_key="invoices",
-        fields=["ksef_number", "invoice_number", "issue_date", "seller", "buyer", "gross_amount", "currency"],
     )
 
 
@@ -127,7 +125,7 @@ def invoices_download(
         target.write_bytes(content)
         return {"path": str(target), "bytes": len(content)}
 
-    _render(ctx, run_command(ctx, operation), title="Downloaded Invoice")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("export")
@@ -183,7 +181,7 @@ def invoices_export(
             payload["handle_file"] = str(handle_file)
         return payload
 
-    _render(ctx, run_command(ctx, operation), title="Export Handle")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("export-status")
@@ -199,7 +197,7 @@ def invoices_export_status(
             lambda auth: auth.invoices.get_export_status(reference_number=reference_number),
         )
 
-    _render(ctx, run_command(ctx, operation), title="Export Status")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("export-fetch")
@@ -241,7 +239,7 @@ def invoices_export_fetch(
             "paths": [str(path) for path in paths],
         }
 
-    _render(ctx, run_command(ctx, operation), title="Fetched Export", items_key="paths")
+    _render(ctx, run_command(ctx, operation), items_key="paths")
 
 
 @app.command("export-download")
@@ -311,4 +309,4 @@ def invoices_export_download(
             "paths": [str(path) for path in paths],
         }
 
-    _render(ctx, run_command(ctx, operation), title="Downloaded Export", items_key="paths")
+    _render(ctx, run_command(ctx, operation), items_key="paths")

@@ -31,7 +31,7 @@ def tokens_generate(
             lambda auth: auth.tokens.generate(permissions=permission, description=description),
         )
 
-    _render(ctx, run_command(ctx, operation), title="Generated Token")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("list")
@@ -67,9 +67,7 @@ def tokens_list(
     _render(
         ctx,
         run_command(ctx, operation),
-        title="Tokens",
         items_key="tokens",
-        fields=["reference_number", "status", "description", "date_created", "last_use_date"],
     )
 
 
@@ -86,7 +84,7 @@ def tokens_status(
             lambda auth: auth.tokens.status(reference_number=reference_number),
         )
 
-    _render(ctx, run_command(ctx, operation), title="Token Status")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("revoke")
@@ -103,4 +101,4 @@ def tokens_revoke(
         )
         return {"reference_number": reference_number, "revoked": "true"}
 
-    _render(ctx, run_command(ctx, operation), title="Revoked Token")
+    _render(ctx, run_command(ctx, operation))

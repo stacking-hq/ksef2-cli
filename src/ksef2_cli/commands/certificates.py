@@ -21,7 +21,7 @@ def certificates_limits(ctx: typer.Context) -> None:
     def operation() -> Any:
         return run_authenticated(ctx, lambda auth: auth.certificates.get_limits())
 
-    _render(ctx, run_command(ctx, operation), title="Certificate Limits")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("enrollment-data")
@@ -31,7 +31,7 @@ def certificates_enrollment_data(ctx: typer.Context) -> None:
     def operation() -> Any:
         return run_authenticated(ctx, lambda auth: auth.certificates.get_enrollment_data())
 
-    _render(ctx, run_command(ctx, operation), title="Certificate Enrollment Data")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("enroll")
@@ -56,7 +56,7 @@ def certificates_enroll(
             ),
         )
 
-    _render(ctx, run_command(ctx, operation), title="Certificate Enrollment")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("enrollment-status")
@@ -72,7 +72,7 @@ def certificates_enrollment_status(
             lambda auth: auth.certificates.get_enrollment_status(reference_number=reference_number),
         )
 
-    _render(ctx, run_command(ctx, operation), title="Certificate Enrollment Status")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("list")
@@ -121,9 +121,7 @@ def certificates_list(
     _render(
         ctx,
         run_command(ctx, operation),
-        title="Certificates",
         items_key="certificates",
-        fields=["serial_number", "name", "type", "status", "valid_from", "valid_to"],
     )
 
 
@@ -156,9 +154,7 @@ def certificates_retrieve(
     _render(
         ctx,
         run_command(ctx, operation),
-        title="Retrieved Certificates",
         items_key="certificates",
-        fields=["serial_number", "name", "certificate_type"],
     )
 
 
@@ -180,4 +176,4 @@ def certificates_revoke(
         )
         return {"serial_number": serial_number, "reason": reason, "revoked": "true"}
 
-    _render(ctx, run_command(ctx, operation), title="Revoked Certificate")
+    _render(ctx, run_command(ctx, operation))

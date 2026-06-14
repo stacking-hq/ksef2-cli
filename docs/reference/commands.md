@@ -14,7 +14,7 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 | Option | Purpose |
 | --- | --- |
 | `--env`, `-e` | KSeF environment: `production`, `demo`, or `test`. |
-| `--output`, `-o` | Output mode: `table` or `json`. |
+| `--output`, `-o` | Output mode: `text` or `json`. |
 | `--json` | Shortcut for `--output json`. |
 | `--verbose`, `-v` | Show tracebacks for CLI errors. |
 | `--config` | Local config file path. |
@@ -62,7 +62,7 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 | --- | --- |
 | `config path` | Show the local config path used by this invocation. |
 | `config show` | Show local config values. |
-| `config init` | Create a local config file with auth defaults. |
+| `config init` | Create a local config file with non-secret defaults. |
 
 ### `invoices`
 

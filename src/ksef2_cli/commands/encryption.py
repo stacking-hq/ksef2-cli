@@ -31,6 +31,4 @@ def encryption_certificates(
     _render(
         ctx,
         run_command(ctx, operation),
-        title="Encryption Certificates",
-        fields=["public_key_id", "usage", "valid_from", "valid_to"],
     )

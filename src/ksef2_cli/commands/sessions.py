@@ -33,9 +33,7 @@ def sessions_auth_list(
     _render(
         ctx,
         run_command(ctx, operation),
-        title="Authentication Sessions",
         items_key="items",
-        fields=["reference_number", "authentication_method", "is_current", "date_created"],
     )
 
 
@@ -53,7 +51,7 @@ def sessions_auth_close(
         )
         return {"reference_number": reference_number, "closed": "true"}
 
-    _render(ctx, run_command(ctx, operation), title="Closed Authentication Session")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("auth-terminate-current")
@@ -64,7 +62,7 @@ def sessions_auth_terminate_current(ctx: typer.Context) -> None:
         run_authenticated(ctx, lambda auth: auth.sessions.terminate_current())
         return {"terminated_current": "true"}
 
-    _render(ctx, run_command(ctx, operation), title="Terminated Current Session")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("invoice-list")
@@ -98,7 +96,5 @@ def sessions_invoice_list(
     _render(
         ctx,
         run_command(ctx, operation),
-        title="Invoice Sessions",
         items_key="sessions",
-        fields=["reference_number", "status", "date_created", "total_invoice_count", "successful_invoice_count", "failed_invoice_count"],
     )

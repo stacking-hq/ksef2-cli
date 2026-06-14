@@ -15,9 +15,8 @@ from ksef2_cli.io import _read_json, _read_model, _write_json
 from ksef2_cli.parsing import _parse_form_schema, _parse_optional_bool, _safe_filename
 from ksef2_cli.rendering import (
     _cell,
-    _first_list_key,
+    _plain_text,
     _render,
-    _table_keys,
     _to_jsonable,
 )
 from ksef2_cli.sdk_models import (
@@ -95,23 +94,25 @@ def test_rendering_converts_supported_types(capsys, tmp_path) -> None:
     assert value["path"].endswith("file.txt")
     assert value["date"] == "2026-01-02"
 
-    ctx = type("Ctx", (), {"obj": settings(output=OutputMode.table)})()
-    _render(ctx, {"rows": [{"name": "a", "extra": "b"}], "count": 1}, title="Rows")
-    _render(ctx, {"name": "demo"}, title="Mapping")
-    _render(ctx, "plain", title="Plain")
-    assert capsys.readouterr().out
+    ctx = type("Ctx", (), {"obj": settings(output=OutputMode.text)})()
+    _render(ctx, {"rows": [{"name": "a", "extra": "b"}], "count": 1})
+    _render(ctx, {"name": "demo"})
+    _render(ctx, "plain")
+    output = capsys.readouterr().out
+    assert "Rows" not in output
+    assert "rows: " in output
+    assert "name: demo" in output
+    assert "plain" in output
 
 
 def test_rendering_small_helpers() -> None:
-    rows = [{"b": 1, "a": 2, "c": 3}]
-    assert _first_list_key({"x": 1, "items": []}) == "items"
-    assert _first_list_key({"x": 1}) is None
-    assert _table_keys(rows, ["a", "missing"]) == ["a"]
-    assert _table_keys(rows, None) == ["b", "a", "c"]
+    assert _plain_text({"name": "demo", "empty": None}) == "name: demo"
+    assert _plain_text([{"name": "a", "extra": "b"}, "plain"]) == "name=a extra=b\nplain"
+    assert _plain_text([]) == ""
     assert _cell(None) == ""
     assert _cell(True) == "yes"
     assert _cell(False) == "no"
-    assert _cell({"a": 1}) == '{"a": 1}'
+    assert _cell({"a": 1}) == '{"a":1}'
 
 
 def test_invoice_filter_and_pagination_models() -> None:

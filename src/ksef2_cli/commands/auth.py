@@ -5,43 +5,35 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 import typer
+from ksef2 import Client
 
-from ksef2_cli.context import authenticate_client, fail, run_client, run_command
-from ksef2_cli.rendering import _render
+from ksef2_cli.context import authenticate_client, run_client_command
 
-app = typer.Typer(help='Authenticate and refresh KSeF access tokens.')
+app = typer.Typer(help="Authenticate and refresh KSeF access tokens.")
 
 
 @app.command("login")
 def auth_login(ctx: typer.Context) -> None:
     """Authenticate with the configured method and print access/refresh tokens."""
 
-    def operation() -> Any:
-        def login(client: Any) -> Any:
-            auth = authenticate_client(ctx, client)
-            return auth.auth_tokens
+    def command(client: Client) -> Any:
+        auth = authenticate_client(ctx, client)
+        return auth.auth_tokens
 
-        return run_client(ctx, login)
-
-    _render(ctx, run_command(ctx, operation), title="Auth Tokens")
+    run_client_command(ctx, command)
 
 
 @app.command("refresh")
 def auth_refresh(
     ctx: typer.Context,
     refresh_token: Annotated[
-        str | None,
+        str,
         typer.Option("--refresh-token", envvar="KSEF2_REFRESH_TOKEN", help="Refresh token."),
-    ] = None,
+    ],
 ) -> None:
     """Exchange a refresh token for a new access token."""
 
-    def operation() -> Any:
-        if not refresh_token:
-            fail("Provide --refresh-token or KSEF2_REFRESH_TOKEN.")
-        return run_client(
-            ctx,
-            lambda client: client.authentication.refresh(refresh_token=refresh_token),
-        )
+    def command(client: Client) -> Any:
+        return client.authentication.refresh(refresh_token=refresh_token)
 
-    _render(ctx, run_command(ctx, operation), title="Refreshed Token")
+    run_client_command(ctx, command)

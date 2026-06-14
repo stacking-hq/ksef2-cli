@@ -23,7 +23,7 @@ src/ksef2_cli/
   context.py             Client creation, authentication, error execution wrapper
   io.py                  JSON file/stdin reads and JSON writes
   parsing.py             CLI string parsing helpers
-  rendering.py           Rich table/JSON output rendering
+  rendering.py           Plain text/JSON output rendering
   sdk_models.py          Small SDK model construction and state-file helpers
   local_config.py        TOML config-file loading and creation
   commands/
@@ -48,9 +48,9 @@ src/ksef2_cli/
 2. A command module receives `ctx: typer.Context`.
 3. `app.py` merges CLI options, environment variables, and local config defaults.
 4. Authenticated commands call `run_authenticated(ctx, operation)` from `context.py`; use `get_authenticated_client(ctx)` only when a command truly needs direct access to the SDK client lifecycle.
-5. Public commands call `run_client(ctx, operation)` from `context.py`.
-6. SDK calls are wrapped with `run_command(ctx, operation)` for consistent error handling.
-7. Results are passed to `_render(...)` for table or JSON output.
+5. Public commands call `run_client_command(ctx, command)` when they only need a root SDK client.
+6. Commands with local file or multi-step work wrap their operation with `run_command(ctx, operation)` and pass results to `_render(...)`.
+7. Human output is plain text by default; `--json` emits formatted JSON for scripts.
 
 ## Adding a Command
 

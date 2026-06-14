@@ -59,7 +59,7 @@ def batch_submit(
             _write_json(state_file, state)
         return {"state_file": str(state_file) if state_file else None, "state": state, "status": status}
 
-    _render(ctx, run_command(ctx, operation), title="Batch Submission")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("status")
@@ -87,7 +87,7 @@ def batch_status(
 
         return run_authenticated(ctx, get_batch_status)
 
-    _render(ctx, run_command(ctx, operation), title="Batch Status")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("list")
@@ -122,9 +122,7 @@ def batch_list(
     _render(
         ctx,
         run_command(ctx, operation),
-        title="Batch Invoices",
         items_key="invoices",
-        fields=["reference_number", "ksef_number", "invoice_number", "status"],
     )
 
 
@@ -148,4 +146,4 @@ def batch_upo(
         output_file.write_bytes(content)
         return {"path": str(output_file), "bytes": len(content)}
 
-    _render(ctx, run_command(ctx, operation), title="Downloaded UPO")
+    _render(ctx, run_command(ctx, operation))

@@ -8,6 +8,7 @@ import typer
 
 from conftest import FakeClient, FakeService, settings
 from ksef2_cli.config import RuntimeOverrides
+from ksef2_cli.exceptions import AuthenticationConfigError
 from ksef2_cli import context
 
 
@@ -21,13 +22,13 @@ def test_get_settings_requires_initialized_context() -> None:
 
 
 def test_select_auth_method_validates_required_and_conflicting_settings() -> None:
-    with pytest.raises(typer.Exit):
+    with pytest.raises(AuthenticationConfigError):
         context.select_auth_method(settings(nip=None))
 
-    with pytest.raises(typer.Exit):
+    with pytest.raises(AuthenticationConfigError):
         context.select_auth_method(settings(token="token", test_certificate=True))
 
-    with pytest.raises(typer.Exit):
+    with pytest.raises(AuthenticationConfigError):
         context.select_auth_method(settings(cert=Path("cert.pem")))
 
     assert context.select_auth_method(settings(token="token")) == "token"
@@ -130,7 +131,7 @@ def test_run_command_formats_errors(capsys) -> None:
 
     with pytest.raises(typer.Exit):
         context.run_command(ctx, lambda: (_ for _ in ()).throw(ValueError("bad input")))
-    assert "bad input" in capsys.readouterr().out
+    assert "bad input" in capsys.readouterr().err
 
 
 def test_credential_loader_wrappers(tmp_path) -> None:

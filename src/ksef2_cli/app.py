@@ -22,8 +22,8 @@ from ksef2_cli.commands import (
     testdata,
     tokens,
 )
-from ksef2_cli.config import EnvironmentName, OutputMode, RuntimeOverrides, Settings
-from ksef2_cli.local_config import load_local_config, resolve_config_path, secret_value
+from ksef2_cli.config import EnvironmentName, OutputMode, RuntimeOverrides, Settings, secret_value, resolve_config_path, \
+    load_local_config
 
 app = typer.Typer(
     help="Command-line interface for Poland's KSeF v2 API using the ksef2 SDK.",
@@ -48,7 +48,7 @@ app.add_typer(testdata.app, name="testdata")
 
 @app.callback()
 def root(
-    ctx: typer.Context,
+    context: typer.Context,
     environment: Annotated[
         EnvironmentName,
         typer.Option("--env", "-e", help="KSeF environment."),
@@ -56,7 +56,7 @@ def root(
     output: Annotated[
         OutputMode,
         typer.Option("--output", "-o", help="Output mode."),
-    ] = OutputMode.table,
+    ] = OutputMode.text,
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Shortcut for --output json."),
@@ -162,13 +162,14 @@ def root(
         typer.Option("--auth-max-poll-attempts", min=1, help="Authentication polling attempts."),
     ] = None,
 ) -> None:
-    runtime_overrides = ctx.obj if isinstance(ctx.obj, RuntimeOverrides) else None
+    runtime_overrides = context.obj if isinstance(context.obj, RuntimeOverrides) else None
     resolved_config_file = resolve_config_path(config_file)
+
     try:
         local_config = load_local_config(resolved_config_file) if not no_config else None
     except (OSError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="--config") from exc
-    ctx.obj = Settings(
+    context.obj = Settings(
         config_file=resolved_config_file,
         config_loaded=bool(local_config and resolved_config_file.exists()),
         environment=environment,

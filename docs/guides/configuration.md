@@ -8,7 +8,7 @@ CI and shared machines. Use environment variables or secret-manager injection fo
 credentials.
 
 Local config files are useful on a developer workstation when you repeatedly use
-the same NIP or token.
+the same non-secret defaults.
 
 ## Show the active config path
 
@@ -34,12 +34,6 @@ uv run ksef2 --config ./local.ksef2.toml config path
 uv run ksef2 config init --nip 5261040828
 ```
 
-Add a token only for trusted local environments:
-
-```bash
-uv run ksef2 config init --nip 5261040828 --token "$KSEF2_TOKEN" --force
-```
-
 The CLI writes the file with mode `0600`.
 
 ## Inspect local config
@@ -48,12 +42,7 @@ The CLI writes the file with mode `0600`.
 uv run ksef2 config show
 ```
 
-Token and credential passwords are redacted by default. Reveal them only when
-you are sure the terminal output is safe:
-
-```bash
-uv run ksef2 config show --reveal-token
-```
+Token and credential passwords are always masked in CLI output.
 
 ## Ignore local config once
 
@@ -64,7 +53,7 @@ uv run ksef2 --no-config --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
 
 ## Output modes
 
-The default output mode is a Rich table for humans:
+The default output mode is plain text for humans:
 
 ```bash
 uv run ksef2 invoices metadata --date-from 2026-01-01T00:00:00Z

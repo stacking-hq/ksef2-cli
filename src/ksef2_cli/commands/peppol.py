@@ -37,7 +37,5 @@ def peppol_providers(
     _render(
         ctx,
         run_command(ctx, operation),
-        title="PEPPOL Providers",
         items_key="providers",
-        fields=["id", "name", "date_created"],
     )

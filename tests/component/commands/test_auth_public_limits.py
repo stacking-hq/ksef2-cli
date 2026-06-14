@@ -25,8 +25,8 @@ def test_auth_refresh_requires_and_uses_refresh_token(runner) -> None:
     client = FakeClient(authentication=FakeService(refresh={"access_token": "new"}))
 
     missing = runner.invoke(app, cli_args("auth", "refresh"), obj=fake_runtime(client=client))
-    assert missing.exit_code == 1
-    assert "Provide --refresh-token" in missing.output
+    assert missing.exit_code == 2
+    assert "Missing option '--refresh-token'" in missing.output
 
     result = runner.invoke(
         app,
@@ -36,6 +36,17 @@ def test_auth_refresh_requires_and_uses_refresh_token(runner) -> None:
 
     assert payload(result) == {"access_token": "new"}
     assert client.authentication.called("refresh")["refresh_token"] == "refresh"
+
+    env_client = FakeClient(authentication=FakeService(refresh={"access_token": "new"}))
+    result = runner.invoke(
+        app,
+        cli_args("auth", "refresh"),
+        env={"KSEF2_REFRESH_TOKEN": "refresh-from-env"},
+        obj=fake_runtime(client=env_client),
+    )
+
+    assert payload(result) == {"access_token": "new"}
+    assert env_client.authentication.called("refresh")["refresh_token"] == "refresh-from-env"
 
 
 def test_encryption_certificates_uses_public_client(runner) -> None:

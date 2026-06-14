@@ -35,7 +35,7 @@ def online_open(
             _write_json(state_file, state)
         return {"state_file": str(state_file) if state_file else None, "state": state}
 
-    _render(ctx, run_command(ctx, operation), title="Online Session")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("send")
@@ -92,7 +92,7 @@ def online_send(
             "results": results,
         }
 
-    _render(ctx, run_command(ctx, operation), title="Sent Invoices", items_key="results")
+    _render(ctx, run_command(ctx, operation), items_key="results")
 
 
 @app.command("status")
@@ -108,7 +108,7 @@ def online_status(
             lambda auth: auth.resume_online_session(_state_from_file(state_file)).get_status(),
         )
 
-    _render(ctx, run_command(ctx, operation), title="Online Session Status")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("list")
@@ -133,9 +133,7 @@ def online_list(
     _render(
         ctx,
         run_command(ctx, operation),
-        title="Session Invoices",
         items_key="invoices",
-        fields=["reference_number", "ksef_number", "invoice_number", "status"],
     )
 
 
@@ -163,7 +161,7 @@ def online_invoice_status(
 
         return run_authenticated(ctx, get_session_invoice_status)
 
-    _render(ctx, run_command(ctx, operation), title="Invoice Status")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("upo")
@@ -192,7 +190,7 @@ def online_upo(
         output_file.write_bytes(content)
         return {"path": str(output_file), "bytes": len(content)}
 
-    _render(ctx, run_command(ctx, operation), title="Downloaded UPO")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("close")
@@ -207,4 +205,4 @@ def online_close(
         run_authenticated(ctx, lambda auth: auth.resume_online_session(state).close())
         return {"reference_number": state.reference_number, "closed": "true"}
 
-    _render(ctx, run_command(ctx, operation), title="Closed Online Session")
+    _render(ctx, run_command(ctx, operation))

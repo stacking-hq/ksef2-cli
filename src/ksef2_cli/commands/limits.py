@@ -33,7 +33,7 @@ def limits_get(
 
         return run_authenticated(ctx, read_limits)
 
-    _render(ctx, run_command(ctx, operation), title=f"{kind.title()} Limits")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("set")
@@ -64,7 +64,7 @@ def limits_set(
         )
         return {"kind": kind, "updated": "true"}
 
-    _render(ctx, run_command(ctx, operation), title="Updated Limits")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("reset")
@@ -88,7 +88,7 @@ def limits_reset(
         run_authenticated(ctx, reset_limits)
         return {"kind": kind, "reset": "true"}
 
-    _render(ctx, run_command(ctx, operation), title="Reset Limits")
+    _render(ctx, run_command(ctx, operation))
 
 
 @app.command("production-rate-limits")
@@ -99,4 +99,4 @@ def limits_production_rate_limits(ctx: typer.Context) -> None:
         run_authenticated(ctx, lambda auth: auth.limits.set_production_rate_limits())
         return {"api_rate_limits": "production"}
 
-    _render(ctx, run_command(ctx, operation), title="Production Rate Limits")
+    _render(ctx, run_command(ctx, operation))

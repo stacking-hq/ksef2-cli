@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from conftest import cli_args, payload
 from ksef2_cli.app import app
-from ksef2_cli.local_config import CONFIG_FILE_MODE, LocalConfig, render_local_config
+from ksef2_cli.config import CONFIG_FILE_MODE, LocalConfig, render_local_config
 
 
 def test_config_show_redacts_token(runner, tmp_path) -> None:
@@ -20,10 +20,10 @@ def test_config_show_redacts_token(runner, tmp_path) -> None:
     assert data["path"] == str(config_path)
     assert data["exists"] is True
     assert data["auth"]["nip"] == "5261040828"
-    assert data["auth"]["token"] == "very...oken"
+    assert data["auth"]["token"] == "**********"
 
 
-def test_config_show_can_reveal_token(runner, tmp_path) -> None:
+def test_config_show_does_not_accept_reveal_token(runner, tmp_path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text(
         render_local_config(LocalConfig(token="very-secret-token")),
@@ -35,7 +35,8 @@ def test_config_show_can_reveal_token(runner, tmp_path) -> None:
         ["--json", "--config", str(config_path), "config", "show", "--reveal-token"],
     )
 
-    assert payload(result)["auth"]["token"] == "very-secret-token"
+    assert result.exit_code != 0
+    assert "No such option" in result.output
 
 
 def test_config_path_and_init(runner, tmp_path) -> None:
@@ -66,4 +67,14 @@ def test_config_init_requires_value(runner, tmp_path) -> None:
     )
 
     assert result.exit_code == 1
-    assert "Provide at least --nip or --token" in result.output
+    assert "Provide --nip" in result.output
+
+
+def test_config_init_does_not_accept_token(runner, tmp_path) -> None:
+    result = runner.invoke(
+        app,
+        cli_args("--config", str(tmp_path / "config.toml"), "config", "init", "--token", "secret"),
+    )
+
+    assert result.exit_code != 0
+    assert "No such option" in result.output

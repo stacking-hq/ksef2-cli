@@ -2,17 +2,31 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, TypeVar
 
 import typer
+from ksef2 import Environment, Client
 
-from ksef2_cli.config import ENVIRONMENT_MEMBERS, Settings
-from ksef2_cli.rendering import console
+from ksef2_cli.config import Settings, EnvironmentName
+from ksef2_cli.exceptions import (
+    AuthenticationConfigError,
+    CliError,
+    error_from_exception,
+    render_cli_error,
+)
+from ksef2_cli.rendering import _render, console
 
 AuthMethod = Literal["token", "test_certificate", "p12", "pem"]
 T = TypeVar("T")
 
+ENVIRONMENT_MAPPING = {
+    EnvironmentName.production: Environment.PRODUCTION,
+    EnvironmentName.demo: Environment.DEMO,
+    EnvironmentName.test: Environment.TEST,
+}
 
 @dataclass(frozen=True)
 class AuthenticatedContext:
@@ -30,31 +44,55 @@ def get_settings(ctx: typer.Context) -> Settings:
     return ctx.obj
 
 
-def create_client(ctx: typer.Context) -> Any:
+def create_client(ctx: typer.Context) -> Client:
     """Create a root SDK client for the selected KSeF environment."""
 
     settings = get_settings(ctx)
+
     if settings.runtime_overrides and settings.runtime_overrides.client_factory:
         return settings.runtime_overrides.client_factory()
 
-    from ksef2 import Client, Environment
+    return Client(environment=ENVIRONMENT_MAPPING[settings.environment])
 
-    environment = getattr(Environment, ENVIRONMENT_MEMBERS[settings.environment])
-    return Client(environment=environment)
+
+@contextmanager
+def use_client(ctx: typer.Context) -> Generator[Client]:
+    """Create a root SDK client and manage its context lifecycle."""
+
+    with create_client(ctx) as client:
+        yield client
 
 
 def run_client(ctx: typer.Context, operation: Callable[[Any], T]) -> T:
     """Run SDK client work inside the client's context manager."""
 
-    with create_client(ctx) as client:
+    with use_client(ctx) as client:
         return operation(client)
 
 
-def fail(message: str, *, code: int = 1) -> None:
-    """Print a user-facing error and exit."""
+def run_client_command(
+    ctx: typer.Context,
+    command: Callable[[Client], T],
+    *,
+    items_key: str | None = None,
+) -> None:
+    """Run SDK client work with command error handling and result rendering."""
 
-    console.print(f"[red]Error:[/] {message}")
-    raise typer.Exit(code)
+    def operation() -> T:
+        with use_client(ctx) as client:
+            return command(client)
+
+    _render(
+        ctx,
+        run_command(ctx, operation),
+        items_key=items_key,
+    )
+
+
+def fail(message: str, *, code: int = 1) -> None:
+    """Abort with a user-facing error."""
+
+    raise AuthenticationConfigError(message, exit_code=code)
 
 
 def run_command(ctx: typer.Context, operation: Callable[[], T]) -> T:
@@ -62,14 +100,15 @@ def run_command(ctx: typer.Context, operation: Callable[[], T]) -> T:
 
     try:
         return operation()
+    except CliError as exc:
+        render_cli_error(exc, console=console, verbose=get_settings(ctx).verbose)
+        raise typer.Exit(exc.exit_code) from exc
     except typer.Exit:
         raise
     except Exception as exc:
-        if get_settings(ctx).verbose:
-            console.print_exception()
-        else:
-            console.print(f"[red]Error:[/] {exc}")
-        raise typer.Exit(1) from exc
+        error = error_from_exception(exc)
+        render_cli_error(error, console=console, verbose=get_settings(ctx).verbose)
+        raise typer.Exit(error.exit_code) from exc
 
 
 def authenticate_client(ctx: typer.Context, client: Any) -> Any:

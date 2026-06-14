@@ -1,17 +1,9 @@
 from __future__ import annotations
 
 import pytest
-from secret_type.exceptions import SecretException
 
-from ksef2_cli.local_config import (
-    LocalConfig,
-    default_config_path,
-    load_local_config,
-    render_local_config,
-    resolve_config_path,
-    secret_value,
-    write_local_config,
-)
+from ksef2_cli.config import secret_value, LocalConfig, default_config_path, resolve_config_path, load_local_config, \
+    write_local_config, render_local_config
 
 
 def test_local_config_loads_auth_defaults(tmp_path) -> None:
@@ -58,21 +50,20 @@ def test_local_config_serializes_secret_values() -> None:
         p12_password="p12-secret",
     )
 
-    assert config.as_dict()["token"] == "secr...oken"
-    with pytest.raises(SecretException, match="Secrets cannot be examined"):
-        str(config.token)
-    assert config.as_dict()["key_password"] == "***"
-    assert config.as_dict(redact_token=False)["token"] == "secret-token"
+    assert str(config.token) == "**********"
 
     data = config.model_dump(mode="json", exclude_none=True)
-    assert data["token"] == "secret-token"
-    assert data["key_password"] == "key-secret"
-    assert data["p12_password"] == "p12-secret"
+    assert data["token"] == "**********"
+    assert data["key_password"] == "**********"
+    assert data["p12_password"] == "**********"
 
     rendered = render_local_config(config)
-    assert 'token = "secret-token"' in rendered
-    assert 'key_password = "key-secret"' in rendered
-    assert 'p12_password = "p12-secret"' in rendered
+    assert 'token = "**********"' in rendered
+    assert 'key_password = "**********"' in rendered
+    assert 'p12_password = "**********"' in rendered
+    assert "secret-token" not in rendered
+    assert "key-secret" not in rendered
+    assert "p12-secret" not in rendered
 
 
 def test_local_config_missing_file_returns_empty(tmp_path) -> None:
