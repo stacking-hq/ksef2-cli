@@ -6,8 +6,7 @@ from typing import Annotated, Any
 
 import typer
 
-from ksef2_cli.context import run_client, run_command
-from ksef2_cli.rendering import _render
+from ksef2_cli.context import run_client, run_and_render
 
 app = typer.Typer(help='Read public KSeF encryption certificates.')
 
@@ -28,7 +27,4 @@ def encryption_certificates(
             lambda client: client.encryption.get_certificates(usage=usage or None),
         )
 
-    _render(
-        ctx,
-        run_command(ctx, operation),
-    )
+    run_and_render(ctx, operation)

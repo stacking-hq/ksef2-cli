@@ -7,8 +7,7 @@ from typing import Annotated, Any
 
 import typer
 
-from ksef2_cli.context import run_client, run_command
-from ksef2_cli.rendering import _render
+from ksef2_cli.context import run_client, run_and_render
 
 app = typer.Typer(help='Manage TEST-environment test data.')
 
@@ -48,7 +47,7 @@ def testdata_create_subject(
         )
         return {"nip": nip, "created": "true"}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("delete-subject")
@@ -62,7 +61,7 @@ def testdata_delete_subject(
         run_client(ctx, lambda client: client.testdata.delete_subject(nip=nip))
         return {"nip": nip, "deleted": "true"}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("create-person")
@@ -89,7 +88,7 @@ def testdata_create_person(
         )
         return {"nip": nip, "pesel": pesel, "created": "true"}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("delete-person")
@@ -103,7 +102,7 @@ def testdata_delete_person(
         run_client(ctx, lambda client: client.testdata.delete_person(nip=nip))
         return {"nip": nip, "deleted": "true"}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("enable-attachments")
@@ -117,7 +116,7 @@ def testdata_enable_attachments(
         run_client(ctx, lambda client: client.testdata.enable_attachments(nip=nip))
         return {"nip": nip, "attachments": "enabled"}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("revoke-attachments")
@@ -136,7 +135,7 @@ def testdata_revoke_attachments(
         )
         return {"nip": nip, "expected_end_date": expected_end_date, "attachments": "revoked"}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("block-context")
@@ -154,7 +153,7 @@ def testdata_block_context(
         run_client(ctx, lambda client: client.testdata.block_context(context=context))
         return {"context_type": context_type, "context_value": context_value, "blocked": "true"}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("unblock-context")
@@ -172,7 +171,7 @@ def testdata_unblock_context(
         run_client(ctx, lambda client: client.testdata.unblock_context(context=context))
         return {"context_type": context_type, "context_value": context_value, "blocked": "false"}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("grant-permissions")
@@ -205,7 +204,7 @@ def testdata_grant_permissions(
         )
         return {"grant_to": grant_to, "in_context_of": in_context_of, "permissions": permissions}
 
-    _render(ctx, run_command(ctx, operation), items_key="permissions")
+    run_and_render(ctx, operation, items_key="permissions")
 
 
 @app.command("revoke-permissions")
@@ -232,4 +231,4 @@ def testdata_revoke_permissions(
         )
         return {"revoke_from": revoke_from, "in_context_of": in_context_of, "revoked": "true"}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)

@@ -7,8 +7,7 @@ from typing import Annotated, Any
 
 import typer
 
-from ksef2_cli.context import run_authenticated, run_command
-from ksef2_cli.rendering import _render
+from ksef2_cli.context import run_authenticated, run_and_render
 from ksef2_cli.sdk_models import _offset_params
 
 app = typer.Typer(help='Manage MCU certificates.')
@@ -21,7 +20,7 @@ def certificates_limits(ctx: typer.Context) -> None:
     def operation() -> Any:
         return run_authenticated(ctx, lambda auth: auth.certificates.get_limits())
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("enrollment-data")
@@ -31,7 +30,7 @@ def certificates_enrollment_data(ctx: typer.Context) -> None:
     def operation() -> Any:
         return run_authenticated(ctx, lambda auth: auth.certificates.get_enrollment_data())
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("enroll")
@@ -56,7 +55,7 @@ def certificates_enroll(
             ),
         )
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("enrollment-status")
@@ -72,7 +71,7 @@ def certificates_enrollment_status(
             lambda auth: auth.certificates.get_enrollment_status(reference_number=reference_number),
         )
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("list")
@@ -118,11 +117,7 @@ def certificates_list(
 
         return run_authenticated(ctx, list_certificates)
 
-    _render(
-        ctx,
-        run_command(ctx, operation),
-        items_key="certificates",
-    )
+    run_and_render(ctx, operation, items_key="certificates")
 
 
 @app.command("retrieve")
@@ -151,11 +146,7 @@ def certificates_retrieve(
                 target.write_text(certificate.base64_encoded_certificate + "\n", encoding="utf-8")
         return result
 
-    _render(
-        ctx,
-        run_command(ctx, operation),
-        items_key="certificates",
-    )
+    run_and_render(ctx, operation, items_key="certificates")
 
 
 @app.command("revoke")
@@ -176,4 +167,4 @@ def certificates_revoke(
         )
         return {"serial_number": serial_number, "reason": reason, "revoked": "true"}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)

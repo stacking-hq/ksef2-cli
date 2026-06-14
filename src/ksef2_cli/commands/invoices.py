@@ -8,10 +8,9 @@ from typing import Annotated, Any
 import typer
 
 from ksef2_cli.config import FORM_SCHEMA_NAMES
-from ksef2_cli.context import run_authenticated, run_command
+from ksef2_cli.context import run_authenticated, run_and_render
 from ksef2_cli.io import _write_json
 from ksef2_cli.parsing import _parse_optional_bool, _safe_filename
-from ksef2_cli.rendering import _render
 from ksef2_cli.sdk_models import (
     _build_invoice_filter,
     _export_handle_to_dict,
@@ -88,11 +87,7 @@ def invoices_metadata(
 
         return run_authenticated(ctx, query_invoices)
 
-    _render(
-        ctx,
-        run_command(ctx, operation),
-        items_key="invoices",
-    )
+    run_and_render(ctx, operation, items_key="invoices")
 
 
 @app.command("download")
@@ -125,7 +120,7 @@ def invoices_download(
         target.write_bytes(content)
         return {"path": str(target), "bytes": len(content)}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("export")
@@ -181,7 +176,7 @@ def invoices_export(
             payload["handle_file"] = str(handle_file)
         return payload
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("export-status")
@@ -197,7 +192,7 @@ def invoices_export_status(
             lambda auth: auth.invoices.get_export_status(reference_number=reference_number),
         )
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("export-fetch")
@@ -239,7 +234,7 @@ def invoices_export_fetch(
             "paths": [str(path) for path in paths],
         }
 
-    _render(ctx, run_command(ctx, operation), items_key="paths")
+    run_and_render(ctx, operation, items_key="paths")
 
 
 @app.command("export-download")
@@ -309,4 +304,4 @@ def invoices_export_download(
             "paths": [str(path) for path in paths],
         }
 
-    _render(ctx, run_command(ctx, operation), items_key="paths")
+    run_and_render(ctx, operation, items_key="paths")

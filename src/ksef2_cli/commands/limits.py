@@ -8,8 +8,7 @@ from typing import Annotated, Any
 import typer
 from pydantic import BaseModel
 
-from ksef2_cli.context import read_model, run_authenticated, run_command
-from ksef2_cli.rendering import _render
+from ksef2_cli.context import read_model, run_authenticated, run_and_render
 
 app = typer.Typer(help='Read and manage effective KSeF limits.')
 
@@ -33,7 +32,7 @@ def limits_get(
 
         return run_authenticated(ctx, read_limits)
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("set")
@@ -64,7 +63,7 @@ def limits_set(
         )
         return {"kind": kind, "updated": "true"}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("reset")
@@ -88,7 +87,7 @@ def limits_reset(
         run_authenticated(ctx, reset_limits)
         return {"kind": kind, "reset": "true"}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("production-rate-limits")
@@ -99,4 +98,4 @@ def limits_production_rate_limits(ctx: typer.Context) -> None:
         run_authenticated(ctx, lambda auth: auth.limits.set_production_rate_limits())
         return {"api_rate_limits": "production"}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)

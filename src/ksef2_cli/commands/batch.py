@@ -8,10 +8,9 @@ from typing import Annotated, Any
 import typer
 
 from ksef2_cli.config import FORM_SCHEMA_NAMES
-from ksef2_cli.context import run_authenticated, run_command
+from ksef2_cli.context import run_authenticated, run_and_render
 from ksef2_cli.io import _write_json
 from ksef2_cli.parsing import _parse_form_schema
-from ksef2_cli.rendering import _render
 from ksef2_cli.sdk_models import _batch_session_ref
 
 app = typer.Typer(help='Submit and inspect batch invoice sessions.')
@@ -59,7 +58,7 @@ def batch_submit(
             _write_json(state_file, state)
         return {"state_file": str(state_file) if state_file else None, "state": state, "status": status}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("status")
@@ -87,7 +86,7 @@ def batch_status(
 
         return run_authenticated(ctx, get_batch_status)
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("list")
@@ -119,11 +118,7 @@ def batch_list(
 
         return run_authenticated(ctx, list_batch_invoices)
 
-    _render(
-        ctx,
-        run_command(ctx, operation),
-        items_key="invoices",
-    )
+    run_and_render(ctx, operation, items_key="invoices")
 
 
 @app.command("upo")
@@ -146,4 +141,4 @@ def batch_upo(
         output_file.write_bytes(content)
         return {"path": str(output_file), "bytes": len(content)}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)

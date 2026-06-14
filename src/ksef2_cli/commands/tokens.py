@@ -6,8 +6,7 @@ from typing import Annotated, Any
 
 import typer
 
-from ksef2_cli.context import run_authenticated, run_command
-from ksef2_cli.rendering import _render
+from ksef2_cli.context import run_authenticated, run_and_render
 
 app = typer.Typer(help='Manage KSeF authorization tokens.')
 
@@ -31,7 +30,7 @@ def tokens_generate(
             lambda auth: auth.tokens.generate(permissions=permission, description=description),
         )
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("list")
@@ -64,11 +63,7 @@ def tokens_list(
 
         return run_authenticated(ctx, list_tokens)
 
-    _render(
-        ctx,
-        run_command(ctx, operation),
-        items_key="tokens",
-    )
+    run_and_render(ctx, operation, items_key="tokens")
 
 
 @app.command("status")
@@ -84,7 +79,7 @@ def tokens_status(
             lambda auth: auth.tokens.status(reference_number=reference_number),
         )
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("revoke")
@@ -101,4 +96,4 @@ def tokens_revoke(
         )
         return {"reference_number": reference_number, "revoked": "true"}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)

@@ -6,9 +6,8 @@ from typing import Annotated
 
 import typer
 
-from ksef2_cli.context import fail, get_settings, run_command
+from ksef2_cli.context import fail, get_settings, run_and_render
 from ksef2_cli.config import LocalConfig, load_local_config, write_local_config
-from ksef2_cli.rendering import _render
 
 app = typer.Typer(help="Inspect and create local CLI defaults.")
 
@@ -25,7 +24,7 @@ def config_path(ctx: typer.Context) -> None:
             "loaded": settings.config_loaded,
         }
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("show")
@@ -41,7 +40,7 @@ def config_show(ctx: typer.Context) -> None:
             "auth": config.model_dump(mode="json", exclude_none=False),
         }
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("init")
@@ -65,4 +64,4 @@ def config_init(
             "auth": config.model_dump(mode="json", exclude_none=False),
         }
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)

@@ -8,10 +8,9 @@ from typing import Annotated, Any
 import typer
 
 from ksef2_cli.config import FORM_SCHEMA_NAMES
-from ksef2_cli.context import run_authenticated, run_command
+from ksef2_cli.context import run_authenticated, run_and_render
 from ksef2_cli.io import _write_json
 from ksef2_cli.parsing import _parse_form_schema
-from ksef2_cli.rendering import _render
 from ksef2_cli.sdk_models import _state_from_file
 
 app = typer.Typer(help='Open, resume, and operate online invoice sessions.')
@@ -35,7 +34,7 @@ def online_open(
             _write_json(state_file, state)
         return {"state_file": str(state_file) if state_file else None, "state": state}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("send")
@@ -92,7 +91,7 @@ def online_send(
             "results": results,
         }
 
-    _render(ctx, run_command(ctx, operation), items_key="results")
+    run_and_render(ctx, operation, items_key="results")
 
 
 @app.command("status")
@@ -108,7 +107,7 @@ def online_status(
             lambda auth: auth.resume_online_session(_state_from_file(state_file)).get_status(),
         )
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("list")
@@ -130,11 +129,7 @@ def online_list(
 
         return run_authenticated(ctx, list_session_invoices)
 
-    _render(
-        ctx,
-        run_command(ctx, operation),
-        items_key="invoices",
-    )
+    run_and_render(ctx, operation, items_key="invoices")
 
 
 @app.command("invoice-status")
@@ -161,7 +156,7 @@ def online_invoice_status(
 
         return run_authenticated(ctx, get_session_invoice_status)
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("upo")
@@ -190,7 +185,7 @@ def online_upo(
         output_file.write_bytes(content)
         return {"path": str(output_file), "bytes": len(content)}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)
 
 
 @app.command("close")
@@ -205,4 +200,4 @@ def online_close(
         run_authenticated(ctx, lambda auth: auth.resume_online_session(state).close())
         return {"reference_number": state.reference_number, "closed": "true"}
 
-    _render(ctx, run_command(ctx, operation))
+    run_and_render(ctx, operation)

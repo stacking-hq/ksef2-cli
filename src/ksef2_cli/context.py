@@ -28,6 +28,7 @@ ENVIRONMENT_MAPPING = {
     EnvironmentName.test: Environment.TEST,
 }
 
+
 @dataclass(frozen=True)
 class AuthenticatedContext:
     """An SDK client paired with its authenticated SDK facade."""
@@ -81,6 +82,17 @@ def run_client_command(
     def operation() -> T:
         with use_client(ctx) as client:
             return command(client)
+
+    run_and_render(ctx, operation, items_key=items_key)
+
+
+def run_and_render(
+    ctx: typer.Context,
+    operation: Callable[[], T],
+    *,
+    items_key: str | None = None,
+) -> None:
+    """Run command work with error handling and render the result."""
 
     _render(
         ctx,
