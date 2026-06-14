@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import pytest
+from secret_type.exceptions import SecretException
 
 from ksef2_cli.local_config import (
     LocalConfig,
     default_config_path,
     load_local_config,
+    render_local_config,
     resolve_config_path,
+    secret_value,
     write_local_config,
 )
 
@@ -33,13 +36,43 @@ def test_local_config_loads_auth_defaults(tmp_path) -> None:
     config = load_local_config(config_path)
 
     assert config.nip == "5261040828"
-    assert config.token == "secret-token"
+    assert config.token is not None
+    assert secret_value(config.token) == "secret-token"
     assert config.context_type == "nip"
     assert str(config.cert).endswith("cert.pem")
     assert str(config.key).endswith("key.pem")
     assert str(config.p12).endswith("auth.p12")
+    assert config.key_password is not None
+    assert secret_value(config.key_password) == "secret"
+    assert config.p12_password is not None
+    assert secret_value(config.p12_password) == "p12-secret"
     assert config.poll_interval == 1.5
     assert config.max_poll_attempts == 12
+
+
+def test_local_config_serializes_secret_values() -> None:
+    config = LocalConfig(
+        nip="5261040828",
+        token="secret-token",
+        key_password="key-secret",
+        p12_password="p12-secret",
+    )
+
+    assert config.as_dict()["token"] == "secr...oken"
+    with pytest.raises(SecretException, match="Secrets cannot be examined"):
+        str(config.token)
+    assert config.as_dict()["key_password"] == "***"
+    assert config.as_dict(redact_token=False)["token"] == "secret-token"
+
+    data = config.model_dump(mode="json", exclude_none=True)
+    assert data["token"] == "secret-token"
+    assert data["key_password"] == "key-secret"
+    assert data["p12_password"] == "p12-secret"
+
+    rendered = render_local_config(config)
+    assert 'token = "secret-token"' in rendered
+    assert 'key_password = "key-secret"' in rendered
+    assert 'p12_password = "p12-secret"' in rendered
 
 
 def test_local_config_missing_file_returns_empty(tmp_path) -> None:
@@ -60,7 +93,11 @@ def test_write_local_config_refuses_overwrite_without_force(tmp_path) -> None:
 def test_invalid_config_shapes_raise_value_error(tmp_path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text("[auth]\nnip = 123\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="auth.nip must be a string"):
+    with pytest.raises(ValueError, match="Input should be a valid string"):
+        load_local_config(config_path)
+
+    config_path.write_text("[auth]\ntoken = 123\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Input should be a valid string"):
         load_local_config(config_path)
 
     config_path.write_text("auth = 123\n", encoding="utf-8")
@@ -68,7 +105,7 @@ def test_invalid_config_shapes_raise_value_error(tmp_path) -> None:
         load_local_config(config_path)
 
     config_path.write_text("[auth]\nmax_poll_attempts = 1.2\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="must be an integer"):
+    with pytest.raises(ValueError, match="Input should be a valid integer"):
         load_local_config(config_path)
 
 

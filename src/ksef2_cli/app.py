@@ -23,7 +23,7 @@ from ksef2_cli.commands import (
     tokens,
 )
 from ksef2_cli.config import EnvironmentName, OutputMode, RuntimeOverrides, Settings
-from ksef2_cli.local_config import load_local_config, resolve_config_path
+from ksef2_cli.local_config import load_local_config, resolve_config_path, secret_value
 
 app = typer.Typer(
     help="Command-line interface for Poland's KSeF v2 API using the ksef2 SDK.",
@@ -175,14 +175,14 @@ def root(
         output=OutputMode.json if json_output else output,
         verbose=verbose,
         nip=nip or (local_config.nip if local_config else None),
-        token=token or (local_config.token if local_config else None),
+        token=token or (secret_value(local_config.token) if local_config else None),
         context_type=context_type or (local_config.context_type if local_config else None) or "nip",
         test_certificate=test_certificate,
         cert=cert or (local_config.cert if local_config else None),
         key=key or (local_config.key if local_config else None),
-        key_password=key_password or (local_config.key_password if local_config else None),
+        key_password=key_password or (secret_value(local_config.key_password) if local_config else None),
         p12=p12 or (local_config.p12 if local_config else None),
-        p12_password=p12_password or (local_config.p12_password if local_config else None),
+        p12_password=p12_password or (secret_value(local_config.p12_password) if local_config else None),
         poll_interval=poll_interval or (local_config.poll_interval if local_config else None) or 1.0,
         max_poll_attempts=max_poll_attempts or (local_config.max_poll_attempts if local_config else None) or 60,
         runtime_overrides=runtime_overrides,
