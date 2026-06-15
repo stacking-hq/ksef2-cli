@@ -125,21 +125,14 @@ def test_run_authenticated_enters_client_context() -> None:
 
 
 def test_run_command_formats_errors(capsys) -> None:
-    ctx = ctx_for(settings())
+    ctx = ctx_for(settings(output=OutputMode.text))
 
-    assert context.run_command(ctx, lambda: "ok") == "ok"
+    context.run_command(ctx, lambda: "ok")
+    assert capsys.readouterr().out == "ok\n"
 
     with pytest.raises(typer.Exit):
         context.run_command(ctx, lambda: (_ for _ in ()).throw(ValueError("bad input")))
     assert "bad input" in capsys.readouterr().err
-
-
-def test_run_and_render_formats_success(capsys) -> None:
-    ctx = ctx_for(settings(output=OutputMode.text))
-
-    context.run_and_render(ctx, lambda: {"items": [{"name": "demo"}]}, items_key="items")
-
-    assert capsys.readouterr().out == "name=demo\n"
 
 
 def test_credential_loader_wrappers(tmp_path) -> None:

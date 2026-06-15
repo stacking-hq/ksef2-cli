@@ -10,14 +10,15 @@ import pytest
 from pydantic import BaseModel
 
 from conftest import settings
-from ksef2_cli.config import OutputMode
+from ksef2_cli.config import LocalConfig, OutputMode
 from ksef2_cli.io import _read_json, _read_model, _write_json
 from ksef2_cli.parsing import _parse_form_schema, _parse_optional_bool, _safe_filename
 from ksef2_cli.rendering import (
     _cell,
     _plain_text,
-    _render,
     _to_jsonable,
+    collection,
+    render,
 )
 from ksef2_cli.sdk_models import (
     _batch_session_ref,
@@ -35,6 +36,11 @@ class DemoEnum(Enum):
 
 class DemoModel(BaseModel):
     name: str
+
+
+class DemoPage(BaseModel):
+    rows: list[DemoModel]
+    has_more: bool
 
 
 @dataclass
@@ -85,6 +91,7 @@ def test_rendering_converts_supported_types(capsys, tmp_path) -> None:
             "enum": DemoEnum.value,
             "path": tmp_path / "file.txt",
             "date": date(2026, 1, 2),
+            "config": LocalConfig(nip="5261040828", token="secret-token"),
         }
     )
 
@@ -93,11 +100,12 @@ def test_rendering_converts_supported_types(capsys, tmp_path) -> None:
     assert value["enum"] == "value"
     assert value["path"].endswith("file.txt")
     assert value["date"] == "2026-01-02"
+    assert value["config"]["token"] == "**********"
 
     ctx = type("Ctx", (), {"obj": settings(output=OutputMode.text)})()
-    _render(ctx, {"rows": [{"name": "a", "extra": "b"}], "count": 1})
-    _render(ctx, {"name": "demo"})
-    _render(ctx, "plain")
+    render(ctx, {"rows": [{"name": "a", "extra": "b"}], "count": 1})
+    render(ctx, {"name": "demo"})
+    render(ctx, "plain")
     output = capsys.readouterr().out
     assert "Rows" not in output
     assert "rows: " in output
@@ -113,6 +121,15 @@ def test_rendering_small_helpers() -> None:
     assert _cell(True) == "yes"
     assert _cell(False) == "no"
     assert _cell({"a": 1}) == '{"a":1}'
+
+
+def test_rendering_uses_typed_collection_shape(capsys) -> None:
+    ctx = type("Ctx", (), {"obj": settings(output=OutputMode.text)})()
+
+    render(ctx, DemoPage(rows=[DemoModel(name="a")], has_more=False))
+    render(ctx, collection({"rows": [{"name": "b"}], "count": 1}, [{"name": "b"}]))
+
+    assert capsys.readouterr().out == "name=a\nname=b\n"
 
 
 def test_invoice_filter_and_pagination_models() -> None:

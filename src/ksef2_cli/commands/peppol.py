@@ -6,7 +6,7 @@ from typing import Annotated, Any
 
 import typer
 
-from ksef2_cli.context import run_client, run_and_render
+from ksef2_cli.context import run_client, run_command
 from ksef2_cli.sdk_models import (
     _offset_params,
 )
@@ -33,4 +33,4 @@ def peppol_providers(
 
         return run_client(ctx, query_providers)
 
-    run_and_render(ctx, operation, items_key="providers")
+    run_command(ctx, operation)

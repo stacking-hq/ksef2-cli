@@ -17,7 +17,7 @@ from ksef2_cli.exceptions import (
     error_from_exception,
     render_cli_error,
 )
-from ksef2_cli.rendering import _render, console
+from ksef2_cli.rendering import render, console
 
 AuthMethod = Literal["token", "test_certificate", "p12", "pem"]
 T = TypeVar("T")
@@ -74,8 +74,6 @@ def run_client(ctx: typer.Context, operation: Callable[[Any], T]) -> T:
 def run_client_command(
     ctx: typer.Context,
     command: Callable[[Client], T],
-    *,
-    items_key: str | None = None,
 ) -> None:
     """Run SDK client work with command error handling and result rendering."""
 
@@ -83,22 +81,7 @@ def run_client_command(
         with use_client(ctx) as client:
             return command(client)
 
-    run_and_render(ctx, operation, items_key=items_key)
-
-
-def run_and_render(
-    ctx: typer.Context,
-    operation: Callable[[], T],
-    *,
-    items_key: str | None = None,
-) -> None:
-    """Run command work with error handling and render the result."""
-
-    _render(
-        ctx,
-        run_command(ctx, operation),
-        items_key=items_key,
-    )
+    run_command(ctx, operation)
 
 
 def fail(message: str, *, code: int = 1) -> None:
@@ -107,11 +90,11 @@ def fail(message: str, *, code: int = 1) -> None:
     raise AuthenticationConfigError(message, exit_code=code)
 
 
-def run_command(ctx: typer.Context, operation: Callable[[], T]) -> T:
-    """Run command work with consistent CLI error formatting."""
+def run_command(ctx: typer.Context, operation: Callable[[], T]) -> None:
+    """Run command work with consistent error formatting and result rendering."""
 
     try:
-        return operation()
+        render(ctx, operation())
     except CliError as exc:
         render_cli_error(exc, console=console, verbose=get_settings(ctx).verbose)
         raise typer.Exit(exc.exit_code) from exc

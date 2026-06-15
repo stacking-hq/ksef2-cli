@@ -46,10 +46,10 @@ src/ksef2_cli/
 1. `app.py` builds the root `Typer` app and stores global `Settings` on `ctx.obj`.
 2. A command module receives `ctx: typer.Context`.
 3. `app.py` merges CLI options, environment variables, and local config defaults.
-4. Commands with local file or multi-step work define a zero-argument `operation` and pass it to `run_and_render(ctx, operation)`.
+4. Commands with local file or multi-step work define a zero-argument `operation` and pass it to `run_command(ctx, operation)`.
 5. Authenticated operations call `run_authenticated(ctx, operation)` from `context.py`; use `get_authenticated_client(ctx)` only when a command truly needs direct access to the SDK client lifecycle.
 6. Public commands call `run_client_command(ctx, command)` when they only need a root SDK client.
-7. Human output is plain text by default; `--json` emits formatted JSON for scripts.
+7. Human output is plain text by default; `--json` emits formatted JSON for scripts. The renderer preserves Pydantic/dataclass types until the final formatting step.
 
 ## Adding a Command
 

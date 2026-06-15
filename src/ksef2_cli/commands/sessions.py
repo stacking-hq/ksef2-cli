@@ -6,7 +6,7 @@ from typing import Annotated, Any
 
 import typer
 
-from ksef2_cli.context import run_authenticated, run_and_render
+from ksef2_cli.context import run_authenticated, run_command
 
 app = typer.Typer(help='Inspect authentication and historical invoice sessions.')
 
@@ -29,7 +29,7 @@ def sessions_auth_list(
 
         return run_authenticated(ctx, list_sessions)
 
-    run_and_render(ctx, operation, items_key="items")
+    run_command(ctx, operation)
 
 
 @app.command("auth-close")
@@ -46,7 +46,7 @@ def sessions_auth_close(
         )
         return {"reference_number": reference_number, "closed": "true"}
 
-    run_and_render(ctx, operation)
+    run_command(ctx, operation)
 
 
 @app.command("auth-terminate-current")
@@ -57,7 +57,7 @@ def sessions_auth_terminate_current(ctx: typer.Context) -> None:
         run_authenticated(ctx, lambda auth: auth.sessions.terminate_current())
         return {"terminated_current": "true"}
 
-    run_and_render(ctx, operation)
+    run_command(ctx, operation)
 
 
 @app.command("invoice-list")
@@ -88,4 +88,4 @@ def sessions_invoice_list(
 
         return run_authenticated(ctx, list_invoice_sessions)
 
-    run_and_render(ctx, operation, items_key="sessions")
+    run_command(ctx, operation)

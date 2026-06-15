@@ -8,7 +8,7 @@ from typing import Annotated, Any
 import typer
 from pydantic import BaseModel
 
-from ksef2_cli.context import read_model, run_authenticated, run_and_render
+from ksef2_cli.context import read_model, run_authenticated, run_command
 from ksef2_cli.sdk_models import _offset_params
 
 app = typer.Typer(help='Grant, query, and revoke permissions.')
@@ -21,7 +21,7 @@ def permissions_attachment_status(ctx: typer.Context) -> None:
     def operation() -> Any:
         return run_authenticated(ctx, lambda auth: auth.permissions.get_attachment_permission_status())
 
-    run_and_render(ctx, operation)
+    run_command(ctx, operation)
 
 
 @app.command("operation-status")
@@ -37,7 +37,7 @@ def permissions_operation_status(
             lambda auth: auth.permissions.get_operation_status(reference_number=reference_number),
         )
 
-    run_and_render(ctx, operation)
+    run_command(ctx, operation)
 
 
 @app.command("entity-roles")
@@ -54,7 +54,7 @@ def permissions_entity_roles(
             lambda auth: auth.permissions.get_entity_roles(params=_offset_params(page_size, page_offset)),
         )
 
-    run_and_render(ctx, operation, items_key="roles")
+    run_command(ctx, operation)
 
 
 @app.command("grant-person")
@@ -84,7 +84,7 @@ def permissions_grant_person(
             ),
         )
 
-    run_and_render(ctx, operation)
+    run_command(ctx, operation)
 
 
 @app.command("grant-entity")
@@ -114,7 +114,7 @@ def permissions_grant_entity(
             ),
         )
 
-    run_and_render(ctx, operation)
+    run_command(ctx, operation)
 
 
 @app.command("grant-authorization")
@@ -140,7 +140,7 @@ def permissions_grant_authorization(
             ),
         )
 
-    run_and_render(ctx, operation)
+    run_command(ctx, operation)
 
 
 @app.command("grant-indirect")
@@ -174,7 +174,7 @@ def permissions_grant_indirect(
             ),
         )
 
-    run_and_render(ctx, operation)
+    run_command(ctx, operation)
 
 
 @app.command("grant-subunit")
@@ -206,7 +206,7 @@ def permissions_grant_subunit(
             ),
         )
 
-    run_and_render(ctx, operation)
+    run_command(ctx, operation)
 
 
 @app.command("grant-eu-entity")
@@ -230,7 +230,7 @@ def permissions_grant_eu_entity(
             ),
         )
 
-    run_and_render(ctx, operation)
+    run_command(ctx, operation)
 
 
 @app.command("grant-eu-admin")
@@ -256,7 +256,7 @@ def permissions_grant_eu_admin(
             ),
         )
 
-    run_and_render(ctx, operation)
+    run_command(ctx, operation)
 
 
 @app.command("query")
@@ -282,19 +282,19 @@ def permissions_query(
         SubunitPermissionsQuery,
     )
 
-    query_map: dict[str, tuple[type[BaseModel], str, str]] = {
-        "entities": (EntityPermissionsQuery, "query_entities", "permissions"),
-        "persons": (PersonPermissionsQuery, "query_persons", "permissions"),
-        "authorizations": (AuthorizationPermissionsQuery, "query_authorizations", "authorization_grants"),
-        "personal": (PersonalPermissionsQuery, "query_personal", "permissions"),
-        "eu-entities": (EuEntityPermissionsQuery, "query_eu_entities", "permissions"),
-        "subordinate-entities": (SubordinateEntityRolesQuery, "query_subordinate_entities", "roles"),
-        "subunits": (SubunitPermissionsQuery, "query_subunits", "permissions"),
+    query_map: dict[str, tuple[type[BaseModel], str]] = {
+        "entities": (EntityPermissionsQuery, "query_entities"),
+        "persons": (PersonPermissionsQuery, "query_persons"),
+        "authorizations": (AuthorizationPermissionsQuery, "query_authorizations"),
+        "personal": (PersonalPermissionsQuery, "query_personal"),
+        "eu-entities": (EuEntityPermissionsQuery, "query_eu_entities"),
+        "subordinate-entities": (SubordinateEntityRolesQuery, "query_subordinate_entities"),
+        "subunits": (SubunitPermissionsQuery, "query_subunits"),
     }
 
     def operation() -> Any:
         try:
-            model_type, method_name, _items_key = query_map[kind]
+            model_type, method_name = query_map[kind]
         except KeyError as exc:
             raise ValueError(f"Unsupported query kind: {kind}") from exc
         query = read_model(ctx, payload_file, model_type)
@@ -306,8 +306,7 @@ def permissions_query(
             ),
         )
 
-    items_key = query_map.get(kind, (None, None, None))[2]
-    run_and_render(ctx, operation, items_key=items_key)
+    run_command(ctx, operation)
 
 
 @app.command("revoke-common")
@@ -323,7 +322,7 @@ def permissions_revoke_common(
             lambda auth: auth.permissions.revoke_common(permission_id=permission_id),
         )
 
-    run_and_render(ctx, operation)
+    run_command(ctx, operation)
 
 
 @app.command("revoke-authorization")
@@ -339,4 +338,4 @@ def permissions_revoke_authorization(
             lambda auth: auth.permissions.revoke_authorization(permission_id=permission_id),
         )
 
-    run_and_render(ctx, operation)
+    run_command(ctx, operation)
