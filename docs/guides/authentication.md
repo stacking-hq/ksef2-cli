@@ -5,11 +5,33 @@ description: Configure KSeF2 CLI authentication with tokens, TEST certificates, 
 
 Authenticated commands create an SDK client for one operation, authenticate it
 with the selected method, run the command, and close the client. Authentication
-settings are global options, so they must appear before the command group.
+settings usually come from the active profile. Direct global options are also
+supported and must appear before the command group.
+
+## Profiles for local work
+
+Create one profile per KSeF subject/context:
+
+```bash
+uv run ksef2 profile create demo-client \
+  --env test \
+  --nip 6880313213 \
+  --cert /path/accountant-auth-cert.pem \
+  --key /path/accountant-auth-key.pem
+```
+
+After that, authenticated commands can omit the repeated global auth options:
+
+```bash
+uv run ksef2 invoices metadata --role buyer --date-from 2026-01-01T00:00:00Z
+```
+
+Use `--profile NAME` for one command or `KSEF2_PROFILE` for the current shell.
 
 ## Choose one method
 
-Provide exactly one authentication method:
+Provide exactly one authentication method, either in the selected profile or in
+direct global options:
 
 | Method | Options | Environment variables |
 | --- | --- | --- |
@@ -95,6 +117,7 @@ order:
 
 1. CLI option
 2. Environment variable
-3. Local config file
+3. Selected profile
+4. Built-in default
 
-Use `--no-config` to ignore local config defaults for one invocation.
+Use `--no-config` to ignore profiles for one invocation.

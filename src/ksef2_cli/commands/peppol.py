@@ -1,17 +1,15 @@
 """Public PEPPOL provider command group."""
 
-from __future__ import annotations
-
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
+from ksef2 import Client
+from ksef2.domain.models.pagination import OffsetPaginationParams
+from ksef2.domain.models.peppol import ListPeppolProvidersResponse, PeppolProvider
 
-from ksef2_cli.context import run_client, run_command
-from ksef2_cli.sdk_models import (
-    _offset_params,
-)
+from ksef2_cli.context import run_client_command
 
-app = typer.Typer(help='Query public PEPPOL providers.')
+app = typer.Typer(help="Query public PEPPOL providers.")
 
 
 @app.command("providers")
@@ -23,14 +21,13 @@ def peppol_providers(
 ) -> None:
     """List PEPPOL providers."""
 
-    def operation() -> Any:
-        params = _offset_params(page_size, page_offset)
+    def query_providers(
+        client: Client,
+    ) -> ListPeppolProvidersResponse | list[PeppolProvider]:
+        params = OffsetPaginationParams(page_size=page_size, page_offset=page_offset)
 
-        def query_providers(client: Any) -> Any:
-            if all_pages:
-                return list(client.peppol.all(params=params))
-            return client.peppol.query(params=params)
+        if all_pages:
+            return list(client.peppol.all(params=params))
+        return client.peppol.query(params=params)
 
-        return run_client(ctx, query_providers)
-
-    run_command(ctx, operation)
+    run_client_command(ctx, query_providers)

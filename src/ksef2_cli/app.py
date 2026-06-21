@@ -1,29 +1,34 @@
 """Root Typer application and global option handling."""
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
+from ksef2.domain.models.auth import ContextIdentifierTypeEnum
+
 from ksef2_cli.commands import (
     auth,
-    batch,
     certificates,
     config as config_commands,
     encryption,
-    invoices,
     limits,
     online,
     peppol,
     permissions,
+    profile as profile_commands,
     sessions,
     testdata,
     tokens,
+    batch,
 )
-from ksef2_cli.config import EnvironmentName, OutputMode, RuntimeOverrides, Settings, secret_value, resolve_config_path, \
-    load_local_config
+from ksef2_cli.commands.invoices.group import app as invoices_app
+from ksef2_cli.config import (
+    EnvironmentName,
+    OutputMode,
+    RuntimeOverrides,
+    resolve_settings,
+)
 
 app = typer.Typer(
     help="Command-line interface for Poland's KSeF v2 API using the ksef2 SDK.",
@@ -32,13 +37,14 @@ app = typer.Typer(
 )
 
 app.add_typer(auth.app, name="auth")
-app.add_typer(invoices.app, name="invoices")
+app.add_typer(invoices_app, name="invoices")
 app.add_typer(online.app, name="online")
 app.add_typer(batch.app, name="batch")
 app.add_typer(tokens.app, name="tokens")
 app.add_typer(sessions.app, name="sessions")
 app.add_typer(certificates.app, name="certificates")
 app.add_typer(config_commands.app, name="config")
+app.add_typer(profile_commands.app, name="profile")
 app.add_typer(permissions.app, name="permissions")
 app.add_typer(limits.app, name="limits")
 app.add_typer(peppol.app, name="peppol")
@@ -50,13 +56,23 @@ app.add_typer(testdata.app, name="testdata")
 def root(
     context: typer.Context,
     environment: Annotated[
-        EnvironmentName,
-        typer.Option("--env", "-e", help="KSeF environment."),
-    ] = EnvironmentName.production,
+        EnvironmentName | None,
+        typer.Option(
+            "--env",
+            "-e",
+            help="KSeF environment. Defaults to the selected profile or production.",
+            show_default=False,
+        ),
+    ] = None,
     output: Annotated[
-        OutputMode,
-        typer.Option("--output", "-o", help="Output mode."),
-    ] = OutputMode.text,
+        OutputMode | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output mode. Defaults to text.",
+            show_default=False,
+        ),
+    ] = None,
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Shortcut for --output json."),
@@ -76,8 +92,12 @@ def root(
     ] = None,
     no_config: Annotated[
         bool,
-        typer.Option("--no-config", help="Ignore local config file defaults."),
+        typer.Option("--no-config", help="Ignore local config profiles."),
     ] = False,
+    profile: Annotated[
+        str | None,
+        typer.Option("--profile", help="Use a named profile for this invocation."),
+    ] = None,
     nip: Annotated[
         str | None,
         typer.Option("--nip", envvar="KSEF2_NIP", help="Taxpayer/context NIP."),
@@ -92,7 +112,7 @@ def root(
         ),
     ] = None,
     context_type: Annotated[
-        str | None,
+        ContextIdentifierTypeEnum | None,
         typer.Option(
             "--context-type",
             envvar="KSEF2_CONTEXT_TYPE",
@@ -155,39 +175,45 @@ def root(
     ] = None,
     poll_interval: Annotated[
         float | None,
-        typer.Option("--auth-poll-interval", min=0.1, help="Authentication polling interval."),
+        typer.Option(
+            "--auth-poll-interval", min=0.1, help="Authentication polling interval."
+        ),
     ] = None,
     max_poll_attempts: Annotated[
         int | None,
-        typer.Option("--auth-max-poll-attempts", min=1, help="Authentication polling attempts."),
+        typer.Option(
+            "--auth-max-poll-attempts", min=1, help="Authentication polling attempts."
+        ),
     ] = None,
 ) -> None:
-    runtime_overrides = context.obj if isinstance(context.obj, RuntimeOverrides) else None
-    resolved_config_file = resolve_config_path(config_file)
+    runtime_overrides = (
+        context.obj if isinstance(context.obj, RuntimeOverrides) else None
+    )
 
     try:
-        local_config = load_local_config(resolved_config_file) if not no_config else None
+        context.obj = resolve_settings(
+            environment=environment,
+            output=output,
+            json_output=json_output,
+            verbose=verbose,
+            config_file=config_file,
+            no_config=no_config,
+            profile=profile,
+            nip=nip,
+            token=token,
+            context_type=context_type,
+            test_certificate=test_certificate,
+            cert=cert,
+            key=key,
+            key_password=key_password,
+            p12=p12,
+            p12_password=p12_password,
+            poll_interval=poll_interval,
+            max_poll_attempts=max_poll_attempts,
+            runtime_overrides=runtime_overrides,
+        )
     except (OSError, ValueError) as exc:
         raise typer.BadParameter(str(exc), param_hint="--config") from exc
-    context.obj = Settings(
-        config_file=resolved_config_file,
-        config_loaded=bool(local_config and resolved_config_file.exists()),
-        environment=environment,
-        output=OutputMode.json if json_output else output,
-        verbose=verbose,
-        nip=nip or (local_config.nip if local_config else None),
-        token=token or (secret_value(local_config.token) if local_config else None),
-        context_type=context_type or (local_config.context_type if local_config else None) or "nip",
-        test_certificate=test_certificate,
-        cert=cert or (local_config.cert if local_config else None),
-        key=key or (local_config.key if local_config else None),
-        key_password=key_password or (secret_value(local_config.key_password) if local_config else None),
-        p12=p12 or (local_config.p12 if local_config else None),
-        p12_password=p12_password or (secret_value(local_config.p12_password) if local_config else None),
-        poll_interval=poll_interval or (local_config.poll_interval if local_config else None) or 1.0,
-        max_poll_attempts=max_poll_attempts or (local_config.max_poll_attempts if local_config else None) or 60,
-        runtime_overrides=runtime_overrides,
-    )
 
 
 def main() -> None:

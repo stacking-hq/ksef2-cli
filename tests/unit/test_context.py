@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -32,22 +30,39 @@ def test_select_auth_method_validates_required_and_conflicting_settings() -> Non
         context.select_auth_method(settings(cert=Path("cert.pem")))
 
     assert context.select_auth_method(settings(token="token")) == "token"
-    assert context.select_auth_method(settings(test_certificate=True)) == "test_certificate"
+    assert context.select_auth_method(settings(token_env="KSEF2_TOKEN")) == "token"
+    assert (
+        context.select_auth_method(settings(test_certificate=True))
+        == "test_certificate"
+    )
     assert context.select_auth_method(settings(p12=Path("auth.p12"))) == "p12"
-    assert context.select_auth_method(settings(cert=Path("cert.pem"), key=Path("key.pem"))) == "pem"
+    assert (
+        context.select_auth_method(settings(cert=Path("cert.pem"), key=Path("key.pem")))
+        == "pem"
+    )
 
 
-def test_authenticate_client_token_and_test_certificate() -> None:
+def test_authenticate_client_token_and_test_certificate(monkeypatch) -> None:
     auth = FakeService(
         with_token={"auth": "token"},
         with_test_certificate={"auth": "cert"},
     )
     client = FakeClient(authentication=auth)
 
-    assert context.authenticate_client(ctx_for(settings(token="token")), client) == {"auth": "token"}
+    assert context.authenticate_client(ctx_for(settings(token="token")), client) == {
+        "auth": "token"
+    }
     assert auth.called("with_token")["ksef_token"] == "token"
 
-    assert context.authenticate_client(ctx_for(settings(test_certificate=True)), client) == {"auth": "cert"}
+    monkeypatch.setenv("KSEF2_PROFILE_TOKEN", "profile-token")
+    assert context.authenticate_client(
+        ctx_for(settings(token_env="KSEF2_PROFILE_TOKEN")), client
+    ) == {"auth": "token"}
+    assert auth.calls[-1][2]["ksef_token"] == "profile-token"
+
+    assert context.authenticate_client(
+        ctx_for(settings(test_certificate=True)), client
+    ) == {"auth": "cert"}
     assert auth.called("with_test_certificate")["nip"] == "5261040828"
 
 
@@ -61,7 +76,10 @@ def test_authenticate_client_p12_and_pem() -> None:
                 p12=Path("auth.p12"),
                 p12_password="secret",
                 runtime_overrides=RuntimeOverrides(
-                    p12_credentials_loader=lambda path, password: ("p12-cert", "p12-key")
+                    p12_credentials_loader=lambda path, password: (
+                        "p12-cert",
+                        "p12-key",
+                    )
                 ),
             )
         ),
@@ -77,7 +95,10 @@ def test_authenticate_client_p12_and_pem() -> None:
                 key=Path("key.pem"),
                 key_password="secret",
                 runtime_overrides=RuntimeOverrides(
-                    pem_credentials_loader=lambda cert_path, key_path, key_password: ("pem-cert", "pem-key")
+                    pem_credentials_loader=lambda cert_path, key_path, key_password: (
+                        "pem-cert",
+                        "pem-key",
+                    )
                 ),
             )
         ),
@@ -104,7 +125,9 @@ def test_runtime_overrides_supply_fake_clients() -> None:
 
 def test_run_client_enters_client_context() -> None:
     client = FakeClient()
-    ctx = ctx_for(settings(runtime_overrides=RuntimeOverrides(client_factory=lambda: client)))
+    ctx = ctx_for(
+        settings(runtime_overrides=RuntimeOverrides(client_factory=lambda: client))
+    )
 
     assert context.run_client(ctx, lambda sdk_client: sdk_client) is client
     assert client.entered == 1
@@ -119,9 +142,42 @@ def test_run_authenticated_enters_client_context() -> None:
     )
     ctx = ctx_for(settings(runtime_overrides=overrides))
 
-    assert context.run_authenticated(ctx, lambda authenticated: authenticated["auth"]) is True
+    assert (
+        context.run_authenticated(ctx, lambda authenticated: authenticated["auth"])
+        is True
+    )
     assert client.entered == 1
     assert client.exited == 1
+
+
+def test_run_authenticated_command_validates_before_authentication(capsys) -> None:
+    client = FakeClient()
+    factory_called = False
+
+    def authenticated_factory():
+        nonlocal factory_called
+        factory_called = True
+        return SimpleNamespace(client=client, auth={})
+
+    ctx = ctx_for(
+        settings(
+            output=OutputMode.text,
+            runtime_overrides=RuntimeOverrides(
+                authenticated_client_factory=authenticated_factory
+            ),
+        )
+    )
+
+    with pytest.raises(typer.Exit):
+        context.run_authenticated_command(
+            ctx,
+            lambda _auth: "ok",
+            validate=lambda: (_ for _ in ()).throw(ValueError("bad input")),
+        )
+
+    assert "bad input" in capsys.readouterr().err
+    assert factory_called is False
+    assert client.entered == 0
 
 
 def test_run_command_formats_errors(capsys) -> None:

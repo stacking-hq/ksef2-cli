@@ -1,28 +1,27 @@
 """Local configuration command group."""
 
-from __future__ import annotations
-
 from typing import Annotated
 
 import typer
 
-from ksef2_cli.context import fail, get_settings, run_command
-from ksef2_cli.config import LocalConfig, load_local_config, write_local_config
+from ksef2_cli.context import get_settings, run_command
+from ksef2_cli.config import CliConfig, load_cli_config, write_cli_config
+from ksef2_cli.results import ConfigInitialized, ConfigPathResult, ConfigShowResult
 
-app = typer.Typer(help="Inspect and create local CLI defaults.")
+app = typer.Typer(help="Inspect and create the local CLI config file.")
 
 
 @app.command("path")
 def config_path(ctx: typer.Context) -> None:
     """Show the local config path used by this invocation."""
 
-    def operation() -> dict[str, object]:
+    def operation() -> ConfigPathResult:
         settings = get_settings(ctx)
-        return {
-            "path": str(settings.config_file),
-            "exists": settings.config_file.exists(),
-            "loaded": settings.config_loaded,
-        }
+        return ConfigPathResult(
+            path=settings.config_file,
+            exists=settings.config_file.exists(),
+            loaded=settings.config_loaded,
+        )
 
     run_command(ctx, operation)
 
@@ -31,14 +30,14 @@ def config_path(ctx: typer.Context) -> None:
 def config_show(ctx: typer.Context) -> None:
     """Show local config values."""
 
-    def operation() -> dict[str, object]:
+    def operation() -> ConfigShowResult:
         settings = get_settings(ctx)
-        config = load_local_config(settings.config_file)
-        return {
-            "path": str(settings.config_file),
-            "exists": settings.config_file.exists(),
-            "auth": config,
-        }
+        config = load_cli_config(settings.config_file)
+        return ConfigShowResult(
+            path=settings.config_file,
+            exists=settings.config_file.exists(),
+            config=config,
+        )
 
     run_command(ctx, operation)
 
@@ -46,22 +45,16 @@ def config_show(ctx: typer.Context) -> None:
 @app.command("init")
 def config_init(
     ctx: typer.Context,
-    nip: Annotated[str | None, typer.Option("--nip", help="Default taxpayer/context NIP.")] = None,
-    context_type: Annotated[str, typer.Option("--context-type", help="Default token-auth context type.")] = "nip",
-    force: Annotated[bool, typer.Option("--force", help="Overwrite an existing config file.")] = False,
+    force: Annotated[
+        bool, typer.Option("--force", help="Overwrite an existing config file.")
+    ] = False,
 ) -> None:
-    """Create a local config file with non-secret defaults."""
+    """Create an empty local config file."""
 
-    def operation() -> dict[str, object]:
+    def operation() -> ConfigInitialized:
         settings = get_settings(ctx)
-        if not nip:
-            fail("Provide --nip.")
-        config = LocalConfig(nip=nip, context_type=context_type)
-        write_local_config(settings.config_file, config, force=force)
-        return {
-            "path": str(settings.config_file),
-            "mode": "0600",
-            "auth": config,
-        }
+        config = CliConfig()
+        write_cli_config(settings.config_file, config, force=force)
+        return ConfigInitialized(path=settings.config_file, mode="0600", config=config)
 
     run_command(ctx, operation)

@@ -18,7 +18,8 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 | `--json` | Shortcut for `--output json`. |
 | `--verbose`, `-v` | Show tracebacks for CLI errors. |
 | `--config` | Local config file path. |
-| `--no-config` | Ignore local config defaults. |
+| `--no-config` | Ignore local config profiles. |
+| `--profile` | Use a named profile for this invocation. |
 | `--nip` | Taxpayer or context NIP. |
 | `--token`, `--ksef-token` | KSeF token authentication secret. |
 | `--context-type` | Token-auth context type. |
@@ -34,7 +35,7 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 | Group | Purpose |
 | --- | --- |
 | `auth` | Authenticate and refresh access tokens. |
-| `invoices` | Query, download, export, and fetch invoices. |
+| `invoices` | Send, confirm, query, download, export, and fetch invoices. |
 | `online` | Open, resume, inspect, and close online invoice sessions. |
 | `batch` | Submit and inspect batch invoice sessions. |
 | `tokens` | Generate, list, inspect, and revoke KSeF tokens. |
@@ -45,7 +46,8 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 | `peppol` | Query public PEPPOL providers. |
 | `encryption` | Read public KSeF encryption certificates. |
 | `testdata` | Manage TEST-environment test data. |
-| `config` | Inspect and create local CLI defaults. |
+| `config` | Inspect and create the local CLI config file. |
+| `profile` | Create, inspect, and select local CLI profiles. |
 
 ## Subcommands
 
@@ -62,18 +64,46 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 | --- | --- |
 | `config path` | Show the local config path used by this invocation. |
 | `config show` | Show local config values. |
-| `config init` | Create a local config file with non-secret defaults. |
+| `config init` | Create an empty local config file. |
+
+### `profile`
+
+| Command | Purpose |
+| --- | --- |
+| `profile create NAME` | Create or replace a profile and select it by default. |
+| `profile list` | List configured profiles. |
+| `profile current` | Show the active profile. |
+| `profile show [NAME]` | Show one profile, or the active profile when omitted. |
+| `profile use NAME` | Select the active profile. |
 
 ### `invoices`
 
 | Command | Purpose |
 | --- | --- |
+| `invoices send` | Send invoice XML files or directories through the high-level online/batch workflow. |
+| `invoices status` | Check a saved high-level workflow receipt. |
+| `invoices upo` | Download UPO XML files from a saved high-level workflow receipt. |
 | `invoices metadata` | Query invoice metadata. |
 | `invoices download` | Download processed invoice XML by KSeF number. |
 | `invoices export` | Schedule an invoice export and save the handle. |
 | `invoices export-status` | Fetch invoice export status. |
 | `invoices export-fetch` | Fetch and decrypt an export package using a saved handle. |
 | `invoices export-download` | Schedule, wait for, and download an export package. |
+
+Common high-level invoice options:
+
+| Option | Purpose |
+| --- | --- |
+| `invoices send PATH...` | `PATH` may be XML files or directories. Directories include direct child `*.xml` files. |
+| `--recursive` | Include nested `*.xml` files for directory input. |
+| `--mode online` / `--mode batch` | Select online mode or one batch submission. Defaults to `online`. |
+| `--wait` | Wait for final processing status. |
+| `--upo-dir DIR` | Write UPO XML files. Requires `--wait` on `invoices send`. |
+| `--receipt FILE` | Write one receipt file. |
+| `--receipt-dir DIR` | Write receipt files for multiple online invoices, or one batch receipt. |
+| `invoices status --receipt FILE` | Check or wait for the workflow represented by a receipt. |
+| `invoices upo --receipt FILE --out FILE` | Download one online invoice UPO. |
+| `invoices upo --receipt FILE --upo-dir DIR` | Download online or batch UPO files into a directory. |
 
 ### `online`
 
@@ -159,6 +189,7 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 | --- | --- |
 | `peppol providers` | Query public PEPPOL providers. |
 | `encryption certificates` | Read public KSeF encryption certificates. |
+| `testdata sandbox` | Create a temporary TEST subject with credentials and cleanup on exit. |
 | `testdata create-subject` | Create a TEST subject. |
 | `testdata delete-subject` | Delete a TEST subject. |
 | `testdata create-person` | Create a TEST person. |

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,7 +14,9 @@ def runner() -> CliRunner:
     return CliRunner()
 
 
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
     for item in items:
         path_parts = set(Path(str(item.fspath)).parts)
         if "unit" in path_parts:
@@ -40,18 +40,22 @@ def settings(**overrides: Any) -> Settings:
     values = {
         "config_file": overrides.pop("config_file", None),
         "config_loaded": False,
+        "profile_name": None,
         "environment": EnvironmentName.test,
         "output": OutputMode.json,
         "verbose": False,
         "nip": "5261040828",
         "token": None,
+        "token_env": None,
         "context_type": "nip",
         "test_certificate": False,
         "cert": None,
         "key": None,
         "key_password": None,
+        "key_password_env": None,
         "p12": None,
         "p12_password": None,
+        "p12_password_env": None,
         "poll_interval": 1.0,
         "max_poll_attempts": 60,
         "runtime_overrides": None,
@@ -82,6 +86,12 @@ class FakeService:
         self.returns = returns
         self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
 
+    def __enter__(self) -> "FakeService":
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        pass
+
     def __getattr__(self, name: str) -> Any:
         def method(*args: Any, **kwargs: Any) -> Any:
             self.calls.append((name, args, kwargs))
@@ -111,7 +121,9 @@ def fake_runtime(
 ) -> RuntimeOverrides:
     fake_client = client or FakeClient()
     authenticated_factory = (
-        (lambda: SimpleNamespace(client=fake_client, auth=auth)) if auth is not None else None
+        (lambda: SimpleNamespace(client=fake_client, auth=auth))
+        if auth is not None
+        else None
     )
     return RuntimeOverrides(
         client_factory=lambda: fake_client,

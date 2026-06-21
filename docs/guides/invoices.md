@@ -3,8 +3,9 @@ title: Invoice Workflows
 description: Query, download, export, send, and batch invoices with KSeF2 CLI.
 ---
 
-Invoice workflows use the `invoices`, `online`, and `batch` command groups.
-Use `--json` when commands are part of a script or CI job.
+Invoice workflows usually start with the `invoices` command group. Use the
+lower-level `online` and `batch` groups only when you need explicit session
+control. Use `--json` when commands are part of a script or CI job.
 
 ## Query metadata
 
@@ -92,27 +93,84 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   --out-dir downloads
 ```
 
-## Send invoices through an online session
+## Send invoices
 
-The short path opens a session, sends invoices, and closes the session:
+By default, `invoices send` opens an online session, sends the XML file, closes
+the session, and prints one line per invoice:
 
 ```bash
 uv run ksef2 --env test --nip "$KSEF2_NIP" --test-cert \
-  online send invoice.xml --wait
+  invoices send invoice.xml
 ```
 
-To reuse a session, save its state:
+Wait for final processing and download the UPO into a directory:
+
+```bash
+uv run ksef2 --env test --nip "$KSEF2_NIP" --test-cert \
+  invoices send invoice.xml \
+  --wait \
+  --upo-dir upos
+```
+
+Save a receipt when you need to check status or download the UPO later:
+
+```bash
+uv run ksef2 --env test --nip "$KSEF2_NIP" --test-cert \
+  invoices send invoice.xml \
+  --receipt invoice-receipt.json
+
+uv run ksef2 --env test --nip "$KSEF2_NIP" --test-cert \
+  invoices status --receipt invoice-receipt.json --wait
+
+uv run ksef2 --env test --nip "$KSEF2_NIP" --test-cert \
+  invoices upo --receipt invoice-receipt.json --out invoice-upo.xml
+```
+
+Send every XML file directly inside a directory:
+
+```bash
+uv run ksef2 --env test --nip "$KSEF2_NIP" --test-cert \
+  invoices send invoices/ --receipt-dir receipts
+```
+
+Add `--recursive` to include nested directories. If any file fails in online
+mode, the command still attempts the remaining files and exits non-zero after
+printing the per-file results.
+
+## Send invoices as a batch
+
+Use `--mode batch` when the input files should be prepared and submitted as one
+batch session:
+
+```bash
+uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+  invoices send invoices/ \
+  --mode batch \
+  --wait \
+  --upo-dir upos \
+  --receipt batch-receipt.json
+```
+
+A batch receipt can be reused for status and UPO downloads:
+
+```bash
+uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+  invoices status --receipt batch-receipt.json --wait
+
+uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+  invoices upo --receipt batch-receipt.json --upo-dir upos
+```
+
+## Advanced session commands
+
+Use the `online` group when you need to keep an online session open:
 
 ```bash
 uv run ksef2 --env test --nip "$KSEF2_NIP" --test-cert \
   online send invoice-1.xml invoice-2.xml \
   --keep-open \
   --save-state online-state.json
-```
 
-Then inspect or close it:
-
-```bash
 uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   online status --state-file online-state.json
 
@@ -120,7 +178,7 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   online close --state-file online-state.json
 ```
 
-## Submit and inspect a batch
+Use the `batch` group when you need direct access to batch session state:
 
 ```bash
 uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \

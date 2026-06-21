@@ -1,35 +1,35 @@
-"""JSON input and output file helpers used by command modules."""
+"""File helpers used by command modules."""
 
-from __future__ import annotations
-
-import json
 import sys
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import TypeVar
 
 from pydantic import BaseModel
 
-from ksef2_cli.rendering import _to_jsonable
+ModelT = TypeVar("ModelT", bound=BaseModel)
+SECRET_MODEL_FILE_MODE = 0o600
 
-T = TypeVar("T")
 
-
-def _read_json(path: Path) -> Any:
+def read_model_file(path: Path, model_type: type[ModelT]) -> ModelT:
     if str(path) == "-":
-        return json.load(sys.stdin)
-    return json.loads(path.read_text(encoding="utf-8"))
+        return model_type.model_validate_json(sys.stdin.read())
+    return model_type.model_validate_json(path.read_text(encoding="utf-8"))
 
 
-def _read_model(path: Path, model_type: type[T]) -> T:
-    data = _read_json(path)
-    if issubclass(model_type, BaseModel):
-        return model_type.model_validate(data)  # type: ignore[return-value]
-    return data
-
-
-def _write_json(path: Path, value: Any) -> None:
+def write_model_file(
+    path: Path, value: BaseModel, *, file_mode: int | None = None
+) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(_to_jsonable(value), indent=2, ensure_ascii=False) + "\n",
+        value.model_dump_json(indent=2, by_alias=True, exclude_none=True) + "\n",
         encoding="utf-8",
     )
+    if file_mode is not None:
+        path.chmod(file_mode)
+    return path
+
+
+def write_bytes_file(path: Path, content: bytes) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    return path

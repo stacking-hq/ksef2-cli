@@ -1,23 +1,35 @@
 """Certificate management command group."""
 
-from __future__ import annotations
-
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
+from ksef2.clients.authenticated import AuthenticatedClient
+from ksef2.domain.models.certificates import (
+    CertificateEnrollmentData,
+    CertificateEnrollmentResponse,
+    CertificateEnrollmentStatusResponse,
+    CertificateInfo,
+    CertificateLimitsResponse,
+    CertificateStatusEnum,
+    CertificateTypeEnum,
+    CertificatesInfoList,
+    RevocationReasonEnum,
+    RetrievedCertificatesList,
+)
+from ksef2.domain.models.pagination import OffsetPaginationParams
 
 from ksef2_cli.context import run_authenticated, run_command
-from ksef2_cli.sdk_models import _offset_params
+from ksef2_cli.results import CertificateRevoked
 
-app = typer.Typer(help='Manage MCU certificates.')
+app = typer.Typer(help="Manage MCU certificates.")
 
 
 @app.command("limits")
 def certificates_limits(ctx: typer.Context) -> None:
     """Read certificate enrollment and issuance limits."""
 
-    def operation() -> Any:
+    def operation() -> CertificateLimitsResponse:
         return run_authenticated(ctx, lambda auth: auth.certificates.get_limits())
 
     run_command(ctx, operation)
@@ -27,8 +39,10 @@ def certificates_limits(ctx: typer.Context) -> None:
 def certificates_enrollment_data(ctx: typer.Context) -> None:
     """Read subject data required for certificate enrollment CSR generation."""
 
-    def operation() -> Any:
-        return run_authenticated(ctx, lambda auth: auth.certificates.get_enrollment_data())
+    def operation() -> CertificateEnrollmentData:
+        return run_authenticated(
+            ctx, lambda auth: auth.certificates.get_enrollment_data()
+        )
 
     run_command(ctx, operation)
 
@@ -38,18 +52,22 @@ def certificates_enroll(
     ctx: typer.Context,
     name: Annotated[str, typer.Option("--name", help="Certificate name.")],
     csr_file: Annotated[Path, typer.Option("--csr-file", exists=True, dir_okay=False)],
-    certificate_type: Annotated[str, typer.Option("--type", help="authentication or offline.")] = "authentication",
-    valid_from: Annotated[str | None, typer.Option("--valid-from", help="ISO datetime.")] = None,
+    certificate_type: Annotated[
+        CertificateTypeEnum, typer.Option("--type", help="authentication or offline.")
+    ] = CertificateTypeEnum.AUTHENTICATION,
+    valid_from: Annotated[
+        str | None, typer.Option("--valid-from", help="ISO datetime.")
+    ] = None,
 ) -> None:
     """Request certificate enrollment with a base64-encoded CSR file."""
 
-    def operation() -> Any:
+    def operation() -> CertificateEnrollmentResponse:
         csr = csr_file.read_text(encoding="utf-8").strip()
         return run_authenticated(
             ctx,
             lambda auth: auth.certificates.enroll(
                 certificate_name=name,
-                certificate_type=certificate_type,
+                certificate_type=certificate_type.value,
                 csr=csr,
                 valid_from=valid_from,
             ),
@@ -65,10 +83,12 @@ def certificates_enrollment_status(
 ) -> None:
     """Fetch certificate enrollment status."""
 
-    def operation() -> Any:
+    def operation() -> CertificateEnrollmentStatusResponse:
         return run_authenticated(
             ctx,
-            lambda auth: auth.certificates.get_enrollment_status(reference_number=reference_number),
+            lambda auth: auth.certificates.get_enrollment_status(
+                reference_number=reference_number
+            ),
         )
 
     run_command(ctx, operation)
@@ -79,29 +99,39 @@ def certificates_list(
     ctx: typer.Context,
     serial_number: Annotated[str | None, typer.Option("--serial-number")] = None,
     name: Annotated[str | None, typer.Option("--name")] = None,
-    certificate_type: Annotated[str | None, typer.Option("--type")] = None,
-    status: Annotated[str | None, typer.Option("--status")] = None,
-    expires_after: Annotated[str | None, typer.Option("--expires-after", help="ISO datetime.")] = None,
+    certificate_type: Annotated[
+        CertificateTypeEnum | None, typer.Option("--type")
+    ] = None,
+    status: Annotated[CertificateStatusEnum | None, typer.Option("--status")] = None,
+    expires_after: Annotated[
+        str | None, typer.Option("--expires-after", help="ISO datetime.")
+    ] = None,
     page_size: Annotated[int, typer.Option("--page-size", min=10, max=100)] = 10,
     page_offset: Annotated[int, typer.Option("--page-offset", min=0)] = 0,
     all_pages: Annotated[bool, typer.Option("--all", help="Fetch all pages.")] = False,
 ) -> None:
     """Query certificates."""
 
-    def operation() -> Any:
+    def operation() -> CertificatesInfoList | list[CertificateInfo]:
         from ksef2.domain.models.certificates import validate_certificate_serial_number
 
-        params = _offset_params(page_size, page_offset)
-        serial = validate_certificate_serial_number(serial_number) if serial_number else None
+        params = OffsetPaginationParams(page_size=page_size, page_offset=page_offset)
+        serial = (
+            validate_certificate_serial_number(serial_number) if serial_number else None
+        )
 
-        def list_certificates(auth: Any) -> Any:
+        def list_certificates(
+            auth: AuthenticatedClient,
+        ) -> CertificatesInfoList | list[CertificateInfo]:
             if all_pages:
                 return list(
                     auth.certificates.all(
                         certificate_serial_number=serial,
                         name=name,
-                        certificate_type=certificate_type,
-                        status=status,
+                        certificate_type=certificate_type.value
+                        if certificate_type
+                        else None,
+                        status=status.value if status else None,
                         expires_after=expires_after,
                         params=params,
                     )
@@ -109,8 +139,8 @@ def certificates_list(
             return auth.certificates.query(
                 certificate_serial_number=serial,
                 name=name,
-                certificate_type=certificate_type,
-                status=status,
+                certificate_type=certificate_type.value if certificate_type else None,
+                status=status.value if status else None,
                 expires_after=expires_after,
                 params=params,
             )
@@ -123,18 +153,26 @@ def certificates_list(
 @app.command("retrieve")
 def certificates_retrieve(
     ctx: typer.Context,
-    serial_numbers: Annotated[list[str], typer.Argument(help="Certificate serial number(s).")],
+    serial_numbers: Annotated[
+        list[str], typer.Argument(help="Certificate serial number(s).")
+    ],
     output_dir: Annotated[
         Path | None,
-        typer.Option("--out-dir", file_okay=False, help="Save certificates as PEM-ish text files."),
+        typer.Option(
+            "--out-dir",
+            file_okay=False,
+            help="Save certificates as PEM-ish text files.",
+        ),
     ] = None,
 ) -> None:
     """Retrieve issued certificates by serial number."""
 
-    def operation() -> Any:
+    def operation() -> RetrievedCertificatesList:
         from ksef2.domain.models.certificates import validate_certificate_serial_number
 
-        serials = [validate_certificate_serial_number(value) for value in serial_numbers]
+        serials = [
+            validate_certificate_serial_number(value) for value in serial_numbers
+        ]
         result = run_authenticated(
             ctx,
             lambda auth: auth.certificates.retrieve(certificate_serial_numbers=serials),
@@ -143,7 +181,9 @@ def certificates_retrieve(
             output_dir.mkdir(parents=True, exist_ok=True)
             for certificate in result.certificates:
                 target = output_dir / f"{certificate.serial_number}.b64"
-                target.write_text(certificate.base64_encoded_certificate + "\n", encoding="utf-8")
+                target.write_text(
+                    certificate.base64_encoded_certificate + "\n", encoding="utf-8"
+                )
         return result
 
     run_command(ctx, operation)
@@ -153,18 +193,27 @@ def certificates_retrieve(
 def certificates_revoke(
     ctx: typer.Context,
     serial_number: Annotated[str, typer.Option("--serial-number")],
-    reason: Annotated[str | None, typer.Option("--reason", help="unspecified, superseded, key_compromise.")] = None,
+    reason: Annotated[
+        RevocationReasonEnum | None,
+        typer.Option("--reason", help="unspecified, superseded, key_compromise."),
+    ] = None,
 ) -> None:
     """Revoke a certificate."""
 
-    def operation() -> dict[str, str | None]:
+    def operation() -> CertificateRevoked:
         from ksef2.domain.models.certificates import validate_certificate_serial_number
 
         serial = validate_certificate_serial_number(serial_number)
         run_authenticated(
             ctx,
-            lambda auth: auth.certificates.revoke(certificate_serial_number=serial, reason=reason),
+            lambda auth: auth.certificates.revoke(
+                certificate_serial_number=serial,
+                reason=reason.value if reason else None,
+            ),
         )
-        return {"serial_number": serial_number, "reason": reason, "revoked": "true"}
+        return CertificateRevoked(
+            serial_number=serial_number,
+            reason=reason.value if reason else None,
+        )
 
     run_command(ctx, operation)

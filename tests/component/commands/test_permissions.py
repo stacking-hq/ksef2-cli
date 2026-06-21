@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from conftest import FakeService, cli_args, fake_runtime, payload
 from ksef2_cli.app import app
 
@@ -18,32 +16,55 @@ def test_permission_status_and_query_commands(runner, tmp_path) -> None:
         model_reader=lambda path, model_type: {"query": str(path)},
     )
 
-    assert payload(runner.invoke(app, cli_args("permissions", "attachment-status"), obj=runtime)) == {
-        "attachments": "enabled"
-    }
     assert payload(
-        runner.invoke(app, cli_args("permissions", "operation-status", "--reference", "operation-ref"), obj=runtime)
+        runner.invoke(app, cli_args("permissions", "attachment-status"), obj=runtime)
+    ) == {"attachments": "enabled"}
+    assert payload(
+        runner.invoke(
+            app,
+            cli_args("permissions", "operation-status", "--reference", "operation-ref"),
+            obj=runtime,
+        )
     ) == {"status": "done"}
-    assert payload(runner.invoke(app, cli_args("permissions", "entity-roles"), obj=runtime)) == {
-        "roles": [{"role": "owner"}]
-    }
+    assert payload(
+        runner.invoke(app, cli_args("permissions", "entity-roles"), obj=runtime)
+    ) == {"roles": [{"role": "owner"}]}
 
     payload_file = tmp_path / "query.json"
     payload_file.write_text("{}", encoding="utf-8")
     assert payload(
-        runner.invoke(app, cli_args("permissions", "query", "entities", "--payload", str(payload_file)), obj=runtime)
+        runner.invoke(
+            app,
+            cli_args(
+                "permissions", "query", "entities", "--payload", str(payload_file)
+            ),
+            obj=runtime,
+        )
     ) == {"permissions": [{"id": "p1"}]}
     assert service.called("query_entities")["query"] == {"query": str(payload_file)}
 
-    invalid = runner.invoke(app, cli_args("permissions", "query", "missing", "--payload", str(payload_file)), obj=runtime)
-    assert invalid.exit_code == 1
-    assert "Unsupported query kind" in invalid.output
+    invalid = runner.invoke(
+        app,
+        cli_args("permissions", "query", "missing", "--payload", str(payload_file)),
+        obj=runtime,
+    )
+    assert invalid.exit_code == 2
+    assert "Invalid value" in invalid.output
+    assert "missing" in invalid.output
 
-    assert payload(runner.invoke(app, cli_args("permissions", "revoke-common", "--permission-id", "p1"), obj=runtime)) == {
-        "revoked": "common"
-    }
     assert payload(
-        runner.invoke(app, cli_args("permissions", "revoke-authorization", "--permission-id", "p1"), obj=runtime)
+        runner.invoke(
+            app,
+            cli_args("permissions", "revoke-common", "--permission-id", "p1"),
+            obj=runtime,
+        )
+    ) == {"revoked": "common"}
+    assert payload(
+        runner.invoke(
+            app,
+            cli_args("permissions", "revoke-authorization", "--permission-id", "p1"),
+            obj=runtime,
+        )
     ) == {"revoked": "authorization"}
 
 
@@ -98,6 +119,7 @@ def test_permission_grant_person_entity_and_authorization(runner) -> None:
             obj=runtime,
         )
     ) == {"reference_number": "person-ref"}
+    assert service.called("grant_person")["subject_type"] == "nip"
     assert service.called("grant_person")["permissions"] == ["invoice_read"]
 
     assert payload(
@@ -132,7 +154,7 @@ def test_permission_grant_person_entity_and_authorization(runner) -> None:
                 "--subject-value",
                 "5261040828",
                 "--permission",
-                "invoice_read",
+                "self_invoicing",
                 "--entity-name",
                 "Entity",
                 "--description",
@@ -141,6 +163,8 @@ def test_permission_grant_person_entity_and_authorization(runner) -> None:
             obj=runtime,
         )
     ) == {"reference_number": "auth-ref"}
+    assert service.called("grant_authorization")["subject_type"] == "nip"
+    assert service.called("grant_authorization")["permission"] == "self_invoicing"
 
 
 def test_permission_grant_indirect_subunit_and_eu(runner) -> None:
@@ -178,6 +202,9 @@ def test_permission_grant_indirect_subunit_and_eu(runner) -> None:
             obj=runtime,
         )
     ) == {"reference_number": "indirect-ref"}
+    assert service.called("grant_indirect")["subject_type"] == "nip"
+    assert service.called("grant_indirect")["permissions"] == ["invoice_read"]
+    assert service.called("grant_indirect")["target_type"] == "nip"
 
     assert payload(
         runner.invoke(
@@ -205,6 +232,8 @@ def test_permission_grant_indirect_subunit_and_eu(runner) -> None:
             obj=runtime,
         )
     ) == {"reference_number": "subunit-ref"}
+    assert service.called("grant_subunit")["subject_type"] == "nip"
+    assert service.called("grant_subunit")["context_type"] == "nip"
 
     assert payload(
         runner.invoke(
@@ -222,6 +251,7 @@ def test_permission_grant_indirect_subunit_and_eu(runner) -> None:
             obj=runtime,
         )
     ) == {"reference_number": "eu-ref"}
+    assert service.called("grant_eu_entity")["permissions"] == ["invoice_read"]
 
     assert payload(
         runner.invoke(
@@ -241,3 +271,6 @@ def test_permission_grant_indirect_subunit_and_eu(runner) -> None:
             obj=runtime,
         )
     ) == {"reference_number": "eu-admin-ref"}
+    assert (
+        service.called("grant_eu_entity_administration")["context_type"] == "nip_vat_ue"
+    )

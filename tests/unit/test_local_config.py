@@ -1,103 +1,250 @@
-from __future__ import annotations
+from pathlib import Path
 
 import pytest
 
-from ksef2_cli.config import secret_value, LocalConfig, default_config_path, resolve_config_path, load_local_config, \
-    write_local_config, render_local_config
+from ksef2_cli.config import (
+    CONFIG_FILE_MODE,
+    PROFILE_ENV_VAR,
+    CliConfig,
+    ProfileAuthConfig,
+    ProfileAuthType,
+    ProfileConfig,
+    default_config_path,
+    load_cli_config,
+    render_cli_config,
+    resolve_config_path,
+    resolve_settings,
+    write_cli_config,
+)
 
 
-def test_local_config_loads_auth_defaults(tmp_path) -> None:
+def test_cli_config_loads_profiles_and_resolves_active_settings(tmp_path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text(
         """
-        [auth]
-        nip = "5261040828"
-        token = "secret-token"
-        context_type = "nip"
-        cert = "~/cert.pem"
-        key = "~/key.pem"
-        key_password = "secret"
-        p12 = "~/auth.p12"
-        p12_password = "p12-secret"
+        active_profile = "demo"
+
+        [profiles.demo]
+        environment = "test"
+        nip = "6880313213"
         poll_interval = 1.5
         max_poll_attempts = 12
+
+        [profiles.demo.auth]
+        type = "xades_pem"
+        cert = "~/cert.pem"
+        key = "~/key.pem"
+        key_password_env = "KSEF2_DEMO_KEY_PASSWORD"
         """,
         encoding="utf-8",
     )
 
-    config = load_local_config(config_path)
+    config = load_cli_config(config_path)
+    settings = resolve_settings(config_file=config_path)
 
-    assert config.nip == "5261040828"
-    assert config.token is not None
-    assert secret_value(config.token) == "secret-token"
-    assert config.context_type == "nip"
-    assert str(config.cert).endswith("cert.pem")
-    assert str(config.key).endswith("key.pem")
-    assert str(config.p12).endswith("auth.p12")
-    assert config.key_password is not None
-    assert secret_value(config.key_password) == "secret"
-    assert config.p12_password is not None
-    assert secret_value(config.p12_password) == "p12-secret"
-    assert config.poll_interval == 1.5
-    assert config.max_poll_attempts == 12
+    assert config.active_profile == "demo"
+    assert settings.profile_name == "demo"
+    assert settings.environment == "test"
+    assert settings.nip == "6880313213"
+    assert str(settings.cert).endswith("cert.pem")
+    assert str(settings.key).endswith("key.pem")
+    assert settings.key_password_env == "KSEF2_DEMO_KEY_PASSWORD"
+    assert settings.poll_interval == 1.5
+    assert settings.max_poll_attempts == 12
 
 
-def test_local_config_serializes_secret_values() -> None:
-    config = LocalConfig(
-        nip="5261040828",
-        token="secret-token",
-        key_password="key-secret",
-        p12_password="p12-secret",
+def test_profile_selection_uses_explicit_option_then_environment(tmp_path) -> None:
+    config = CliConfig(
+        active_profile="demo",
+        profiles={
+            "demo": ProfileConfig(
+                environment="test",
+                nip="1111111111",
+                auth=ProfileAuthConfig(type=ProfileAuthType.test_certificate),
+            ),
+            "prod": ProfileConfig(
+                environment="production",
+                nip="2222222222",
+                auth=ProfileAuthConfig(
+                    type=ProfileAuthType.token,
+                    token_env="KSEF2_PROD_TOKEN",
+                    context_type="nip",
+                ),
+            ),
+        },
+    )
+    config_path = tmp_path / "config.toml"
+    write_cli_config(config_path, config)
+
+    env_settings = resolve_settings(
+        config_file=config_path,
+        environ={PROFILE_ENV_VAR: "prod"},
+    )
+    explicit_settings = resolve_settings(
+        config_file=config_path,
+        profile="demo",
+        environ={PROFILE_ENV_VAR: "prod"},
     )
 
-    assert str(config.token) == "**********"
-
-    data = config.model_dump(mode="json", exclude_none=True)
-    assert data["token"] == "**********"
-    assert data["key_password"] == "**********"
-    assert data["p12_password"] == "**********"
-
-    rendered = render_local_config(config)
-    assert 'token = "**********"' in rendered
-    assert 'key_password = "**********"' in rendered
-    assert 'p12_password = "**********"' in rendered
-    assert "secret-token" not in rendered
-    assert "key-secret" not in rendered
-    assert "p12-secret" not in rendered
+    assert env_settings.profile_name == "prod"
+    assert env_settings.token_env == "KSEF2_PROD_TOKEN"
+    assert explicit_settings.profile_name == "demo"
+    assert explicit_settings.test_certificate is True
 
 
-def test_local_config_missing_file_returns_empty(tmp_path) -> None:
-    assert load_local_config(tmp_path / "missing.toml") == LocalConfig()
-
-
-def test_write_local_config_refuses_overwrite_without_force(tmp_path) -> None:
+def test_command_options_override_profile_auth(tmp_path) -> None:
     config_path = tmp_path / "config.toml"
-    write_local_config(config_path, LocalConfig(nip="1"))
+    cert_path = tmp_path / "cert.pem"
+    key_path = tmp_path / "key.pem"
+    cert_path.write_text("cert", encoding="utf-8")
+    key_path.write_text("key", encoding="utf-8")
+    write_cli_config(
+        config_path,
+        CliConfig(
+            active_profile="demo",
+            profiles={
+                "demo": ProfileConfig(
+                    environment="test",
+                    nip="1111111111",
+                    auth=ProfileAuthConfig(
+                        type=ProfileAuthType.xades_pem,
+                        cert=cert_path,
+                        key=key_path,
+                    ),
+                )
+            },
+        ),
+    )
+
+    token_settings = resolve_settings(config_file=config_path, token="direct-token")
+    pem_settings = resolve_settings(config_file=config_path, key_password="secret")
+
+    assert token_settings.token == "direct-token"
+    assert token_settings.cert is None
+    assert token_settings.key is None
+    assert pem_settings.cert == cert_path
+    assert pem_settings.key == key_path
+    assert pem_settings.key_password == "secret"
+
+
+def test_cli_config_missing_file_returns_empty(tmp_path) -> None:
+    assert load_cli_config(tmp_path / "missing.toml") == CliConfig()
+
+
+def test_write_cli_config_refuses_overwrite_without_force(tmp_path) -> None:
+    config_path = tmp_path / "config.toml"
+    write_cli_config(config_path, CliConfig())
 
     with pytest.raises(FileExistsError):
-        write_local_config(config_path, LocalConfig(nip="2"))
+        write_cli_config(config_path, CliConfig(active_profile=None))
 
-    write_local_config(config_path, LocalConfig(nip="2"), force=True)
-    assert "nip = \"2\"" in config_path.read_text(encoding="utf-8")
+    config = CliConfig(
+        active_profile="demo",
+        profiles={
+            "demo": ProfileConfig(
+                environment="test",
+                nip="5261040828",
+                auth=ProfileAuthConfig(type=ProfileAuthType.test_certificate),
+            )
+        },
+    )
+    write_cli_config(config_path, config, force=True)
+    assert 'active_profile = "demo"' in config_path.read_text(encoding="utf-8")
+    assert oct(config_path.stat().st_mode & 0o777) == oct(CONFIG_FILE_MODE)
 
 
-def test_invalid_config_shapes_raise_value_error(tmp_path) -> None:
+def test_render_cli_config_uses_profile_shape() -> None:
+    config = CliConfig(
+        active_profile="demo",
+        profiles={
+            "demo": ProfileConfig(
+                environment="test",
+                nip="5261040828",
+                auth=ProfileAuthConfig(type=ProfileAuthType.test_certificate),
+            )
+        },
+    )
+
+    rendered = render_cli_config(config)
+
+    assert 'active_profile = "demo"' in rendered
+    assert "[profiles.demo]" in rendered
+    assert "[profiles.demo.auth]" in rendered
+    assert 'type = "test_certificate"' in rendered
+
+
+def test_invalid_profile_config_shapes_raise_value_error(tmp_path) -> None:
     config_path = tmp_path / "config.toml"
-    config_path.write_text("[auth]\nnip = 123\n", encoding="utf-8")
+    config_path.write_text('active_profile = "missing"\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="Active profile"):
+        load_cli_config(config_path)
+
+    config_path.write_text(
+        """
+        [profiles.demo]
+        nip = "5261040828"
+
+        [profiles.demo.auth]
+        type = "test_certificate"
+        """,
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Field required"):
+        load_cli_config(config_path)
+
+    config_path.write_text(
+        """
+        [profiles.demo]
+        environment = "test"
+        nip = "5261040828"
+
+        [profiles.demo.auth]
+        type = "token"
+        """,
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="token_env"):
+        load_cli_config(config_path)
+
+    config_path.write_text(
+        """
+        [profiles.demo]
+        environment = "test"
+        nip = 123
+
+        [profiles.demo.auth]
+        type = "test_certificate"
+        """,
+        encoding="utf-8",
+    )
     with pytest.raises(ValueError, match="Input should be a valid string"):
-        load_local_config(config_path)
+        load_cli_config(config_path)
 
-    config_path.write_text("[auth]\ntoken = 123\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="Input should be a valid string"):
-        load_local_config(config_path)
+    config_path.write_text(
+        """
+        [profiles.demo]
+        environment = "test"
+        nip = "5261040828"
+        poll_interval = 0
 
-    config_path.write_text("auth = 123\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="must be a table"):
-        load_local_config(config_path)
+        [profiles.demo.auth]
+        type = "test_certificate"
+        """,
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="greater than or equal to 0.1"):
+        load_cli_config(config_path)
 
-    config_path.write_text("[auth]\nmax_poll_attempts = 1.2\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="Input should be a valid integer"):
-        load_local_config(config_path)
+
+def test_resolve_settings_rejects_unknown_profile_and_no_config_profile(tmp_path) -> None:
+    config_path = tmp_path / "config.toml"
+    write_cli_config(config_path, CliConfig())
+
+    with pytest.raises(ValueError, match="not defined"):
+        resolve_settings(config_file=config_path, profile="missing")
+
+    with pytest.raises(ValueError, match="--profile cannot be used"):
+        resolve_settings(config_file=config_path, no_config=True, profile="missing")
 
 
 def test_config_path_resolution(tmp_path) -> None:

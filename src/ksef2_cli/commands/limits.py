@@ -1,91 +1,117 @@
 """KSeF limits command group."""
 
-from __future__ import annotations
-
+from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
-from pydantic import BaseModel
+from ksef2.clients.authenticated import AuthenticatedClient
+from ksef2.domain.models.limits import ApiRateLimits, ContextLimits, SubjectLimits
 
-from ksef2_cli.context import read_model, run_authenticated, run_command
+from ksef2_cli.context import (
+    read_model,
+    run_authenticated,
+    run_authenticated_command,
+    run_command,
+)
+from ksef2_cli.results import LimitReset, LimitUpdated, ProductionRateLimitsSet
 
-app = typer.Typer(help='Read and manage effective KSeF limits.')
+app = typer.Typer(help="Read and manage effective KSeF limits.")
+
+
+class LimitKindChoice(StrEnum):
+    API = "api"
+    CONTEXT = "context"
+    SUBJECT = "subject"
 
 
 @app.command("get")
 def limits_get(
     ctx: typer.Context,
-    kind: Annotated[str, typer.Argument(help="api, context, or subject.")],
+    kind: Annotated[LimitKindChoice, typer.Argument(help="api, context, or subject.")],
 ) -> None:
     """Read effective limits."""
 
-    def operation() -> Any:
-        def read_limits(auth: Any) -> Any:
-            if kind == "api":
+    def read_limits(
+        auth: AuthenticatedClient,
+    ) -> ApiRateLimits | ContextLimits | SubjectLimits:
+        match kind:
+            case LimitKindChoice.API:
                 return auth.limits.get_api_rate_limits()
-            if kind == "context":
+
+            case LimitKindChoice.CONTEXT:
                 return auth.limits.get_context_limits()
-            if kind == "subject":
+
+            case _:
                 return auth.limits.get_subject_limits()
-            raise ValueError("kind must be one of: api, context, subject.")
 
-        return run_authenticated(ctx, read_limits)
-
-    run_command(ctx, operation)
+    run_authenticated_command(ctx, read_limits)
 
 
 @app.command("set")
 def limits_set(
     ctx: typer.Context,
-    kind: Annotated[str, typer.Argument(help="api, context, or subject.")],
-    payload_file: Annotated[Path, typer.Option("--payload", exists=True, dir_okay=False, help="JSON limits payload.")],
+    kind: Annotated[LimitKindChoice, typer.Argument(help="api, context, or subject.")],
+    payload_file: Annotated[
+        Path,
+        typer.Option(
+            "--payload", exists=True, dir_okay=False, help="JSON limits payload."
+        ),
+    ],
 ) -> None:
     """Set TEST-environment override limits from JSON."""
 
-    from ksef2.domain.models.limits import ApiRateLimits, ContextLimits, SubjectLimits
+    def operation() -> LimitUpdated:
+        def set_limits(auth: AuthenticatedClient) -> None:
+            match kind:
+                case LimitKindChoice.API:
+                    auth.limits.set_api_rate_limits(
+                        limits=read_model(ctx, payload_file, ApiRateLimits)
+                    )
 
-    model_map: dict[str, tuple[type[BaseModel], str]] = {
-        "api": (ApiRateLimits, "set_api_rate_limits"),
-        "context": (ContextLimits, "set_session_limits"),
-        "subject": (SubjectLimits, "set_subject_limits"),
-    }
+                case LimitKindChoice.CONTEXT:
+                    auth.limits.set_session_limits(
+                        limits=read_model(ctx, payload_file, ContextLimits)
+                    )
 
-    def operation() -> dict[str, str]:
-        try:
-            model_type, method_name = model_map[kind]
-        except KeyError as exc:
-            raise ValueError("kind must be one of: api, context, subject.") from exc
-        limits = read_model(ctx, payload_file, model_type)
-        run_authenticated(
-            ctx,
-            lambda auth: getattr(auth.limits, method_name)(limits=limits),
-        )
-        return {"kind": kind, "updated": "true"}
+                case _:
+                    auth.limits.set_subject_limits(
+                        limits=read_model(ctx, payload_file, SubjectLimits)
+                    )
+
+        run_authenticated(ctx, set_limits)
+        return LimitUpdated(kind=kind.value)
 
     run_command(ctx, operation)
+
+
+class ResetLimitKindChoice(StrEnum):
+    API = "api"
+    SESSION = "session"
+    SUBJECT = "subject"
 
 
 @app.command("reset")
 def limits_reset(
     ctx: typer.Context,
-    kind: Annotated[str, typer.Argument(help="api, session, or subject.")],
+    kind: Annotated[
+        ResetLimitKindChoice, typer.Argument(help="api, session, or subject.")
+    ],
 ) -> None:
     """Reset TEST-environment override limits."""
 
-    def operation() -> dict[str, str]:
-        def reset_limits(auth: Any) -> None:
-            if kind == "api":
-                auth.limits.reset_api_rate_limits()
-            elif kind == "session":
-                auth.limits.reset_session_limits()
-            elif kind == "subject":
-                auth.limits.reset_subject_limits()
-            else:
-                raise ValueError("kind must be one of: api, session, subject.")
+    def operation() -> LimitReset:
+        def reset_limits(auth: AuthenticatedClient) -> None:
+            match kind:
+                case ResetLimitKindChoice.API:
+                    auth.limits.reset_api_rate_limits()
+                case ResetLimitKindChoice.SESSION:
+                    auth.limits.reset_session_limits()
+                case _:
+                    auth.limits.reset_subject_limits()
 
         run_authenticated(ctx, reset_limits)
-        return {"kind": kind, "reset": "true"}
+        return LimitReset(kind=kind.value)
 
     run_command(ctx, operation)
 
@@ -94,8 +120,11 @@ def limits_reset(
 def limits_production_rate_limits(ctx: typer.Context) -> None:
     """Set TEST API rate limits to production-like values."""
 
-    def operation() -> dict[str, str]:
-        run_authenticated(ctx, lambda auth: auth.limits.set_production_rate_limits())
-        return {"api_rate_limits": "production"}
+    def operation() -> ProductionRateLimitsSet:
+        def set_limits(auth: AuthenticatedClient) -> None:
+            auth.limits.set_production_rate_limits()
+
+        run_authenticated(ctx, set_limits)
+        return ProductionRateLimitsSet()
 
     run_command(ctx, operation)

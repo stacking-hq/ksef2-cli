@@ -36,28 +36,41 @@ uv run ksef2 --env test --nip 5261040828 --test-cert \
 
 For token authentication, replace `--test-cert` with `--token "$KSEF2_TOKEN"`.
 
-## 4. Send one invoice in an online session
+## 4. Send one invoice and get a UPO
 
 ```bash
 uv run ksef2 --env test --nip 5261040828 --test-cert \
-  online send invoice.xml --wait
-```
-
-By default, `online send` opens a session, sends the invoice, and closes the
-session. Add `--keep-open --save-state online-state.json` when you need to reuse
-the session later.
-
-## 5. Submit a batch
-
-```bash
-uv run ksef2 --env test --nip 5261040828 --test-cert \
-  batch submit invoice-1.xml invoice-2.xml \
+  invoices send invoice.xml \
   --wait \
-  --state-file batch-state.json
+  --upo-dir upos \
+  --receipt invoice-receipt.json
 ```
 
-The saved state file can be reused with `batch status`, `batch list`, and
-`batch upo`.
+By default, `invoices send` uses online mode. The receipt file lets you check
+status or download the UPO later without managing the underlying session:
+
+```bash
+uv run ksef2 --env test --nip 5261040828 --test-cert \
+  invoices status --receipt invoice-receipt.json --wait
+
+uv run ksef2 --env test --nip 5261040828 --test-cert \
+  invoices upo --receipt invoice-receipt.json --out invoice-upo.xml
+```
+
+## 5. Send a directory or batch
+
+```bash
+uv run ksef2 --env test --nip 5261040828 --test-cert \
+  invoices send invoices/ --receipt-dir receipts
+```
+
+Directory input includes direct child `*.xml` files. Add `--recursive` for nested
+directories. Use `--mode batch` when the files should be submitted as one batch:
+
+```bash
+uv run ksef2 --env test --nip 5261040828 --test-cert \
+  invoices send invoices/ --mode batch --wait --upo-dir upos
+```
 
 ## Related pages
 

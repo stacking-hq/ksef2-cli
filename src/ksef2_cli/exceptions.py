@@ -1,12 +1,13 @@
 """Human-oriented CLI exceptions and rendering helpers."""
 
-from __future__ import annotations
-
 import sys
 import traceback
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any, Iterable, Sequence
+from typing import Iterable, Sequence
 from urllib.parse import urlencode
+
+from rich.console import Console
+from rich.markup import escape
 
 BUG_REPORT_URL = "https://github.com/stacking-hq/ksef2-cli/issues/new"
 SECRET_OPTIONS = {
@@ -60,7 +61,7 @@ class FileCliError(CliError):
         *,
         action: str = "access",
         path: str | None = None,
-    ) -> FileCliError:
+    ) -> "FileCliError":
         target = path or getattr(error, "filename", None)
         details = [f"Path: {target}"] if target else []
         hints = _file_hints(action=action, path=target)
@@ -83,7 +84,9 @@ class RemoteServiceError(CliError):
 class UnexpectedCliError(CliError):
     """An internal failure that should be reported as a bug."""
 
-    def __init__(self, error: BaseException, *, command: Sequence[str] | None = None) -> None:
+    def __init__(
+        self, error: BaseException, *, command: Sequence[str] | None = None
+    ) -> None:
         self.error = error
         self.command = tuple(command or sys.argv)
         error_type = type(error).__name__
@@ -118,7 +121,11 @@ class UnexpectedCliError(CliError):
                 "## Traceback",
                 "",
                 "```text",
-                "".join(traceback.format_exception(type(self.error), self.error, self.error.__traceback__)),
+                "".join(
+                    traceback.format_exception(
+                        type(self.error), self.error, self.error.__traceback__
+                    )
+                ),
                 "```",
             ]
         )
@@ -137,7 +144,9 @@ def error_from_exception(error: Exception) -> CliError:
     return UnexpectedCliError(error)
 
 
-def render_cli_error(error: CliError, *, console: Any, verbose: bool = False) -> None:
+def render_cli_error(
+    error: CliError, *, console: Console, verbose: bool = False
+) -> None:
     """Render a concise, actionable error message."""
 
     if verbose and error.show_traceback:
@@ -145,17 +154,17 @@ def render_cli_error(error: CliError, *, console: Any, verbose: bool = False) ->
 
     if error.details:
         for detail in error.details:
-            console.print(detail)
+            console.print(escape(detail))
 
     if error.hints:
         console.print("[bold]Try:[/]")
         for hint in error.hints:
-            console.print(f"  - {hint}")
+            console.print(f"  - {escape(hint)}")
 
     if error.reportable and isinstance(error, UnexpectedCliError):
         console.print(f"Report: {error.report_url()}")
 
-    console.print(f"[red]Error:[/] {error.message}")
+    console.print(f"[red]Error:[/] {escape(error.message)}")
 
 
 def redact_argv(argv: Sequence[str]) -> tuple[str, ...]:

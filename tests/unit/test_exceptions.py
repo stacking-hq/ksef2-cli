@@ -1,10 +1,13 @@
-from __future__ import annotations
-
 from io import StringIO
 
 from rich.console import Console
 
-from ksef2_cli.exceptions import UnexpectedCliError, UsageError, redact_argv, render_cli_error
+from ksef2_cli.exceptions import (
+    UnexpectedCliError,
+    UsageError,
+    redact_argv,
+    render_cli_error,
+)
 
 
 def test_redact_argv_hides_secret_option_values() -> None:
