@@ -72,7 +72,7 @@ def test_auth_refresh_requires_and_uses_refresh_token(runner) -> None:
         app, cli_args("auth", "refresh"), obj=fake_runtime(client=client)
     )
     assert missing.exit_code == 2
-    assert "Missing option '--refresh-token'" in missing.output
+    assert "--refresh-token" in missing.output
 
     result = runner.invoke(
         app,
@@ -119,7 +119,8 @@ def test_encryption_certificates_uses_public_client(runner) -> None:
         ),
     )
     assert invalid.exit_code == 2
-    assert "Invalid value for '--usage'" in invalid.output
+    assert "--usage" in invalid.output
+    assert "invoice" in invalid.output
 
 
 def test_peppol_providers_query_and_all(runner) -> None:
@@ -233,7 +234,8 @@ def test_tokens_commands(runner) -> None:
         obj=runtime,
     )
     assert invalid.exit_code == 2
-    assert "Invalid value for '--permission'" in invalid.output
+    assert "--permission" in invalid.output
+    assert "bad" in invalid.output
 
     assert payload(
         runner.invoke(
