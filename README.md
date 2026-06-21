@@ -1,196 +1,158 @@
+<h1 align="center">ksef2 CLI</h1>
+
+<h3 align="center">
+  Scriptable terminal workflows for the ksef2 Python SDK.
+</h3>
+
+<p align="center">
+  Use local profiles, environment-backed authentication, JSON output, and
+  resumable workflow files to automate KSeF invoicing from shells, CI jobs, and
+  operational scripts.
+</p>
+
 <div align="center">
-<a href="https://github.com/stacking-hq/ksef2-cli" title="ksef2-cli">
-  <img src="docs/assets/banner.png" alt="ksef2-cli logo" width="50%">
-</a>
-
-**Command-line interface for the [`ksef2`](https://github.com/stacking-hq/ksef2) Python SDK.**
-
+  <br>
+  <a href="https://ksef2.stacking.me/cli/intro/" title="ksef2 CLI documentation">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/stacking-hq/ksef2-cli/main/docs/assets/ksef2-cli-light-logo.png">
+      <img src="https://raw.githubusercontent.com/stacking-hq/ksef2-cli/main/docs/assets/ksef2-cli-dark-logo.png" alt="ksef2 CLI" width="420">
+    </picture>
+  </a>
+  <br>
+  <br>
+  <p>
+    <a href="https://github.com/stacking-hq/ksef2-cli/actions/workflows/ci.yml"><img src="https://github.com/stacking-hq/ksef2-cli/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+    <a href="https://github.com/stacking-hq/ksef2-cli/actions/workflows/docs-check.yml"><img src="https://github.com/stacking-hq/ksef2-cli/actions/workflows/docs-check.yml/badge.svg" alt="Docs"></a>
+    <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python 3.12+"></a>
+  </p>
 </div>
 
-The CLI avoids hidden state: authenticated commands accept credentials from global
-options or environment variables, and resumable workflow files are written only
-when you pass options such as `--receipt`, `--receipt-dir`, or `--state-file`.
+## What is ksef2 CLI?
 
-## Install / Run
+`ksef2-cli` exposes the [`ksef2`](https://github.com/stacking-hq/ksef2)
+Python SDK as a command-line tool. It is designed for developers and operators
+who want to authenticate with KSeF, query invoice metadata, send invoices,
+download invoice XML, export packages, inspect sessions, and manage
+administrative resources without writing Python code.
 
-```bash
-pip install ksef2-cli
-ksef2 --help
-```
+The CLI avoids hidden state by default. Commands can read credentials from
+global options or environment variables, while local profiles store reusable
+non-secret defaults such as environment, NIP, auth method, certificate paths,
+and secret environment variable names.
 
-For an isolated CLI install:
+This project is not published, endorsed, or supported by Poland's Ministry of
+Finance. Official KSeF documentation remains the source of truth for API
+behavior.
+
+## Install
 
 ```bash
 uv tool install ksef2-cli
-# or
+```
+
+or:
+
+```bash
 pipx install ksef2-cli
 ```
 
-The package exposes scriptable CLI commands:
+The package exposes two equivalent executables:
 
 ```bash
-ksef2
-ksef2-cli
+ksef2 --help
+ksef2-cli --help
 ```
 
-## Documentation
+Requires Python 3.12 or newer.
 
-Published documentation is assembled into <https://docs.ksef2.dev/cli/>.
-Source documentation lives in [`docs/`](docs/).
-
-## Authentication
+## Authenticate
 
 For repeated local work, create a profile once and let commands inherit its
 environment, NIP, and authentication settings:
 
 ```bash
-uv run ksef2 profile create demo-client \
+ksef2 profile create test-company \
   --env test \
-  --nip 6880313213 \
-  --cert /path/accountant-auth-cert.pem \
-  --key /path/accountant-auth-key.pem
+  --nip 5261040828 \
+  --test-cert
 
-uv run ksef2 invoices metadata --role buyer --date-from 2026-01-01T00:00:00Z
+ksef2 --profile test-company --json auth login
 ```
 
-Global auth options are still available for CI and one-off commands. They must
-be placed before the command group:
+For CI and one-off scripts, pass global options before the command group:
 
 ```bash
-uv run ksef2 --env test --nip 5261040828 --test-cert auth login --json
-uv run ksef2 --nip 5261040828 --token "$KSEF_TOKEN" invoices metadata --date-from 2026-01-01T00:00:00Z
+ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
+  invoices metadata \
+  --role seller \
+  --date-from 2026-01-01T00:00:00Z \
+  --all
 ```
 
-Supported direct auth methods:
+Supported direct authentication methods:
 
-- `--token` / `KSEF2_TOKEN`
+- `--token` or `KSEF2_TOKEN`
 - `--test-cert` for the TEST environment
 - `--cert` and `--key` for PEM XAdES credentials
 - `--p12` for PKCS#12/PFX XAdES credentials
 
-Common environment variables:
+## Send and download invoices
+
+Send one XML invoice, wait for processing, save a UPO, and keep a receipt for
+later status checks:
 
 ```bash
-export KSEF2_PROFILE=demo-client
-export KSEF2_NIP=5261040828
-export KSEF2_TOKEN=...
+ksef2 --profile test-company \
+  invoices send invoice.xml \
+  --wait \
+  --upo-dir upos \
+  --receipt invoice-receipt.json
 ```
 
-Precedence is:
-
-1. CLI options such as `--profile`, `--nip`, and `--token`
-2. Environment variables such as `KSEF2_PROFILE`, `KSEF2_NIP`, and `KSEF2_TOKEN`
-3. The active profile in the local config file
-
-## Local Config
-
-For local development, create profiles under your home directory:
+Download the UPO later from the saved receipt:
 
 ```bash
-uv run ksef2 profile create demo-client --env test --nip 5261040828 --test-cert
-uv run ksef2 profile current
-uv run ksef2 profile list
+ksef2 --profile test-company \
+  invoices upo \
+  --receipt invoice-receipt.json \
+  --out invoice-upo.xml
 ```
 
-By default the file is:
-
-```text
-~/.config/ksef2-cli/config.toml
-```
-
-You can override it with `--config path/to/config.toml` or `KSEF2_CONFIG`.
-Use `--no-config` to ignore the file for one invocation.
-
-Example config:
-
-```toml
-active_profile = "demo-client"
-
-[profiles.demo-client]
-environment = "test"
-nip = "5261040828"
-
-[profiles.demo-client.auth]
-type = "test_certificate"
-```
-
-Profiles store token and password environment variable names rather than secret
-values.
-
-## Examples
-
-Query invoice metadata:
+Submit many XML files as one batch:
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  invoices metadata --role seller --date-from 2026-01-01T00:00:00Z --all
+ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+  invoices send invoice-1.xml invoice-2.xml \
+  --mode batch \
+  --wait \
+  --upo-dir upos
 ```
 
-Download one processed invoice XML:
+Use `--json` before the command group when output is consumed by scripts.
+
+## Documentation
+
+- Online docs: <https://ksef2.stacking.me/cli/intro/>
+- Installation: <https://ksef2.stacking.me/cli/getting-started/installation/>
+- Quickstart: <https://ksef2.stacking.me/cli/getting-started/quickstart/>
+- Command reference: <https://ksef2.stacking.me/cli/reference/commands/>
+- Source docs: [`docs`](https://github.com/stacking-hq/ksef2-cli/tree/main/docs)
+- SDK repository: [`stacking-hq/ksef2`](https://github.com/stacking-hq/ksef2)
+
+## Development
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  invoices download --ksef-number "$KSEF_NUMBER" --out invoice.xml
+uv sync --all-groups
+uv run ksef2 --help
+uv run python -m coverage run -m pytest -q
+uv run python scripts/validate_docs_frontmatter.py docs/
 ```
 
-Schedule and fetch an export:
+The CLI command domains live under `src/ksef2_cli/commands/`. Source
+documentation lives under `docs/`.
 
-```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  invoices export --date-from 2026-01-01T00:00:00Z --handle-file export.json
+## Contributing
 
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  invoices export-fetch --handle-file export.json --wait --out-dir downloads
-```
-
-Send one invoice and save its UPO:
-
-```bash
-uv run ksef2 --env test --nip "$KSEF2_NIP" --test-cert \
-  invoices send invoice.xml --wait --upo-dir upos
-```
-
-Send every XML file in a directory and save receipts for later status/UPO checks:
-
-```bash
-uv run ksef2 --env test --nip "$KSEF2_NIP" --test-cert \
-  invoices send invoices/ --receipt-dir receipts
-```
-
-Fetch a UPO later from a receipt:
-
-```bash
-uv run ksef2 --env test --nip "$KSEF2_NIP" --test-cert \
-  invoices upo --receipt receipts/invoice-receipt.json --out invoice-upo.xml
-```
-
-Submit invoices as one batch:
-
-```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  invoices send invoice-1.xml invoice-2.xml --mode batch --wait --upo-dir upos
-```
-
-The lower-level `online` and `batch` command groups remain available when you
-need explicit session control.
-
-Permission queries and TEST limit updates use JSON payloads shaped like the SDK
-models:
-
-```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  permissions query persons --payload person-query.json
-
-uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  limits set api --payload api-rate-limits.json
-```
-
-Use `--json` for script-friendly output.
-
-## Maintainability
-
-The CLI is split by command domain under `src/ksef2_cli/commands/`, with shared
-runtime, auth, rendering, parsing, JSON I/O, and invoice workflow modules.
-See [docs/contributing/architecture.md](docs/contributing/architecture.md) for
-the module map and the rules for adding new commands without growing large files
-again.
+Issues and pull requests are welcome. Before opening a PR, run the focused test
+or docs check that covers your change, and update source docs when command
+behavior changes.
