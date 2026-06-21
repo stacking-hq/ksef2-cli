@@ -10,13 +10,12 @@ control. Use `--json` when commands are part of a script or CI job.
 ## Query metadata
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
   invoices metadata \
   --role seller \
   --date-from 2026-01-01T00:00:00Z \
   --date-to 2026-01-31T23:59:59Z \
-  --all \
-  --json
+  --all
 ```
 
 Useful filters include:
@@ -57,12 +56,11 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
 First schedule the export and save its decryption handle:
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
   invoices export \
   --role seller \
   --date-from 2026-01-01T00:00:00Z \
-  --handle-file export-handle.json \
-  --json
+  --handle-file export-handle.json
 ```
 
 Check status:

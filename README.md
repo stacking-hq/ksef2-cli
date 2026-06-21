@@ -12,7 +12,7 @@
 
 <div align="center">
   <br>
-  <a href="https://ksef2.stacking.me/cli/intro/" title="ksef2 CLI documentation">
+  <a href="https://docs.stacking.me/ksef2/cli/intro/" title="ksef2 CLI documentation">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/stacking-hq/ksef2-cli/main/docs/assets/ksef2-cli-light-logo.png">
       <img src="https://raw.githubusercontent.com/stacking-hq/ksef2-cli/main/docs/assets/ksef2-cli-dark-logo.png" alt="ksef2 CLI" width="420">
@@ -132,10 +132,10 @@ Use `--json` before the command group when output is consumed by scripts.
 
 ## Documentation
 
-- Online docs: <https://ksef2.stacking.me/cli/intro/>
-- Installation: <https://ksef2.stacking.me/cli/getting-started/installation/>
-- Quickstart: <https://ksef2.stacking.me/cli/getting-started/quickstart/>
-- Command reference: <https://ksef2.stacking.me/cli/reference/commands/>
+- Online docs: <https://docs.stacking.me/ksef2/cli/intro/>
+- Installation: <https://docs.stacking.me/ksef2/cli/getting-started/installation/>
+- Quickstart: <https://docs.stacking.me/ksef2/cli/getting-started/quickstart/>
+- Command reference: <https://docs.stacking.me/ksef2/cli/reference/commands/>
 - Source docs: [`docs`](https://github.com/stacking-hq/ksef2-cli/tree/main/docs)
 - SDK repository: [`stacking-hq/ksef2`](https://github.com/stacking-hq/ksef2)
 

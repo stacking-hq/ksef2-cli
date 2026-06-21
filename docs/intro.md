@@ -34,7 +34,7 @@ ksef2-cli
 Global options come before the command group:
 
 ```bash
-ksef2 --env test --nip 5261040828 --test-cert auth login --json
+ksef2 --env test --nip 5261040828 --test-cert --json auth login
 ```
 
 The command groups mirror the SDK domains:
