@@ -87,7 +87,10 @@ def root(
             "--config",
             envvar="KSEF2_CONFIG",
             dir_okay=False,
-            help="Local config file. Defaults to ~/.config/ksef2-cli/config.toml.",
+            help=(
+                "Local config file. Defaults to ~/.config/ksef2/config.toml; "
+                "uses legacy ~/.config/ksef2-cli/config.toml when present."
+            ),
         ),
     ] = None,
     no_config: Annotated[

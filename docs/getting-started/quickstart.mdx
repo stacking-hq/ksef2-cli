@@ -3,6 +3,8 @@ title: Quickstart
 description: Authenticate in TEST, query invoice metadata, and send an invoice with KSeF2 CLI.
 ---
 
+import { LinkCard } from '@astrojs/starlight/components';
+
 This quickstart uses the TEST environment and the SDK-generated TEST
 certificate. Use a real XAdES certificate or KSeF token for DEMO and PRODUCTION.
 
@@ -91,7 +93,23 @@ uv run ksef2 --profile test-company \
 
 ## Related pages
 
-- [Authentication](../guides/authentication.md)
-- [Configuration](../guides/configuration.md)
-- [Invoice workflows](../guides/invoices.md)
-- [Command reference](../reference/commands.md)
+<LinkCard
+  title="Authentication"
+  href="../guides/authentication.md"
+  description="Choose profiles, KSeF tokens, XAdES certificates, or TEST certificate authentication."
+/>
+<LinkCard
+  title="Configuration"
+  href="../guides/configuration.md"
+  description="Set profile defaults and keep repeated non-secret options out of every command."
+/>
+<LinkCard
+  title="Invoice workflows"
+  href="../guides/invoices.md"
+  description="Send invoices, poll status, download UPOs, and work from receipt files."
+/>
+<LinkCard
+  title="Command reference"
+  href="../reference/commands.md"
+  description="Inspect command groups, options, and output behavior."
+/>

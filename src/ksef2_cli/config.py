@@ -120,6 +120,8 @@ class Settings:
 CONFIG_ENV_VAR = "KSEF2_CONFIG"
 PROFILE_ENV_VAR = "KSEF2_PROFILE"
 CONFIG_FILE_MODE = 0o600
+CONFIG_DIR_NAME = "ksef2"
+LEGACY_CONFIG_DIR_NAME = "ksef2-cli"
 
 
 class ProfileAuthConfig(BaseModel):
@@ -197,7 +199,12 @@ def default_config_path(environ: Mapping[str, str] | None = None) -> Path:
     if override:
         return Path(override).expanduser()
     config_home = Path(env.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    return config_home.expanduser() / "ksef2-cli" / "config.toml"
+    config_home = config_home.expanduser()
+    preferred_path = config_home / CONFIG_DIR_NAME / "config.toml"
+    legacy_path = config_home / LEGACY_CONFIG_DIR_NAME / "config.toml"
+    if not preferred_path.exists() and legacy_path.exists():
+        return legacy_path
+    return preferred_path
 
 
 def resolve_config_path(path: Path | None) -> Path:

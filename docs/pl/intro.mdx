@@ -1,0 +1,71 @@
+---
+title: Wprowadzenie
+description: Dokumentacja interfejsu wiersza poleceń KSeF2.
+---
+
+import logoDark from '../../cli/assets/ksef2-cli-dark-logo.png';
+import logoLight from '../../cli/assets/ksef2-cli-light-logo.png';
+
+<div className="ksef2-product-logo" role="img" aria-label="KSeF2 CLI">
+  <img
+    className="ksef2-product-logo__image ksef2-product-logo__image--light"
+    src={logoLight.src}
+    alt=""
+    width="392"
+    aria-hidden="true"
+  />
+  <img
+    className="ksef2-product-logo__image ksef2-product-logo__image--dark"
+    src={logoDark.src}
+    alt=""
+    width="392"
+    aria-hidden="true"
+  />
+</div>
+
+<style>{`
+  .ksef2-product-logo {
+    position: relative;
+    width: min(392px, 100%);
+    aspect-ratio: 392 / 88;
+    margin: 0 0 1.5rem;
+  }
+
+  .ksef2-product-logo__image {
+    display: block;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: left center;
+  }
+
+  .ksef2-product-logo__image--light {
+    opacity: 0;
+  }
+
+  :root[data-theme='dark'] .ksef2-product-logo__image--light {
+    opacity: 1;
+  }
+
+  :root[data-theme='dark'] .ksef2-product-logo__image--dark {
+    opacity: 0;
+  }
+`}</style>
+
+KSeF2 CLI jest interfejsem wiersza polecen dla SDK Pythona `ksef2`.
+Pozwala uruchamiac najwazniejsze przeplywy KSeF z terminala: uwierzytelnianie,
+zapytania o faktury, wysylke online i wsadowa, tokeny, uprawnienia, limity oraz
+dane TEST.
+
+Pelna dokumentacja CLI jest obecnie utrzymywana po angielsku:
+
+- [Installation](getting-started/installation.md)
+- [Quickstart](getting-started/quickstart.mdx)
+- [Authentication](guides/authentication.md)
+- [Configuration](guides/configuration.md)
+- [Invoice workflows](guides/invoices.md)
+- [Command reference](reference/commands.md)
+
+Stabilna dokumentacja przeplywow SDK znajduje sie w [dokumentacji SDK](../sdk/getting-started/overview.mdx).

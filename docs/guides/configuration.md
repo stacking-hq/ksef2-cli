@@ -18,8 +18,12 @@ uv run ksef2 config path
 By default, the CLI uses:
 
 ```text
-~/.config/ksef2-cli/config.toml
+~/.config/ksef2/config.toml
 ```
+
+If the new file does not exist but the legacy
+`~/.config/ksef2-cli/config.toml` file exists, the CLI loads the legacy file so
+existing profiles keep working. New installations write the `ksef2` path.
 
 Override the path with `--config` or `KSEF2_CONFIG`:
 
