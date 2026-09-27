@@ -77,6 +77,10 @@ class AuthenticationConfigError(CliError):
     """Authentication settings are absent, incomplete, or mutually exclusive."""
 
 
+class MissingOptionalDependencyError(CliError):
+    """A command needs an install extra that is not present in this environment."""
+
+
 class RemoteServiceError(CliError):
     """The KSeF service rejected or could not complete a request."""
 

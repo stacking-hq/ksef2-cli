@@ -13,7 +13,10 @@ from ksef2.renderers import InvoicePDFExporter
 from pydantic import BaseModel
 
 from ksef2_cli.config import AuthenticatedRuntime, EnvironmentName, Settings
-from ksef2_cli.exceptions import AuthenticationConfigError
+from ksef2_cli.exceptions import (
+    AuthenticationConfigError,
+    MissingOptionalDependencyError,
+)
 from ksef2_cli.io import read_model_file
 
 AuthMethod = Literal["token", "test_certificate", "p12", "pem"]
@@ -215,7 +218,21 @@ def render_invoice_pdf(settings: Settings, invoice_xml_path: Path) -> bytes:
     if settings.runtime_overrides and settings.runtime_overrides.invoice_pdf_renderer:
         return settings.runtime_overrides.invoice_pdf_renderer(invoice_xml_path)
 
-    return InvoicePDFExporter().export_from_path(invoice_xml_path)
+    try:
+        exporter = InvoicePDFExporter()
+    except ImportError as error:
+        raise MissingOptionalDependencyError(
+            "Rendering PDF needs the optional pdf extra, which is not installed.",
+            title="Missing optional dependency",
+            details=[str(error)],
+            hints=[
+                'Install it with: uv tool install "ksef2-cli[pdf]"',
+                "On Linux also install libpango-1.0-0, libharfbuzz0b, "
+                "libpangoft2-1.0-0, and libharfbuzz-subset0.",
+            ],
+        ) from error
+
+    return exporter.export_from_path(invoice_xml_path)
 
 
 def read_model(settings: Settings, path: Path, model_type: type[ModelT]) -> ModelT:

@@ -712,8 +712,14 @@ def test_invoice_export_fetch_requires_ready_package(runner, tmp_path) -> None:
     assert "Export package is not ready" in result.output
 
 
-def _export_pdf_runtime() -> tuple[RuntimeOverrides, list[Path]]:
-    """Runtime whose export decrypts two invoices and whose PDF renderer is a spy."""
+def _export_pdf_runtime(
+    *, with_fake_renderer: bool = True
+) -> tuple[RuntimeOverrides, list[Path]]:
+    """Runtime whose export decrypts two invoices and whose PDF renderer is a spy.
+
+    ``with_fake_renderer=False`` leaves the real renderer path in place so tests can
+    exercise the missing-extra error.
+    """
 
     rendered: list[Path] = []
 
@@ -739,7 +745,7 @@ def _export_pdf_runtime() -> tuple[RuntimeOverrides, list[Path]]:
     )
     runtime = fake_runtime(
         auth=type("Auth", (), {"invoices": service})(),
-        invoice_pdf_renderer=fake_render,
+        invoice_pdf_renderer=fake_render if with_fake_renderer else None,
     )
     return runtime, rendered
 
@@ -807,3 +813,37 @@ def test_invoices_export_pdf_defaults_to_the_out_dir(runner, tmp_path) -> None:
         str(out_dir / "invoice-two.pdf"),
     ]
     assert (out_dir / "invoice-two.pdf").exists()
+
+
+def test_invoices_export_pdf_reports_a_missing_pdf_extra(
+    runner, tmp_path, monkeypatch
+) -> None:
+    """Without the extra the user needs the install hint, not a bug-report URL."""
+
+    import ksef2_cli.runtime as runtime_module
+
+    def exporter_without_weasyprint() -> object:
+        raise ModuleNotFoundError("No module named 'weasyprint'", name="weasyprint")
+
+    monkeypatch.setattr(
+        runtime_module, "InvoicePDFExporter", exporter_without_weasyprint
+    )
+    runtime, _ = _export_pdf_runtime(with_fake_renderer=False)
+
+    result = runner.invoke(
+        app,
+        cli_args(
+            "invoices",
+            "export-pdf",
+            "--date-from",
+            "2026-01-01T00:00:00Z",
+            "--out-dir",
+            str(tmp_path / "out"),
+        ),
+        obj=runtime,
+    )
+
+    assert result.exit_code == 1
+    assert "optional pdf extra" in result.output
+    assert 'ksef2-cli[pdf]' in result.output
+    assert "issues/new" not in result.output
