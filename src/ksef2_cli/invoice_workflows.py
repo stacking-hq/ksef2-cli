@@ -1,5 +1,6 @@
 """Shared invoice workflows used by CLI and TUI adapters."""
 
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Self, cast
@@ -35,6 +36,7 @@ from ksef2_cli.commands.invoices.models import (
     InvoiceWorkflowBatch,
     InvoiceWorkflowItem,
     InvoiceWorkflowReceipt,
+    InvoicePdfExport,
     InvoicesSendResult,
     InvoicingModeChoice,
     OnlineInvoiceReceipt,
@@ -199,6 +201,25 @@ class InvoiceExportDownloadInput(BaseModel):
     timeout: float = Field(default=120.0, ge=1.0)
     poll_interval: float = Field(default=2.0, ge=0.1)
     handle_file: Path | None = None
+
+
+class InvoiceExportPdfInput(BaseModel):
+    date_from: str
+    date_to: str | None = None
+    role: InvoiceRoleChoice = InvoiceRoleChoice.SELLER
+    date_type: InvoiceDateTypeChoice = InvoiceDateTypeChoice.ISSUE_DATE
+    amount_type: InvoiceAmountTypeChoice = InvoiceAmountTypeChoice.BRUTTO
+    output_dir: Path = Path("downloads")
+    pdf_dir: Path | None = None
+    only_metadata: bool = False
+    compression_type: CompressionTypeChoice | None = None
+    timeout: float = Field(default=120.0, ge=1.0)
+    poll_interval: float = Field(default=2.0, ge=0.1)
+    handle_file: Path | None = None
+
+    @property
+    def pdf_directory(self) -> Path:
+        return self.pdf_dir if self.pdf_dir is not None else self.output_dir
 
 
 class OnlineInvoiceHandler:
@@ -595,6 +616,55 @@ def download_invoice_export(
             paths=paths,
         ),
         items=[str(path) for path in paths],
+    )
+
+
+def export_invoices_to_pdf(
+    auth: AuthenticatedClient,
+    inputs: InvoiceExportPdfInput,
+    render_pdf: Callable[[Path], bytes],
+) -> FocusedResult[InvoicePdfExport, SavedFile]:
+    """Download an invoice export package and render every invoice in it to PDF.
+
+    ``render_pdf`` is supplied by the caller because WeasyPrint ships as an optional
+    extra, so this workflow must not import it directly.
+    """
+
+    downloaded = download_invoice_export(
+        auth,
+        InvoiceExportDownloadInput(
+            date_from=inputs.date_from,
+            date_to=inputs.date_to,
+            role=inputs.role,
+            date_type=inputs.date_type,
+            amount_type=inputs.amount_type,
+            output_dir=inputs.output_dir,
+            only_metadata=inputs.only_metadata,
+            compression_type=inputs.compression_type,
+            timeout=inputs.timeout,
+            poll_interval=inputs.poll_interval,
+            handle_file=inputs.handle_file,
+        ),
+    )
+
+    pdfs: list[SavedFile] = []
+    for invoice_xml_path in downloaded.payload.paths:
+        content = render_pdf(invoice_xml_path)
+        target = inputs.pdf_directory / _safe_filename(
+            f"{invoice_xml_path.stem}.pdf", ".pdf"
+        )
+        pdfs.append(
+            SavedFile(path=write_bytes_file(target, content), size=len(content))
+        )
+
+    return FocusedResult(
+        payload=InvoicePdfExport(
+            reference_number=downloaded.payload.reference_number,
+            pdfs=pdfs,
+            invoice_xml_files=downloaded.payload.paths,
+            handle_file=inputs.handle_file,
+        ),
+        items=pdfs,
     )
 
 

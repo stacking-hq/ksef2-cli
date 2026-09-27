@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Callable, Literal, Protocol, TypeVar
 
 from ksef2 import Client, Environment
 from ksef2.clients.authenticated import AuthenticatedClient
+from ksef2.renderers import InvoicePDFExporter
 from pydantic import BaseModel
 
 from ksef2_cli.config import AuthenticatedRuntime, EnvironmentName, Settings
@@ -202,6 +203,19 @@ def run_authenticated(
     authenticated = get_authenticated_client(settings)
     with authenticated.client:
         return operation(authenticated.auth)
+
+
+def render_invoice_pdf(settings: Settings, invoice_xml_path: Path) -> bytes:
+    """Render one decrypted invoice XML file to PDF bytes.
+
+    WeasyPrint is an optional dependency, so the exporter is built per call and the
+    SDK raises its own ``ksef2[pdf]`` install hint when it is absent.
+    """
+
+    if settings.runtime_overrides and settings.runtime_overrides.invoice_pdf_renderer:
+        return settings.runtime_overrides.invoice_pdf_renderer(invoice_xml_path)
+
+    return InvoicePDFExporter().export_from_path(invoice_xml_path)
 
 
 def read_model(settings: Settings, path: Path, model_type: type[ModelT]) -> ModelT:

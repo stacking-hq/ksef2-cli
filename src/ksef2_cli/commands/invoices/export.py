@@ -15,12 +15,18 @@ from ksef2_cli.commands.invoices.models import (
     InvoiceDateTypeChoice,
     InvoiceRoleChoice,
 )
-from ksef2_cli.context import read_model, run_authenticated_command
+from ksef2_cli.context import (
+    read_model,
+    render_invoice_pdf,
+    run_authenticated_command,
+)
 from ksef2_cli.invoice_workflows import (
     InvoiceExportDownloadInput,
     InvoiceExportFetchInput,
     InvoiceExportInput,
+    InvoiceExportPdfInput,
     download_invoice_export,
+    export_invoices_to_pdf,
     fetch_invoice_export,
     get_invoice_export_status,
     schedule_invoice_export,
@@ -166,3 +172,70 @@ def invoices_export_download(
         handle_file=handle_file,
     )
     run_authenticated_command(ctx, lambda auth: download_invoice_export(auth, inputs))
+
+
+def invoices_export_pdf(
+    ctx: typer.Context,
+    date_from: Annotated[
+        str, typer.Option("--date-from", help="Start datetime/date, ISO format.")
+    ],
+    date_to: Annotated[
+        str | None, typer.Option("--date-to", help="End datetime/date, ISO format.")
+    ] = None,
+    role: Annotated[
+        InvoiceRoleChoice, typer.Option("--role")
+    ] = InvoiceRoleChoice.SELLER,
+    date_type: Annotated[
+        InvoiceDateTypeChoice, typer.Option("--date-type")
+    ] = InvoiceDateTypeChoice.ISSUE_DATE,
+    amount_type: Annotated[
+        InvoiceAmountTypeChoice, typer.Option("--amount-type")
+    ] = InvoiceAmountTypeChoice.BRUTTO,
+    output_dir: Annotated[Path, typer.Option("--out-dir", file_okay=False)] = Path(
+        "downloads"
+    ),
+    pdf_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--pdf-dir",
+            file_okay=False,
+            help="Where to write PDFs. Defaults to --out-dir.",
+        ),
+    ] = None,
+    only_metadata: Annotated[bool, typer.Option("--only-metadata")] = False,
+    compression_type: Annotated[
+        CompressionTypeChoice | None, typer.Option("--compression-type")
+    ] = None,
+    timeout: Annotated[float, typer.Option("--timeout", min=1.0)] = 120.0,
+    poll_interval: Annotated[float, typer.Option("--poll-interval", min=0.1)] = 2.0,
+    handle_file: Annotated[
+        Path | None, typer.Option("--handle-file", dir_okay=False)
+    ] = None,
+) -> None:
+    """Download an invoice export and render each invoice to PDF.
+
+    Requires the optional PDF renderer: install with ``ksef2-cli[pdf]``, which pulls in
+    WeasyPrint and its system libraries. The decrypted invoice XML is kept in --out-dir
+    and each PDF is written beside it, or into --pdf-dir when given.
+    """
+
+    inputs = InvoiceExportPdfInput(
+        date_from=date_from,
+        date_to=date_to,
+        role=role,
+        date_type=date_type,
+        amount_type=amount_type,
+        output_dir=output_dir,
+        pdf_dir=pdf_dir,
+        only_metadata=only_metadata,
+        compression_type=compression_type,
+        timeout=timeout,
+        poll_interval=poll_interval,
+        handle_file=handle_file,
+    )
+    run_authenticated_command(
+        ctx,
+        lambda auth: export_invoices_to_pdf(
+            auth, inputs, lambda invoice_xml_path: render_invoice_pdf(ctx, invoice_xml_path)
+        ),
+    )

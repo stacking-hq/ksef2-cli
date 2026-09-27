@@ -196,6 +196,15 @@ class ExportPaths(CliResult):
     handle_file: Path | None = None
 
 
+class InvoicePdfExport(CliResult):
+    """PDFs rendered from the invoices in a downloaded export package."""
+
+    reference_number: str
+    pdfs: list[SavedFile] = Field(default_factory=list)
+    invoice_xml_files: list[Path] = Field(default_factory=list)
+    handle_file: Path | None = None
+
+
 class InvoiceRoleChoice(StrEnum):
     SELLER = "seller"
     BUYER = "buyer"

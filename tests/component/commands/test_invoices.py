@@ -24,6 +24,7 @@ from ksef2.domain.models.session import (
 )
 from ksef2_cli.app import app
 from ksef2_cli.commands.invoices.models import ExportHandleSaved, InvoiceWorkflowReceipt
+from ksef2_cli.config import RuntimeOverrides
 
 
 class FakeSession(FakeService):
@@ -709,3 +710,100 @@ def test_invoice_export_fetch_requires_ready_package(runner, tmp_path) -> None:
 
     assert result.exit_code == 1
     assert "Export package is not ready" in result.output
+
+
+def _export_pdf_runtime() -> tuple[RuntimeOverrides, list[Path]]:
+    """Runtime whose export decrypts two invoices and whose PDF renderer is a spy."""
+
+    rendered: list[Path] = []
+
+    def fake_fetch(**kwargs: object) -> list[Path]:
+        target = Path(kwargs["target_directory"])
+        target.mkdir(parents=True, exist_ok=True)
+        paths: list[Path] = []
+        for name in ("invoice-one.xml", "invoice-two.xml"):
+            (target / name).write_text("<invoice/>", encoding="utf-8")
+            paths.append(target / name)
+        return paths
+
+    def fake_render(invoice_xml_path: Path) -> bytes:
+        rendered.append(invoice_xml_path)
+        return b"%PDF-1.4 " + invoice_xml_path.name.encode()
+
+    service = FakeService(
+        schedule_export=ExportHandle(
+            reference_number="export-ref", aes_key=b"0" * 32, iv=b"0" * 16
+        ),
+        wait_for_export_package=_invoice_package(),
+        fetch_package=fake_fetch,
+    )
+    runtime = fake_runtime(
+        auth=type("Auth", (), {"invoices": service})(),
+        invoice_pdf_renderer=fake_render,
+    )
+    return runtime, rendered
+
+
+def test_invoices_export_pdf_renders_each_downloaded_invoice(runner, tmp_path) -> None:
+    runtime, rendered = _export_pdf_runtime()
+    out_dir = tmp_path / "xml"
+    pdf_dir = tmp_path / "pdfs"
+
+    data = payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "invoices",
+                "export-pdf",
+                "--date-from",
+                "2026-01-01T00:00:00Z",
+                "--out-dir",
+                str(out_dir),
+                "--pdf-dir",
+                str(pdf_dir),
+            ),
+            obj=runtime,
+        )
+    )
+
+    assert data["reference_number"] == "export-ref"
+    assert [pdf["path"] for pdf in data["pdfs"]] == [
+        str(pdf_dir / "invoice-one.pdf"),
+        str(pdf_dir / "invoice-two.pdf"),
+    ]
+    assert data["invoice_xml_files"] == [
+        str(out_dir / "invoice-one.xml"),
+        str(out_dir / "invoice-two.xml"),
+    ]
+    assert (pdf_dir / "invoice-one.pdf").read_bytes() == b"%PDF-1.4 invoice-one.xml"
+    # The renderer must be handed the decrypted XML, not the encrypted package.
+    assert rendered == [
+        out_dir / "invoice-one.xml",
+        out_dir / "invoice-two.xml",
+    ]
+
+
+def test_invoices_export_pdf_defaults_to_the_out_dir(runner, tmp_path) -> None:
+    runtime, _ = _export_pdf_runtime()
+    out_dir = tmp_path / "invoices"
+
+    data = payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "invoices",
+                "export-pdf",
+                "--date-from",
+                "2026-01-01T00:00:00Z",
+                "--out-dir",
+                str(out_dir),
+            ),
+            obj=runtime,
+        )
+    )
+
+    assert [pdf["path"] for pdf in data["pdfs"]] == [
+        str(out_dir / "invoice-one.pdf"),
+        str(out_dir / "invoice-two.pdf"),
+    ]
+    assert (out_dir / "invoice-two.pdf").exists()
