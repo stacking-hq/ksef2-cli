@@ -53,12 +53,15 @@ def test_authenticate_client_token_and_test_certificate(monkeypatch) -> None:
         "auth": "token"
     }
     assert auth.called("with_token")["ksef_token"] == "token"
+    assert auth.called("with_token")["timeout"] == 60.0
+    assert auth.called("with_token")["poll_interval"] == 1.0
 
     monkeypatch.setenv("KSEF2_PROFILE_TOKEN", "profile-token")
     assert context.authenticate_client(
-        ctx_for(settings(token_env="KSEF2_PROFILE_TOKEN")), client
+        ctx_for(settings(token_env="KSEF2_PROFILE_TOKEN", auth_timeout=5.0)), client
     ) == {"auth": "token"}
     assert auth.calls[-1][2]["ksef_token"] == "profile-token"
+    assert auth.calls[-1][2]["timeout"] == 5.0
 
     assert context.authenticate_client(
         ctx_for(settings(test_certificate=True)), client

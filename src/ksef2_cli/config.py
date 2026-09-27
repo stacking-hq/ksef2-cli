@@ -113,7 +113,7 @@ class Settings:
     p12_password: str | None
     p12_password_env: str | None
     poll_interval: float
-    max_poll_attempts: int
+    auth_timeout: float
     runtime_overrides: RuntimeOverrides | None = None
 
 
@@ -173,8 +173,8 @@ class ProfileConfig(BaseModel):
     poll_interval: float | None = Field(
         default=None, ge=0.1, description="Authentication polling interval."
     )
-    max_poll_attempts: int | None = Field(
-        default=None, ge=1, description="Authentication polling attempts."
+    auth_timeout: float | None = Field(
+        default=None, ge=1.0, description="Authentication timeout in seconds."
     )
 
 
@@ -239,7 +239,7 @@ def resolve_settings(
     p12: Path | None = None,
     p12_password: str | None = None,
     poll_interval: float | None = None,
-    max_poll_attempts: int | None = None,
+    auth_timeout: float | None = None,
     runtime_overrides: RuntimeOverrides | None = None,
     environ: Mapping[str, str] | None = None,
 ) -> Settings:
@@ -291,11 +291,11 @@ def resolve_settings(
     if poll_interval is not None:
         effective_poll_interval = poll_interval
 
-    effective_max_poll_attempts = 60
-    if selected_profile and selected_profile.max_poll_attempts is not None:
-        effective_max_poll_attempts = selected_profile.max_poll_attempts
-    if max_poll_attempts is not None:
-        effective_max_poll_attempts = max_poll_attempts
+    effective_auth_timeout = 60.0
+    if selected_profile and selected_profile.auth_timeout is not None:
+        effective_auth_timeout = selected_profile.auth_timeout
+    if auth_timeout is not None:
+        effective_auth_timeout = auth_timeout
 
     return Settings(
         config_file=resolved_config_file,
@@ -319,7 +319,7 @@ def resolve_settings(
         p12_password=auth["p12_password"],
         p12_password_env=auth["p12_password_env"],
         poll_interval=effective_poll_interval,
-        max_poll_attempts=effective_max_poll_attempts,
+        auth_timeout=effective_auth_timeout,
         runtime_overrides=runtime_overrides,
     )
 

@@ -29,6 +29,21 @@ def write_model_file(
     return path
 
 
+def write_text_file(
+    path: Path, content: str, *, file_mode: int | None = None
+) -> Path:
+    """Write text the caller already serialized, optionally tightening file mode.
+
+    SDK session resume state masks its AES key and IV in ``model_dump_json``, so state
+    files go through this helper with the model's own credential export instead.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content + "\n", encoding="utf-8")
+    if file_mode is not None:
+        path.chmod(file_mode)
+    return path
+
+
 def write_bytes_file(path: Path, content: bytes) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)

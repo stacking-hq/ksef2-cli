@@ -1,5 +1,6 @@
 from conftest import FakeClient, FakeService, cli_args, fake_runtime, payload
 from ksef2.domain.models.limits import SubjectLimits
+from ksef2.domain.models.tokens import GenerateTokenResponse
 from ksef2_cli.app import app
 from ksef2_cli.config import (
     CliConfig,
@@ -193,7 +194,7 @@ def test_limits_get_set_reset_and_production(runner, tmp_path) -> None:
 
 def test_tokens_commands(runner) -> None:
     service = FakeService(
-        generate={"token": "secret"},
+        generate=GenerateTokenResponse(reference_number="token-ref", token="secret"),
         list_page={"tokens": [{"reference_number": "r1"}]},
         list_all=lambda **kwargs: [
             type("Page", (), {"tokens": [{"reference_number": "r1"}]})()
@@ -222,7 +223,7 @@ def test_tokens_commands(runner) -> None:
             ),
             obj=runtime,
         )
-    ) == {"token": "secret"}
+    ) == {"reference_number": "token-ref", "token": "secret"}
     assert service.called("generate")["permissions"] == ["invoice_read"]
 
     invalid = runner.invoke(

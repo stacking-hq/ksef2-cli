@@ -161,6 +161,11 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
 
 ## Advanced session commands
 
+Session state files (`--state-file`, `--save-state`) and invoice workflow
+receipt files (`--receipt`, `--receipt-dir`) carry the session AES key and IV,
+so the CLI writes them with owner-only permissions (`0600`). Treat them like
+credentials: do not commit them or paste them into issues.
+
 Use the `online` group when you need to keep an online session open:
 
 ```bash

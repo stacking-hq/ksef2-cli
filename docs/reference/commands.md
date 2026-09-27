@@ -28,7 +28,7 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 | `--key-password` | Password for encrypted PEM private key. |
 | `--p12`, `--p12-password` | PKCS#12/PFX XAdES archive and password. |
 | `--auth-poll-interval` | Authentication polling interval. |
-| `--auth-max-poll-attempts` | Authentication polling attempts. |
+| `--auth-timeout` | Seconds to wait for authentication to complete. |
 
 ## Command groups
 

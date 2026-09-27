@@ -28,7 +28,7 @@ def test_cli_config_loads_profiles_and_resolves_active_settings(tmp_path) -> Non
         environment = "test"
         nip = "6880313213"
         poll_interval = 1.5
-        max_poll_attempts = 12
+        auth_timeout = 12.0
 
         [profiles.demo.auth]
         type = "xades_pem"
@@ -50,7 +50,7 @@ def test_cli_config_loads_profiles_and_resolves_active_settings(tmp_path) -> Non
     assert str(settings.key).endswith("key.pem")
     assert settings.key_password_env == "KSEF2_DEMO_KEY_PASSWORD"
     assert settings.poll_interval == 1.5
-    assert settings.max_poll_attempts == 12
+    assert settings.auth_timeout == 12.0
 
 
 def test_profile_selection_uses_explicit_option_then_environment(tmp_path) -> None:

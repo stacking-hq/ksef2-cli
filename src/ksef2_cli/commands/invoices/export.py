@@ -25,6 +25,7 @@ from ksef2_cli.invoice_workflows import (
     get_invoice_export_status,
     schedule_invoice_export,
 )
+from ksef2_cli.parsing import parse_iso_datetime
 from ksef2_cli.results import FocusedResult
 
 
@@ -62,17 +63,25 @@ def invoices_export(
 ) -> None:
     """Schedule an invoice export and print/save the decryption handle."""
 
-    inputs = InvoiceExportInput(
-        date_from=date_from,
-        date_to=date_to,
-        role=role,
-        date_type=date_type,
-        amount_type=amount_type,
-        only_metadata=only_metadata,
-        compression_type=compression_type,
-        handle_file=handle_file,
+    def load_input() -> InvoiceExportInput:
+        return InvoiceExportInput(
+            date_from=parse_iso_datetime(date_from, option_name="--date-from"),
+            date_to=None
+            if date_to is None
+            else parse_iso_datetime(date_to, option_name="--date-to"),
+            role=role,
+            date_type=date_type,
+            amount_type=amount_type,
+            only_metadata=only_metadata,
+            compression_type=compression_type,
+            handle_file=handle_file,
+        )
+
+    run_authenticated_command(
+        ctx,
+        lambda auth: schedule_invoice_export(auth, load_input()),
+        validate=load_input,
     )
-    run_authenticated_command(ctx, lambda auth: schedule_invoice_export(auth, inputs))
 
 
 def invoices_export_status(
@@ -152,17 +161,25 @@ def invoices_export_download(
 ) -> None:
     """Schedule, wait for, download, and decrypt an invoice export."""
 
-    inputs = InvoiceExportDownloadInput(
-        date_from=date_from,
-        date_to=date_to,
-        role=role,
-        date_type=date_type,
-        amount_type=amount_type,
-        output_dir=output_dir,
-        only_metadata=only_metadata,
-        compression_type=compression_type,
-        timeout=timeout,
-        poll_interval=poll_interval,
-        handle_file=handle_file,
+    def load_input() -> InvoiceExportDownloadInput:
+        return InvoiceExportDownloadInput(
+            date_from=parse_iso_datetime(date_from, option_name="--date-from"),
+            date_to=None
+            if date_to is None
+            else parse_iso_datetime(date_to, option_name="--date-to"),
+            role=role,
+            date_type=date_type,
+            amount_type=amount_type,
+            output_dir=output_dir,
+            only_metadata=only_metadata,
+            compression_type=compression_type,
+            timeout=timeout,
+            poll_interval=poll_interval,
+            handle_file=handle_file,
+        )
+
+    run_authenticated_command(
+        ctx,
+        lambda auth: download_invoice_export(auth, load_input()),
+        validate=load_input,
     )
-    run_authenticated_command(ctx, lambda auth: download_invoice_export(auth, inputs))

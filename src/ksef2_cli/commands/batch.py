@@ -7,7 +7,7 @@ import typer
 from pydantic import BaseModel, model_validator
 
 from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.domain.models.batch import BatchSessionState
+from ksef2.domain.models.batch import BatchSessionResumeState
 from ksef2.domain.models.session import SessionInvoicesResponse, SessionStatusResponse
 
 from ksef2_cli.config import FORM_SCHEMA_NAMES, FormSchemaChoice
@@ -16,7 +16,7 @@ from ksef2_cli.io import (
     SECRET_MODEL_FILE_MODE,
     read_model_file,
     write_bytes_file,
-    write_model_file,
+    write_text_file,
 )
 from ksef2_cli.results import BatchSubmitted, SavedFile
 
@@ -49,7 +49,7 @@ def batch_submit(
     def operation() -> BatchSubmitted:
         def submit_batch(
             auth: AuthenticatedClient,
-        ) -> tuple[BatchSessionState, SessionStatusResponse | None]:
+        ) -> tuple[BatchSessionResumeState, SessionStatusResponse | None]:
             if max_part_size is None:
                 prepared = auth.batch.prepare_batch_from_paths(
                     invoice_paths=invoice_paths,
@@ -77,7 +77,9 @@ def batch_submit(
 
         state, status = run_authenticated(ctx, submit_batch)
         if state_file:
-            write_model_file(state_file, state, file_mode=SECRET_MODEL_FILE_MODE)
+            _ = write_text_file(
+                state_file, state.to_json(indent=2), file_mode=SECRET_MODEL_FILE_MODE
+            )
         return BatchSubmitted(state_file=state_file, state=state, status=status)
 
     run_command(ctx, operation)
@@ -98,12 +100,12 @@ class BatchSendInput(BaseModel):
         return self
 
     @property
-    def session_reference(self) -> str | BatchSessionState:
+    def session_reference(self) -> str | BatchSessionResumeState:
         if self.reference:
             return self.reference
 
         if self.state_file:
-            return read_model_file(self.state_file, BatchSessionState)
+            return read_model_file(self.state_file, BatchSessionResumeState)
 
         raise ValueError("Either reference or statefile has to be passed.")
 

@@ -1,10 +1,18 @@
+import json
 from datetime import UTC, datetime
 
-from conftest import FakeService, cli_args, fake_runtime, payload
-from ksef2 import FormSchema
-from ksef2.domain.models.batch import BatchSessionState
+import pytest
+from conftest import (
+    FakeService,
+    batch_state,
+    cli_args,
+    fake_runtime,
+    online_state,
+    payload,
+)
+from ksef2.domain.models.batch import BatchSessionResumeState
 from ksef2.domain.models.session import (
-    OnlineSessionState,
+    OnlineSessionResumeState,
     SessionStatusResponse,
     StatusInfo,
 )
@@ -13,28 +21,6 @@ from ksef2_cli.app import app
 
 class FakeSession(FakeService):
     pass
-
-
-def _online_state(reference_number: str = "online-ref") -> OnlineSessionState:
-    return OnlineSessionState.from_encoded(
-        reference_number=reference_number,
-        aes_key=b"aes",
-        iv=b"iv",
-        access_token="access",
-        valid_until=datetime(2026, 1, 1, tzinfo=UTC),
-        form_code=FormSchema.FA3,
-    )
-
-
-def _batch_state(reference_number: str = "batch-ref") -> BatchSessionState:
-    return BatchSessionState.from_encoded(
-        reference_number=reference_number,
-        aes_key=b"aes",
-        iv=b"iv",
-        access_token="access",
-        form_code=FormSchema.FA3,
-        part_upload_requests=[],
-    )
 
 
 def _session_status(description: str) -> SessionStatusResponse:
@@ -47,7 +33,7 @@ def _session_status(description: str) -> SessionStatusResponse:
 
 def test_online_open_and_send(runner, tmp_path) -> None:
     session = FakeSession(
-        get_state=_online_state(),
+        get_state=online_state(),
         send_invoice={"reference_number": "invoice-ref"},
         send_invoice_and_wait={"reference_number": "invoice-ready"},
         close=None,
@@ -68,6 +54,12 @@ def test_online_open_and_send(runner, tmp_path) -> None:
     assert opened["state_file"] == str(state_file)
     assert opened["state"]["reference_number"] == "online-ref"
     assert state_file.exists()
+    # A state file that masks its key material cannot resume anything, so the saved JSON
+    # has to validate back into the exact state the session reported.
+    assert OnlineSessionResumeState.model_validate_json(
+        state_file.read_text(encoding="utf-8")
+    ) == online_state()
+    assert (state_file.stat().st_mode & 0o777) == 0o600
 
     invoice = tmp_path / "invoice.xml"
     invoice.write_text("<invoice/>", encoding="utf-8")
@@ -97,17 +89,8 @@ def test_online_open_and_send(runner, tmp_path) -> None:
 
 def test_online_resume_commands(runner, tmp_path) -> None:
     state_file = tmp_path / "state.json"
-    state_file.write_text(
-        """
-        {
-          "reference_number": "online-ref",
-          "aes_key": "aes",
-          "iv": "iv",
-          "access_token": "access",
-          "form_code": "FA3",
-          "valid_until": "2026-01-01T00:00:00Z"
-        }
-        """,
+    _ = state_file.write_text(
+        online_state().to_json(indent=2),
         encoding="utf-8",
     )
 
@@ -232,10 +215,30 @@ def test_online_resume_commands(runner, tmp_path) -> None:
     }
 
 
+def test_online_status_reads_state_written_by_older_cli(runner, tmp_path) -> None:
+    """CLI 0.0.1 wrote a bearer token into resume state; reading it must still work."""
+    legacy_state = online_state().to_dict(mode="json")
+    legacy_state["access_token"] = "access"
+    state_file = tmp_path / "legacy-state.json"
+    _ = state_file.write_text(json.dumps(legacy_state), encoding="utf-8")
+
+    session = FakeSession(get_status={"status": "open"})
+    auth_service = FakeService(resume_online_session=session)
+
+    with pytest.warns(DeprecationWarning, match="access_token is deprecated"):
+        assert payload(
+            runner.invoke(
+                app,
+                cli_args("online", "status", "--state-file", str(state_file)),
+                obj=fake_runtime(auth=auth_service),
+            )
+        ) == {"status": "open"}
+
+
 def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
     service = FakeService(
         prepare_batch_from_paths={"prepared": True},
-        submit_prepared_batch=_batch_state(),
+        submit_prepared_batch=batch_state(),
         wait_for_completion=_session_status("completed"),
         get_status={"status": "processing"},
         list_invoices={"invoices": [{"reference_number": "invoice-ref"}]},
@@ -268,6 +271,10 @@ def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
     assert submitted["state_file"] == str(state_file)
     assert submitted["status"]["status"]["description"] == "completed"
     assert state_file.exists()
+    assert BatchSessionResumeState.model_validate_json(
+        state_file.read_text(encoding="utf-8")
+    ) == batch_state()
+    assert (state_file.stat().st_mode & 0o777) == 0o600
     assert service.called("prepare_batch_from_paths")["offline_mode"] is True
 
     assert payload(

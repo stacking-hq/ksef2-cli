@@ -21,6 +21,7 @@ from ksef2_cli.invoice_workflows import (
     download_invoice,
     query_invoice_metadata,
 )
+from ksef2_cli.parsing import parse_iso_datetime
 from ksef2_cli.results import SavedFile
 
 
@@ -93,33 +94,40 @@ def invoices_metadata(
 ) -> None:
     """Query invoice metadata."""
 
-    inputs = InvoiceMetadataInput(
-        date_from=date_from,
-        date_to=date_to,
-        role=role,
-        date_type=date_type,
-        amount_type=amount_type,
-        currency=currency,
-        invoice_type=invoice_type,
-        seller_nip=seller_nip,
-        buyer_nip=buyer_nip,
-        buyer_vat_ue=buyer_vat_ue,
-        buyer_other_id=buyer_other_id,
-        invoice_number=invoice_number,
-        ksef_number=ksef_number,
-        amount_min=amount_min,
-        amount_max=amount_max,
-        form=form,
-        invoicing_mode=invoicing_mode,
-        attachment=attachment,
-        self_invoicing=self_invoicing,
-        page_size=page_size,
-        page_offset=page_offset,
-        sort_order=sort_order,
-        all_pages=all_pages,
-    )
+    def load_input() -> InvoiceMetadataInput:
+        return InvoiceMetadataInput(
+            date_from=parse_iso_datetime(date_from, option_name="--date-from"),
+            date_to=None
+            if date_to is None
+            else parse_iso_datetime(date_to, option_name="--date-to"),
+            role=role,
+            date_type=date_type,
+            amount_type=amount_type,
+            currency=currency,
+            invoice_type=invoice_type,
+            seller_nip=seller_nip,
+            buyer_nip=buyer_nip,
+            buyer_vat_ue=buyer_vat_ue,
+            buyer_other_id=buyer_other_id,
+            invoice_number=invoice_number,
+            ksef_number=ksef_number,
+            amount_min=amount_min,
+            amount_max=amount_max,
+            form=form,
+            invoicing_mode=invoicing_mode,
+            attachment=attachment,
+            self_invoicing=self_invoicing,
+            page_size=page_size,
+            page_offset=page_offset,
+            sort_order=sort_order,
+            all_pages=all_pages,
+        )
 
-    run_authenticated_command(ctx, lambda auth: query_invoice_metadata(auth, inputs))
+    run_authenticated_command(
+        ctx,
+        lambda auth: query_invoice_metadata(auth, load_input()),
+        validate=load_input,
+    )
 
 
 def invoices_download(

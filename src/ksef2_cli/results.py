@@ -3,10 +3,10 @@
 from pathlib import Path
 from typing import Generic, TypeVar
 
-from ksef2.domain.models.batch import BatchSessionState
+from ksef2.domain.models.batch import BatchSessionResumeState
 from ksef2.domain.models.invoices import SendInvoiceResponse
 from ksef2.domain.models.session import (
-    OnlineSessionState,
+    OnlineSessionResumeState,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
 )
@@ -135,18 +135,30 @@ class ProfileCurrent(CliResult):
     profile: ProfileConfig | None = None
 
 
+class GeneratedToken(CliResult):
+    """One-time credential printed by ``tokens generate``.
+
+    The SDK response marks its token as excluded from serialization, so a generic dump
+    of it drops the credential. The CLI copies it into this model on purpose: the value
+    is secret material and ``--json`` output of this command must be protected.
+    """
+
+    reference_number: str
+    token: str
+
+
 class OnlineSessionOpened(CliResult):
     """Result for opening an online invoice session."""
 
     state_file: Path | None = None
-    state: OnlineSessionState
+    state: OnlineSessionResumeState
 
 
 class BatchSubmitted(CliResult):
     """Result for submitting a batch invoice session."""
 
     state_file: Path | None = None
-    state: BatchSessionState
+    state: BatchSessionResumeState
     status: SessionStatusResponse | None = None
 
 
