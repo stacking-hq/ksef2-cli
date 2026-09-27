@@ -6,11 +6,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from ksef2.domain.models.session import (
-    OnlineSessionState,
+    OnlineSessionResumeState,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
 )
-from pydantic import Field
+from pydantic import Field, field_serializer, field_validator
 
 from ksef2_cli.results import CliResult, SavedFile
 
@@ -27,10 +27,27 @@ class OnlineInvoiceReceipt(CliResult):
     """Resumable receipt for one invoice sent through an online session."""
 
     file: Path
-    session_state: OnlineSessionState
+    session_state: OnlineSessionResumeState
     invoice_reference: str
     status: SessionInvoiceStatusResponse | None = None
     upo_file: Path | None = None
+
+    @field_serializer("session_state")
+    def serialize_session_state(
+        self, state: OnlineSessionResumeState
+    ) -> dict[str, object]:
+        """Write the nested AES key and IV readably instead of as ``**********``."""
+
+        return state.to_dict(mode="json")
+
+    @field_validator("session_state", mode="before")
+    @classmethod
+    def rebuild_session_state(cls, value: object) -> object:
+        """Rebuild the nested state from a ``serialize_session_state`` payload."""
+
+        if isinstance(value, dict):
+            return OnlineSessionResumeState.from_dict(value)
+        return value
 
 
 class BatchInvoiceReceipt(CliResult):
@@ -40,6 +57,27 @@ class BatchInvoiceReceipt(CliResult):
     files: list[Path]
     status: SessionStatusResponse | None = None
     upo_files: list[Path] = Field(default_factory=list)
+
+    @field_serializer("status")
+    def serialize_status(
+        self, status: SessionStatusResponse | None
+    ) -> dict[str, object] | None:
+        """Keep each UPO page's presigned URL so the receipt can be read back.
+
+        ``UpoPage.download_url`` is redacted from ordinary dumps but still required on
+        input, so a plain ``model_dump_json`` receipt fails to validate when reopened.
+        The nested pages are written with their URL restored and the whole receipt file
+        is mode 0600, which is how this CLI already protects key material.
+        """
+
+        if status is None:
+            return None
+        data: dict[str, object] = status.model_dump(mode="json")
+        if status.upo is not None:
+            data["upo"] = {
+                "pages": [page.to_sensitive_dict(mode="json") for page in status.upo.pages]
+            }
+        return data
 
 
 class InvoiceWorkflowReceipt(CliResult):

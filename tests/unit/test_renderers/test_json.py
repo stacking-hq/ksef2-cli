@@ -25,11 +25,12 @@ from ksef2_cli.results import (
     ProductionRateLimitsSet,
     SavedFile,
     SessionClosed,
+    TokenGenerated,
 )
 
 
 def test_json_renderer_dumps_pydantic_models_and_lists() -> None:
-    result = GenerateTokenResponse(reference_number="token-ref", token="secret")
+    result = TokenGenerated(reference_number="token-ref", token="secret")
 
     assert json.loads(json_renderer.render(result)) == {
         "reference_number": "token-ref",
@@ -199,3 +200,19 @@ def test_export_paths_json_omits_empty_handle_file(tmp_path) -> None:
         "reference_number": "export-ref",
         "paths": [str(tmp_path / "out.xml")],
     }
+
+
+def test_cli_token_model_keeps_what_the_sdk_redacts() -> None:
+    """``--json`` stays usable because the CLI model, not the SDK model, is rendered."""
+
+    assert "token" not in json.loads(
+        json_renderer.render(
+            GenerateTokenResponse(reference_number="token-ref", token="secret")
+        )
+    )
+    rendered = json.loads(
+        json_renderer.render(
+            TokenGenerated(reference_number="token-ref", token="secret")
+        )
+    )
+    assert rendered["token"] == "secret"

@@ -2,9 +2,9 @@ from datetime import UTC, datetime
 
 from conftest import FakeService, cli_args, fake_runtime, payload
 from ksef2 import FormSchema
-from ksef2.domain.models.batch import BatchSessionState
+from ksef2.domain.models.batch import BatchSessionResumeState
 from ksef2.domain.models.session import (
-    OnlineSessionState,
+    OnlineSessionResumeState,
     SessionStatusResponse,
     StatusInfo,
 )
@@ -15,23 +15,21 @@ class FakeSession(FakeService):
     pass
 
 
-def _online_state(reference_number: str = "online-ref") -> OnlineSessionState:
-    return OnlineSessionState.from_encoded(
+def _online_state(reference_number: str = "online-ref") -> OnlineSessionResumeState:
+    return OnlineSessionResumeState.from_encoded(
         reference_number=reference_number,
-        aes_key=b"aes",
-        iv=b"iv",
-        access_token="access",
+        aes_key=b"0" * 32,
+        iv=b"0" * 16,
         valid_until=datetime(2026, 1, 1, tzinfo=UTC),
         form_code=FormSchema.FA3,
     )
 
 
-def _batch_state(reference_number: str = "batch-ref") -> BatchSessionState:
-    return BatchSessionState.from_encoded(
+def _batch_state(reference_number: str = "batch-ref") -> BatchSessionResumeState:
+    return BatchSessionResumeState.from_encoded(
         reference_number=reference_number,
-        aes_key=b"aes",
-        iv=b"iv",
-        access_token="access",
+        aes_key=b"0" * 32,
+        iv=b"0" * 16,
         form_code=FormSchema.FA3,
         part_upload_requests=[],
     )
@@ -97,19 +95,7 @@ def test_online_open_and_send(runner, tmp_path) -> None:
 
 def test_online_resume_commands(runner, tmp_path) -> None:
     state_file = tmp_path / "state.json"
-    state_file.write_text(
-        """
-        {
-          "reference_number": "online-ref",
-          "aes_key": "aes",
-          "iv": "iv",
-          "access_token": "access",
-          "form_code": "FA3",
-          "valid_until": "2026-01-01T00:00:00Z"
-        }
-        """,
-        encoding="utf-8",
-    )
+    state_file.write_text(_online_state().to_json(indent=2), encoding="utf-8")
 
     session = FakeSession(
         get_status={"status": "open"},
@@ -314,3 +300,48 @@ def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
         )
     ) == {"path": str(out), "bytes": len(b"batch-upo")}
     assert out.read_bytes() == b"batch-upo"
+
+
+def test_online_state_file_written_by_cli_can_be_resumed(runner, tmp_path) -> None:
+    """The state file the CLI writes must load back through the CLI's resume path.
+
+    A plain ``model_dump_json`` masks the AES key and IV as ``**********``, so the
+    damage is invisible at write time and only surfaces when a later command tries to
+    resume. Asserting the key bytes survive is the only way to catch that here.
+    """
+
+    state_file = tmp_path / "state.json"
+    session = FakeSession(
+        get_state=_online_state(),
+        get_status={"status": "open"},
+        close=None,
+    )
+    auth_service = FakeService(
+        online_session=session, resume_online_session=session
+    )
+    runtime = fake_runtime(auth=auth_service)
+
+    payload(
+        runner.invoke(
+            app,
+            cli_args("online", "open", "--state-file", str(state_file)),
+            obj=runtime,
+        )
+    )
+    payload(
+        runner.invoke(
+            app,
+            cli_args("online", "status", "--state-file", str(state_file)),
+            obj=runtime,
+        )
+    )
+
+    resumed = [
+        args[0] if args else kwargs["state"]
+        for name, args, kwargs in auth_service.calls
+        if name == "resume_online_session"
+    ][0]
+    expected = _online_state()
+    assert resumed.reference_number == expected.reference_number
+    assert resumed.aes_key.get_secret_value() == expected.aes_key.get_secret_value()
+    assert resumed.iv.get_secret_value() == expected.iv.get_secret_value()

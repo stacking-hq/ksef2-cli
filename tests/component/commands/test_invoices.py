@@ -4,7 +4,7 @@ from pathlib import Path
 
 from conftest import FakeService, cli_args, fake_runtime, payload
 from ksef2 import FormSchema
-from ksef2.domain.models.batch import BatchSessionState
+from ksef2.domain.models.batch import BatchSessionResumeState
 from ksef2.domain.models.invoices import (
     ExportHandle,
     ExportStatusInfo,
@@ -15,7 +15,7 @@ from ksef2.domain.models.invoices import (
 )
 from ksef2.domain.models.session import (
     InvoiceStatusInfo,
-    OnlineSessionState,
+    OnlineSessionResumeState,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
     StatusInfo,
@@ -60,23 +60,21 @@ def _invoice_package() -> InvoicePackage:
     )
 
 
-def _online_state(reference_number: str = "online-ref") -> OnlineSessionState:
-    return OnlineSessionState.from_encoded(
+def _online_state(reference_number: str = "online-ref") -> OnlineSessionResumeState:
+    return OnlineSessionResumeState.from_encoded(
         reference_number=reference_number,
-        aes_key=b"aes",
-        iv=b"iv",
-        access_token="access",
+        aes_key=b"0" * 32,
+        iv=b"0" * 16,
         valid_until=datetime(2026, 1, 1, tzinfo=UTC),
         form_code=FormSchema.FA3,
     )
 
 
-def _batch_state(reference_number: str = "batch-ref") -> BatchSessionState:
-    return BatchSessionState.from_encoded(
+def _batch_state(reference_number: str = "batch-ref") -> BatchSessionResumeState:
+    return BatchSessionResumeState.from_encoded(
         reference_number=reference_number,
-        aes_key=b"aes",
-        iv=b"iv",
-        access_token="access",
+        aes_key=b"0" * 32,
+        iv=b"0" * 16,
         form_code=FormSchema.FA3,
         part_upload_requests=[],
     )
@@ -612,7 +610,8 @@ def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
                 "ordinal_number": 1,
                 "part_name": "part-1",
                 "method": "GET",
-                "url": "https://example.invalid/part",
+                # PackagePart.url is a presigned capability URL and the SDK redacts it
+                # from serialization, so it must not reappear in --json output.
                 "part_size": 1,
                 "part_hash": "hash",
                 "encrypted_part_size": 1,
