@@ -6,6 +6,7 @@ from ksef2_cli.commands.invoices.export import (
     invoices_export,
     invoices_export_download,
     invoices_export_fetch,
+    invoices_export_pdf,
     invoices_export_status,
 )
 from ksef2_cli.commands.invoices.metadata import (
@@ -26,3 +27,4 @@ app.command("export")(invoices_export)
 app.command("export-status")(invoices_export_status)
 app.command("export-fetch")(invoices_export_fetch)
 app.command("export-download")(invoices_export_download)
+app.command("export-pdf")(invoices_export_pdf)

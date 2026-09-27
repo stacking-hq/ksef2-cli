@@ -9,10 +9,14 @@ from typing import TYPE_CHECKING, Callable, Literal, Protocol, TypeVar
 
 from ksef2 import Client, Environment
 from ksef2.clients.authenticated import AuthenticatedClient
+from ksef2.renderers import InvoicePDFExporter
 from pydantic import BaseModel
 
 from ksef2_cli.config import AuthenticatedRuntime, EnvironmentName, Settings
-from ksef2_cli.exceptions import AuthenticationConfigError
+from ksef2_cli.exceptions import (
+    AuthenticationConfigError,
+    MissingOptionalDependencyError,
+)
 from ksef2_cli.io import read_model_file
 
 AuthMethod = Literal["token", "test_certificate", "p12", "pem"]
@@ -202,6 +206,33 @@ def run_authenticated(
     authenticated = get_authenticated_client(settings)
     with authenticated.client:
         return operation(authenticated.auth)
+
+
+def render_invoice_pdf(settings: Settings, invoice_xml_path: Path) -> bytes:
+    """Render one decrypted invoice XML file to PDF bytes.
+
+    WeasyPrint is an optional dependency, so the exporter is built per call and the
+    SDK raises its own ``ksef2[pdf]`` install hint when it is absent.
+    """
+
+    if settings.runtime_overrides and settings.runtime_overrides.invoice_pdf_renderer:
+        return settings.runtime_overrides.invoice_pdf_renderer(invoice_xml_path)
+
+    try:
+        exporter = InvoicePDFExporter()
+    except ImportError as error:
+        raise MissingOptionalDependencyError(
+            "Rendering PDF needs the optional pdf extra, which is not installed.",
+            title="Missing optional dependency",
+            details=[str(error)],
+            hints=[
+                'Install it with: uv tool install "ksef2-cli[pdf]"',
+                "On Linux also install libpango-1.0-0, libharfbuzz0b, "
+                "libpangoft2-1.0-0, and libharfbuzz-subset0.",
+            ],
+        ) from error
+
+    return exporter.export_from_path(invoice_xml_path)
 
 
 def read_model(settings: Settings, path: Path, model_type: type[ModelT]) -> ModelT:

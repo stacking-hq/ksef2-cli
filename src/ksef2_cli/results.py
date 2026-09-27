@@ -3,10 +3,10 @@
 from pathlib import Path
 from typing import Generic, TypeVar
 
-from ksef2.domain.models.batch import BatchSessionState
+from ksef2.domain.models.batch import BatchSessionResumeState
 from ksef2.domain.models.invoices import SendInvoiceResponse
 from ksef2.domain.models.session import (
-    OnlineSessionState,
+    OnlineSessionResumeState,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
 )
@@ -139,14 +139,14 @@ class OnlineSessionOpened(CliResult):
     """Result for opening an online invoice session."""
 
     state_file: Path | None = None
-    state: OnlineSessionState
+    state: OnlineSessionResumeState
 
 
 class BatchSubmitted(CliResult):
     """Result for submitting a batch invoice session."""
 
     state_file: Path | None = None
-    state: BatchSessionState
+    state: BatchSessionResumeState
     status: SessionStatusResponse | None = None
 
 
@@ -249,6 +249,18 @@ class TestSandboxReady(CliResult):
     token_send_command: str
     certificate_send_command: str
     cleanup: str = "remote_test_data_on_exit"
+
+
+class TokenGenerated(CliResult):
+    """Token returned by ``tokens generate``.
+
+    ``token`` is a KSeF authorization token that the service reveals once. The SDK
+    redacts it from ``GenerateTokenResponse`` serialization, so the CLI carries it in
+    its own model to keep ``--json`` usable. Treat this payload as a secret.
+    """
+
+    reference_number: str
+    token: str
 
 
 class SavedFile(CliResult):

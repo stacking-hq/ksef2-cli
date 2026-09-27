@@ -7,7 +7,7 @@ import typer
 from ksef2.clients.authenticated import AuthenticatedClient
 from ksef2.domain.models.invoices import SendInvoiceResponse
 from ksef2.domain.models.session import (
-    OnlineSessionState,
+    OnlineSessionResumeState,
     SessionInvoicesResponse,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
@@ -16,10 +16,9 @@ from ksef2.domain.models.session import (
 from ksef2_cli.config import FORM_SCHEMA_NAMES, FormSchemaChoice
 from ksef2_cli.context import run_authenticated, run_authenticated_command, run_command
 from ksef2_cli.io import (
-    SECRET_MODEL_FILE_MODE,
-    read_model_file,
+    read_resume_state_file,
     write_bytes_file,
-    write_model_file,
+    write_resume_state_file,
 )
 from ksef2_cli.results import (
     FocusedResult,
@@ -49,13 +48,13 @@ def online_open(
     """Open an online session and optionally save resumable state."""
 
     def operation() -> OnlineSessionOpened:
-        def open_session(auth: AuthenticatedClient) -> OnlineSessionState:
+        def open_session(auth: AuthenticatedClient) -> OnlineSessionResumeState:
             session = auth.online_session(form_code=form.form_schema)
             return session.get_state()
 
         state = run_authenticated(ctx, open_session)
         if state_file:
-            write_model_file(state_file, state, file_mode=SECRET_MODEL_FILE_MODE)
+            write_resume_state_file(state_file, state)
         return OnlineSessionOpened(state_file=state_file, state=state)
 
     run_command(ctx, operation)
@@ -98,10 +97,10 @@ def online_send(
     def operation() -> FocusedResult[OnlineSendResult, OnlineSendItem]:
         def send_invoices(
             auth: AuthenticatedClient,
-        ) -> tuple[list[OnlineSendItem], OnlineSessionState]:
+        ) -> tuple[list[OnlineSendItem], OnlineSessionResumeState]:
             if state_file:
                 session = auth.resume_online_session(
-                    read_model_file(state_file, OnlineSessionState)
+                    read_resume_state_file(state_file, OnlineSessionResumeState)
                 )
             else:
                 session = auth.online_session(form_code=form.form_schema)
@@ -127,7 +126,7 @@ def online_send(
 
         results, state = run_authenticated(ctx, send_invoices)
         if save_state:
-            write_model_file(save_state, state, file_mode=SECRET_MODEL_FILE_MODE)
+            write_resume_state_file(save_state, state)
         payload = OnlineSendResult(
             state_file=save_state, closed=not keep_open, results=results
         )
@@ -148,7 +147,7 @@ def online_status(
     def operation() -> SessionStatusResponse:
         def get_status(auth: AuthenticatedClient) -> SessionStatusResponse:
             return auth.resume_online_session(
-                read_model_file(state_file, OnlineSessionState)
+                read_resume_state_file(state_file, OnlineSessionResumeState)
             ).get_status()
 
         return run_authenticated(ctx, get_status)
@@ -175,7 +174,7 @@ def online_list(
     def operation() -> SessionInvoicesResponse:
         def list_session_invoices(auth: AuthenticatedClient) -> SessionInvoicesResponse:
             session = auth.resume_online_session(
-                read_model_file(state_file, OnlineSessionState)
+                read_resume_state_file(state_file, OnlineSessionResumeState)
             )
             if failed:
                 return session.list_failed_invoices(
@@ -208,7 +207,7 @@ def online_invoice_status(
             auth: AuthenticatedClient,
         ) -> SessionInvoiceStatusResponse:
             session = auth.resume_online_session(
-                read_model_file(state_file, OnlineSessionState)
+                read_resume_state_file(state_file, OnlineSessionResumeState)
             )
             if wait:
                 return session.wait_for_invoice_ready(
@@ -247,7 +246,7 @@ def online_upo(
 
     def get_upo(auth: AuthenticatedClient) -> SavedFile:
         session = auth.resume_online_session(
-            read_model_file(state_file, OnlineSessionState)
+            read_resume_state_file(state_file, OnlineSessionResumeState)
         )
         if invoice_reference:
             content = session.get_invoice_upo_by_reference(
@@ -271,7 +270,7 @@ def online_close(
     """Close a resumed online session."""
 
     def operation() -> SessionClosed:
-        state = read_model_file(state_file, OnlineSessionState)
+        state = read_resume_state_file(state_file, OnlineSessionResumeState)
         run_authenticated(ctx, lambda auth: auth.resume_online_session(state).close())
         return SessionClosed(reference_number=state.reference_number)
 

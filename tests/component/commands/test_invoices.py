@@ -4,7 +4,7 @@ from pathlib import Path
 
 from conftest import FakeService, cli_args, fake_runtime, payload
 from ksef2 import FormSchema
-from ksef2.domain.models.batch import BatchSessionState
+from ksef2.domain.models.batch import BatchSessionResumeState
 from ksef2.domain.models.invoices import (
     ExportHandle,
     ExportStatusInfo,
@@ -15,7 +15,7 @@ from ksef2.domain.models.invoices import (
 )
 from ksef2.domain.models.session import (
     InvoiceStatusInfo,
-    OnlineSessionState,
+    OnlineSessionResumeState,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
     StatusInfo,
@@ -24,6 +24,7 @@ from ksef2.domain.models.session import (
 )
 from ksef2_cli.app import app
 from ksef2_cli.commands.invoices.models import ExportHandleSaved, InvoiceWorkflowReceipt
+from ksef2_cli.config import RuntimeOverrides
 
 
 class FakeSession(FakeService):
@@ -60,23 +61,21 @@ def _invoice_package() -> InvoicePackage:
     )
 
 
-def _online_state(reference_number: str = "online-ref") -> OnlineSessionState:
-    return OnlineSessionState.from_encoded(
+def _online_state(reference_number: str = "online-ref") -> OnlineSessionResumeState:
+    return OnlineSessionResumeState.from_encoded(
         reference_number=reference_number,
-        aes_key=b"aes",
-        iv=b"iv",
-        access_token="access",
+        aes_key=b"0" * 32,
+        iv=b"0" * 16,
         valid_until=datetime(2026, 1, 1, tzinfo=UTC),
         form_code=FormSchema.FA3,
     )
 
 
-def _batch_state(reference_number: str = "batch-ref") -> BatchSessionState:
-    return BatchSessionState.from_encoded(
+def _batch_state(reference_number: str = "batch-ref") -> BatchSessionResumeState:
+    return BatchSessionResumeState.from_encoded(
         reference_number=reference_number,
-        aes_key=b"aes",
-        iv=b"iv",
-        access_token="access",
+        aes_key=b"0" * 32,
+        iv=b"0" * 16,
         form_code=FormSchema.FA3,
         part_upload_requests=[],
     )
@@ -612,7 +611,8 @@ def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
                 "ordinal_number": 1,
                 "part_name": "part-1",
                 "method": "GET",
-                "url": "https://example.invalid/part",
+                # PackagePart.url is a presigned capability URL and the SDK redacts it
+                # from serialization, so it must not reappear in --json output.
                 "part_size": 1,
                 "part_hash": "hash",
                 "encrypted_part_size": 1,
@@ -710,3 +710,140 @@ def test_invoice_export_fetch_requires_ready_package(runner, tmp_path) -> None:
 
     assert result.exit_code == 1
     assert "Export package is not ready" in result.output
+
+
+def _export_pdf_runtime(
+    *, with_fake_renderer: bool = True
+) -> tuple[RuntimeOverrides, list[Path]]:
+    """Runtime whose export decrypts two invoices and whose PDF renderer is a spy.
+
+    ``with_fake_renderer=False`` leaves the real renderer path in place so tests can
+    exercise the missing-extra error.
+    """
+
+    rendered: list[Path] = []
+
+    def fake_fetch(**kwargs: object) -> list[Path]:
+        target = Path(kwargs["target_directory"])
+        target.mkdir(parents=True, exist_ok=True)
+        paths: list[Path] = []
+        for name in ("invoice-one.xml", "invoice-two.xml"):
+            (target / name).write_text("<invoice/>", encoding="utf-8")
+            paths.append(target / name)
+        return paths
+
+    def fake_render(invoice_xml_path: Path) -> bytes:
+        rendered.append(invoice_xml_path)
+        return b"%PDF-1.4 " + invoice_xml_path.name.encode()
+
+    service = FakeService(
+        schedule_export=ExportHandle(
+            reference_number="export-ref", aes_key=b"0" * 32, iv=b"0" * 16
+        ),
+        wait_for_export_package=_invoice_package(),
+        fetch_package=fake_fetch,
+    )
+    runtime = fake_runtime(
+        auth=type("Auth", (), {"invoices": service})(),
+        invoice_pdf_renderer=fake_render if with_fake_renderer else None,
+    )
+    return runtime, rendered
+
+
+def test_invoices_export_pdf_renders_each_downloaded_invoice(runner, tmp_path) -> None:
+    runtime, rendered = _export_pdf_runtime()
+    out_dir = tmp_path / "xml"
+    pdf_dir = tmp_path / "pdfs"
+
+    data = payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "invoices",
+                "export-pdf",
+                "--date-from",
+                "2026-01-01T00:00:00Z",
+                "--out-dir",
+                str(out_dir),
+                "--pdf-dir",
+                str(pdf_dir),
+            ),
+            obj=runtime,
+        )
+    )
+
+    assert data["reference_number"] == "export-ref"
+    assert [pdf["path"] for pdf in data["pdfs"]] == [
+        str(pdf_dir / "invoice-one.pdf"),
+        str(pdf_dir / "invoice-two.pdf"),
+    ]
+    assert data["invoice_xml_files"] == [
+        str(out_dir / "invoice-one.xml"),
+        str(out_dir / "invoice-two.xml"),
+    ]
+    assert (pdf_dir / "invoice-one.pdf").read_bytes() == b"%PDF-1.4 invoice-one.xml"
+    # The renderer must be handed the decrypted XML, not the encrypted package.
+    assert rendered == [
+        out_dir / "invoice-one.xml",
+        out_dir / "invoice-two.xml",
+    ]
+
+
+def test_invoices_export_pdf_defaults_to_the_out_dir(runner, tmp_path) -> None:
+    runtime, _ = _export_pdf_runtime()
+    out_dir = tmp_path / "invoices"
+
+    data = payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "invoices",
+                "export-pdf",
+                "--date-from",
+                "2026-01-01T00:00:00Z",
+                "--out-dir",
+                str(out_dir),
+            ),
+            obj=runtime,
+        )
+    )
+
+    assert [pdf["path"] for pdf in data["pdfs"]] == [
+        str(out_dir / "invoice-one.pdf"),
+        str(out_dir / "invoice-two.pdf"),
+    ]
+    assert (out_dir / "invoice-two.pdf").exists()
+
+
+def test_invoices_export_pdf_reports_a_missing_pdf_extra(
+    runner, tmp_path, monkeypatch
+) -> None:
+    """Without the extra the user needs the install hint, not a bug-report URL."""
+
+    import ksef2_cli.runtime as runtime_module
+
+    def exporter_without_weasyprint() -> object:
+        raise ModuleNotFoundError("No module named 'weasyprint'", name="weasyprint")
+
+    monkeypatch.setattr(
+        runtime_module, "InvoicePDFExporter", exporter_without_weasyprint
+    )
+    runtime, _ = _export_pdf_runtime(with_fake_renderer=False)
+
+    result = runner.invoke(
+        app,
+        cli_args(
+            "invoices",
+            "export-pdf",
+            "--date-from",
+            "2026-01-01T00:00:00Z",
+            "--out-dir",
+            str(tmp_path / "out"),
+        ),
+        obj=runtime,
+    )
+
+    assert result.exit_code == 1
+    assert "optional pdf extra" in result.output
+    assert 'ksef2-cli[pdf]' in result.output
+    assert "issues/new" not in result.output

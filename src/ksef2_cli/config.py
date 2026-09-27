@@ -83,6 +83,10 @@ class PemCredentialsLoader(Protocol):
     ) -> tuple["Certificate", "XAdESPrivateKey"]: ...
 
 
+class InvoicePdfRenderer(Protocol):
+    def __call__(self, invoice_xml_path: Path) -> bytes: ...
+
+
 @dataclass(frozen=True)
 class RuntimeOverrides:
     client_factory: Callable[[], "Client"] | None = None
@@ -90,6 +94,7 @@ class RuntimeOverrides:
     model_reader: ModelReader | None = None
     p12_credentials_loader: P12CredentialsLoader | None = None
     pem_credentials_loader: PemCredentialsLoader | None = None
+    invoice_pdf_renderer: InvoicePdfRenderer | None = None
 
 
 @dataclass(frozen=True)

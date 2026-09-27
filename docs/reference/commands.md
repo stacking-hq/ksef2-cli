@@ -89,6 +89,7 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 | `invoices export-status` | Fetch invoice export status. |
 | `invoices export-fetch` | Fetch and decrypt an export package using a saved handle. |
 | `invoices export-download` | Schedule, wait for, and download an export package. |
+| `invoices export-pdf` | Download an export package and render each invoice to PDF. |
 
 Common high-level invoice options:
 

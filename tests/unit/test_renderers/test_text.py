@@ -6,7 +6,6 @@ from ksef2.domain.models.certificates import CertificateLimitsResponse
 from ksef2.domain.models.invoices import ExportHandle
 from ksef2.domain.models.peppol import ListPeppolProvidersResponse, PeppolProvider
 from ksef2.domain.models.tokens import (
-    GenerateTokenResponse,
     QueryTokensResponse,
     TokenAuthorIdentifier,
     TokenContextIdentifier,
@@ -35,13 +34,14 @@ from ksef2_cli.results import (
     ProductionRateLimitsSet,
     SavedFile,
     SessionClosed,
+    TokenGenerated,
 )
 
 
 def test_token_response_text_handlers() -> None:
     assert (
         plain_renderer.render(
-            GenerateTokenResponse(reference_number="token-ref", token="secret")
+            TokenGenerated(reference_number="token-ref", token="secret")
         )
         == "reference_number: token-ref\ntoken: secret"
     )

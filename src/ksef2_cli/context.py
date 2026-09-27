@@ -29,6 +29,7 @@ from ksef2_cli.runtime import (
     load_pem_credentials,
     password_bytes,
     read_model as read_runtime_model,
+    render_invoice_pdf as render_runtime_invoice_pdf,
     run_authenticated as run_runtime_authenticated,
     run_client as run_runtime_client,
     select_auth_method,
@@ -144,3 +145,9 @@ def read_model(ctx: typer.Context, path: Path, model_type: type[ModelT]) -> Mode
     """Read a model payload, using a runtime fake when supplied by tests."""
 
     return read_runtime_model(get_settings(ctx), path, model_type)
+
+
+def render_invoice_pdf(ctx: typer.Context, invoice_xml_path: Path) -> bytes:
+    """Render invoice XML to PDF, using a runtime fake when supplied by tests."""
+
+    return render_runtime_invoice_pdf(get_settings(ctx), invoice_xml_path)

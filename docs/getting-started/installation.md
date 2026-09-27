@@ -65,3 +65,18 @@ Supported values are:
 - [Run the quickstart](quickstart.md)
 - [Configure authentication](../guides/authentication.md)
 - [Create local defaults](../guides/configuration.md)
+
+## Optional extras
+
+`invoices export-pdf` needs WeasyPrint, which is not installed by default because it
+depends on native Pango and HarfBuzz libraries. Install the extra when you want PDF
+output:
+
+```bash
+uv tool install "ksef2-cli[pdf]"
+# or
+pipx install "ksef2-cli[pdf]"
+```
+
+On Debian and Ubuntu the system packages are `libpango-1.0-0`, `libharfbuzz0b`,
+`libpangoft2-1.0-0`, and `libharfbuzz-subset0`.

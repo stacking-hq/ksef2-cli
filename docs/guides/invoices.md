@@ -91,6 +91,34 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   --out-dir downloads
 ```
 
+## Render downloaded invoices to PDF
+
+`invoices export-pdf` runs the same schedule, wait, and decrypt flow as
+`invoices export-download`, then renders every decrypted invoice to PDF.
+
+PDF rendering needs the optional extra, which installs WeasyPrint and relies on the
+Pango and HarfBuzz system libraries:
+
+```bash
+uv tool install "ksef2-cli[pdf]"
+```
+
+```bash
+uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+  invoices export-pdf \
+  --role buyer \
+  --date-from 2026-01-01T00:00:00Z \
+  --out-dir downloads \
+  --pdf-dir pdfs
+```
+
+The decrypted invoice XML stays in `--out-dir` and each PDF is written next to it, or
+into `--pdf-dir` when you want them separated. Pass `--json` to get one entry per PDF
+with its path and byte size.
+
+Render a package you already downloaded by pointing `invoices export-fetch` at a saved
+handle and converting the XML yourself with the SDK's `ksef2.renderers.InvoicePDFExporter`.
+
 ## Send invoices
 
 By default, `invoices send` opens an online session, sends the XML file, closes

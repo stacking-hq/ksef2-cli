@@ -1,7 +1,6 @@
 """Plain-text handlers for token responses."""
 
 from ksef2.domain.models.tokens import (
-    GenerateTokenResponse,
     QueryTokensResponse,
     TokenAuthorIdentifier,
     TokenContextIdentifier,
@@ -15,11 +14,12 @@ from ksef2_cli.renderers.text import (
     format_row,
     register_text,
 )
+from ksef2_cli.results import TokenGenerated
 
 
 def register() -> None:
-    @register_text(GenerateTokenResponse)
-    def _(value: GenerateTokenResponse, renderer: PlainTextRenderer) -> str:
+    @register_text(TokenGenerated)
+    def _(value: TokenGenerated, renderer: PlainTextRenderer) -> str:
         return format_fields(
             (
                 ("reference_number", value.reference_number),
