@@ -6,6 +6,7 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import Iterable, Sequence
 from urllib.parse import urlencode
 
+from ksef2 import KSeFApiError, KSeFException
 from rich.console import Console
 from rich.markup import escape
 
@@ -137,6 +138,14 @@ def error_from_exception(error: Exception) -> CliError:
 
     if isinstance(error, CliError):
         return error
+    if isinstance(error, KSeFApiError):
+        return RemoteServiceError(
+            f"KSeF request failed with HTTP {error.status_code}.",
+            title="KSeF rejected the request",
+            details=tuple(str(error).splitlines()),
+        )
+    if isinstance(error, KSeFException):
+        return RemoteServiceError(str(error), title="KSeF operation failed")
     if isinstance(error, ValueError):
         return UsageError(str(error))
     if isinstance(error, OSError):

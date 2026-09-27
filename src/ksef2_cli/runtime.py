@@ -114,14 +114,14 @@ def authenticate_client(settings: Settings, client: Client) -> AuthenticatedClie
                 nip=settings.nip,
                 context_type=settings.context_type,
                 poll_interval=settings.poll_interval,
-                max_poll_attempts=settings.max_poll_attempts,
+                timeout=settings.auth_timeout,
             )
         case "test_certificate":
             assert settings.nip is not None
             return client.authentication.with_test_certificate(
                 nip=settings.nip,
                 poll_interval=settings.poll_interval,
-                max_poll_attempts=settings.max_poll_attempts,
+                timeout=settings.auth_timeout,
             )
         case "p12":
             assert settings.p12 is not None
@@ -146,7 +146,7 @@ def authenticate_client(settings: Settings, client: Client) -> AuthenticatedClie
                 cert=cert,
                 private_key=private_key,
                 poll_interval=settings.poll_interval,
-                max_poll_attempts=settings.max_poll_attempts,
+                timeout=settings.auth_timeout,
             )
 
         case "pem":
@@ -175,7 +175,7 @@ def authenticate_client(settings: Settings, client: Client) -> AuthenticatedClie
                 cert=cert,
                 private_key=private_key,
                 poll_interval=settings.poll_interval,
-                max_poll_attempts=settings.max_poll_attempts,
+                timeout=settings.auth_timeout,
             )
 
 

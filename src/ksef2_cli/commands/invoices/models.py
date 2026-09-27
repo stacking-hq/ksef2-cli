@@ -1,12 +1,13 @@
 """Invoice command-owned models."""
 
 import base64
+import json
 from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from ksef2.domain.models.session import (
-    OnlineSessionState,
+    OnlineSessionResumeState,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
 )
@@ -27,10 +28,41 @@ class OnlineInvoiceReceipt(CliResult):
     """Resumable receipt for one invoice sent through an online session."""
 
     file: Path
-    session_state: OnlineSessionState
+    session_state: OnlineSessionResumeState
     invoice_reference: str
     status: SessionInvoiceStatusResponse | None = None
     upo_file: Path | None = None
+
+
+class BatchSessionStatus(CliResult):
+    """Last known batch processing status recorded in a receipt file.
+
+    The SDK response is not stored verbatim: its UPO pages carry capability-bearing
+    download URLs that the SDK keeps out of every dump, and a receipt file has no use for
+    them. Only what the CLI reports is kept, and the fields stay optional so receipts
+    written by older CLI versions still load.
+    """
+
+    code: int | None = None
+    description: str | None = None
+    invoice_count: int | None = None
+    successful_invoice_count: int | None = None
+    failed_invoice_count: int | None = None
+    upo_references: list[str] = Field(default_factory=list)
+
+    @classmethod
+    def from_status(cls, status: SessionStatusResponse) -> "BatchSessionStatus":
+        upo_references: list[str] = (
+            [] if status.upo is None else [page.reference_number for page in status.upo.pages]
+        )
+        return cls(
+            code=status.status.code,
+            description=status.status.description,
+            invoice_count=status.invoice_count,
+            successful_invoice_count=status.successful_invoice_count,
+            failed_invoice_count=status.failed_invoice_count,
+            upo_references=upo_references,
+        )
 
 
 class BatchInvoiceReceipt(CliResult):
@@ -38,7 +70,7 @@ class BatchInvoiceReceipt(CliResult):
 
     session_reference: str
     files: list[Path]
-    status: SessionStatusResponse | None = None
+    status: BatchSessionStatus | None = None
     upo_files: list[Path] = Field(default_factory=list)
 
 
@@ -50,6 +82,22 @@ class InvoiceWorkflowReceipt(CliResult):
     submitted_files: list[Path]
     online: OnlineInvoiceReceipt | None = None
     batch: BatchInvoiceReceipt | None = None
+
+    def to_resumable_json(self) -> str:
+        """Serialize the receipt so its online session can still be resumed.
+
+        ``model_dump_json`` masks the resume state's AES key and IV, which would save a
+        receipt that can no longer resume its session, so the state is exported through
+        the SDK's own credential export. The result is credential material: write it to a
+        protected file only, never to command output.
+        """
+        data = self.model_dump(mode="json", by_alias=True, exclude_none=True)
+        if self.online is not None:
+            data["online"] = {
+                **data["online"],
+                "session_state": self.online.session_state.to_dict(mode="json"),
+            }
+        return json.dumps(data, indent=2)
 
 
 class InvoiceWorkflowItem(CliResult):

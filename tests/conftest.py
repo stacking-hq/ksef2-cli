@@ -1,12 +1,21 @@
+import base64
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from ksef2 import FormSchema
+from ksef2.domain.models.batch import BatchSessionResumeState
+from ksef2.domain.models.session import OnlineSessionResumeState
 from typer.testing import CliRunner
 
 from ksef2_cli.config import EnvironmentName, OutputMode, RuntimeOverrides, Settings
+
+# Resume state validates that the session key is Base64 of 32 raw bytes and the IV of 16.
+_SESSION_AES_KEY = base64.b64encode(b"aes-key-32-bytes" * 2).decode("ascii")
+_SESSION_IV = base64.b64encode(b"iv-16-bytes!!!!!").decode("ascii")
 
 
 @pytest.fixture
@@ -57,13 +66,33 @@ def settings(**overrides: Any) -> Settings:
         "p12_password": None,
         "p12_password_env": None,
         "poll_interval": 1.0,
-        "max_poll_attempts": 60,
+        "auth_timeout": 60.0,
         "runtime_overrides": None,
     }
     values.update(overrides)
     if values["config_file"] is None:
         values["config_file"] = Path("config.toml")
     return Settings(**values)
+
+
+def online_state(reference_number: str = "online-ref") -> OnlineSessionResumeState:
+    return OnlineSessionResumeState.from_encoded(
+        reference_number=reference_number,
+        aes_key=base64.b64decode(_SESSION_AES_KEY, validate=True),
+        iv=base64.b64decode(_SESSION_IV, validate=True),
+        valid_until=datetime(2026, 1, 1, tzinfo=UTC),
+        form_code=FormSchema.FA3,
+    )
+
+
+def batch_state(reference_number: str = "batch-ref") -> BatchSessionResumeState:
+    return BatchSessionResumeState.from_encoded(
+        reference_number=reference_number,
+        aes_key=base64.b64decode(_SESSION_AES_KEY, validate=True),
+        iv=base64.b64decode(_SESSION_IV, validate=True),
+        form_code=FormSchema.FA3,
+        part_upload_requests=[],
+    )
 
 
 class FakeClient:

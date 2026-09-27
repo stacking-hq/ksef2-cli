@@ -152,9 +152,12 @@ options to override the profile or default polling settings:
 ```bash
 uv run ksef2 --profile prod-token \
   --auth-poll-interval 2 \
-  --auth-max-poll-attempts 90 \
+  --auth-timeout 180 \
   --json auth login
 ```
+
+`--auth-timeout` is the total number of seconds to wait for authentication to
+finish; `--auth-poll-interval` is the delay between checks.
 
 ## Precedence
 

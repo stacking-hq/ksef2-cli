@@ -5,7 +5,6 @@ from typing import Annotated
 import typer
 from ksef2.clients.authenticated import AuthenticatedClient
 from ksef2.domain.models.tokens import (
-    GenerateTokenResponse,
     QueryTokensResponse,
     TokenAuthorIdentifierTypeEnum,
     TokenInfo,
@@ -16,7 +15,7 @@ from ksef2.domain.models.tokens import (
 )
 
 from ksef2_cli.context import run_authenticated_command
-from ksef2_cli.results import ActionResult
+from ksef2_cli.results import ActionResult, GeneratedToken
 
 app = typer.Typer(help="Manage KSeF authorization tokens.")
 
@@ -42,10 +41,14 @@ def tokens_generate(
         if not permissions:
             raise ValueError("At least one --permission is required.")
 
-    def generate_token(auth: AuthenticatedClient) -> GenerateTokenResponse:
-        return auth.tokens.generate(
+    def generate_token(auth: AuthenticatedClient) -> GeneratedToken:
+        generated = auth.tokens.generate(
             permissions=[permission.value for permission in permissions],
             description=description,
+        )
+        return GeneratedToken(
+            reference_number=generated.reference_number,
+            token=generated.token,
         )
 
     run_authenticated_command(

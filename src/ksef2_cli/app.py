@@ -179,10 +179,12 @@ def root(
             "--auth-poll-interval", min=0.1, help="Authentication polling interval."
         ),
     ] = None,
-    max_poll_attempts: Annotated[
-        int | None,
+    auth_timeout: Annotated[
+        float | None,
         typer.Option(
-            "--auth-max-poll-attempts", min=1, help="Authentication polling attempts."
+            "--auth-timeout",
+            min=1.0,
+            help="Seconds to wait for authentication to complete.",
         ),
     ] = None,
 ) -> None:
@@ -209,7 +211,7 @@ def root(
             p12=p12,
             p12_password=p12_password,
             poll_interval=poll_interval,
-            max_poll_attempts=max_poll_attempts,
+            auth_timeout=auth_timeout,
             runtime_overrides=runtime_overrides,
         )
     except (OSError, ValueError) as exc:

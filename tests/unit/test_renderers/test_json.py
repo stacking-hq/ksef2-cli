@@ -20,6 +20,7 @@ from ksef2_cli.results import (
     ConfigShowResult,
     CurrentSessionTerminated,
     FocusedResult,
+    GeneratedToken,
     LimitReset,
     LimitUpdated,
     ProductionRateLimitsSet,
@@ -29,7 +30,7 @@ from ksef2_cli.results import (
 
 
 def test_json_renderer_dumps_pydantic_models_and_lists() -> None:
-    result = GenerateTokenResponse(reference_number="token-ref", token="secret")
+    result = GeneratedToken(reference_number="token-ref", token="secret")
 
     assert json.loads(json_renderer.render(result)) == {
         "reference_number": "token-ref",
@@ -41,6 +42,16 @@ def test_json_renderer_dumps_pydantic_models_and_lists() -> None:
             "token": "secret",
         }
     ]
+
+
+def test_json_renderer_dumps_token_fields_excluded_by_the_sdk() -> None:
+    # ``tokens generate`` renders the CLI-owned GeneratedToken because the SDK response
+    # keeps its one-time credential out of every generic dump.
+    sdk_response = GenerateTokenResponse(reference_number="token-ref", token="secret")
+
+    assert json.loads(json_renderer.render(sdk_response)) == {
+        "reference_number": "token-ref",
+    }
 
 
 def test_json_renderer_delegates_focused_result_to_payload() -> None:

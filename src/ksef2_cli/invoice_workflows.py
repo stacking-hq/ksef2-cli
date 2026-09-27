@@ -1,6 +1,6 @@
 """Shared invoice workflows used by CLI and TUI adapters."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Self, cast
 
@@ -17,13 +17,13 @@ from ksef2.domain.models.pagination import InvoiceMetadataParams
 from ksef2.domain.models.session import (
     FormSchema,
     SessionInvoiceStatusResponse,
-    SessionStatusResponse,
 )
 from ksef2.domain.types import CurrencyCodes
 from pydantic import BaseModel, Field, model_validator
 
 from ksef2_cli.commands.invoices.models import (
     BatchInvoiceReceipt,
+    BatchSessionStatus,
     CompressionTypeChoice,
     ExportHandleSaved,
     ExportPaths,
@@ -41,7 +41,12 @@ from ksef2_cli.commands.invoices.models import (
     SortOrderChoice,
 )
 from ksef2_cli.config import FormSchemaChoice
-from ksef2_cli.io import SECRET_MODEL_FILE_MODE, write_bytes_file, write_model_file
+from ksef2_cli.io import (
+    SECRET_MODEL_FILE_MODE,
+    write_bytes_file,
+    write_model_file,
+    write_text_file,
+)
 from ksef2_cli.parsing import parse_optional_bool
 from ksef2_cli.results import FocusedResult, SavedFile
 
@@ -88,8 +93,8 @@ def _batch_upo_path(upo_dir: Path, session_reference: str, index: int) -> Path:
 
 
 class InvoiceMetadataInput(BaseModel):
-    date_from: str
-    date_to: str | None = None
+    date_from: datetime
+    date_to: datetime | None = None
     role: InvoiceRoleChoice = InvoiceRoleChoice.SELLER
     date_type: InvoiceDateTypeChoice = InvoiceDateTypeChoice.ISSUE_DATE
     amount_type: InvoiceAmountTypeChoice = InvoiceAmountTypeChoice.BRUTTO
@@ -169,8 +174,8 @@ class InvoiceSendInput(BaseModel):
 
 
 class InvoiceExportInput(BaseModel):
-    date_from: str
-    date_to: str | None = None
+    date_from: datetime
+    date_to: datetime | None = None
     role: InvoiceRoleChoice = InvoiceRoleChoice.SELLER
     date_type: InvoiceDateTypeChoice = InvoiceDateTypeChoice.ISSUE_DATE
     amount_type: InvoiceAmountTypeChoice = InvoiceAmountTypeChoice.BRUTTO
@@ -188,8 +193,8 @@ class InvoiceExportFetchInput(BaseModel):
 
 
 class InvoiceExportDownloadInput(BaseModel):
-    date_from: str
-    date_to: str | None = None
+    date_from: datetime
+    date_to: datetime | None = None
     role: InvoiceRoleChoice = InvoiceRoleChoice.SELLER
     date_type: InvoiceDateTypeChoice = InvoiceDateTypeChoice.ISSUE_DATE
     amount_type: InvoiceAmountTypeChoice = InvoiceAmountTypeChoice.BRUTTO
@@ -282,19 +287,20 @@ class OnlineInvoiceHandler:
                 receipt_dir=self.inputs.receipt_dir,
             )
             if online_receipt_file is not None:
-                write_model_file(
-                    online_receipt_file,
-                    InvoiceWorkflowReceipt(
-                        mode="online",
-                        submitted_files=[invoice_path],
-                        online=OnlineInvoiceReceipt(
-                            file=invoice_path,
-                            session_state=session.get_state(),
-                            invoice_reference=invoice_reference,
-                            status=status,
-                            upo_file=upo_file,
-                        ),
+                receipt = InvoiceWorkflowReceipt(
+                    mode="online",
+                    submitted_files=[invoice_path],
+                    online=OnlineInvoiceReceipt(
+                        file=invoice_path,
+                        session_state=session.get_state(),
+                        invoice_reference=invoice_reference,
+                        status=status,
+                        upo_file=upo_file,
                     ),
+                )
+                _ = write_text_file(
+                    online_receipt_file,
+                    receipt.to_resumable_json(),
                     file_mode=SECRET_MODEL_FILE_MODE,
                 )
         except Exception as exc:
@@ -341,7 +347,7 @@ class BatchInvoiceHandler:
             )
 
         state = batch_client.submit_prepared_batch(prepared_batch=prepared)
-        status = (
+        sdk_status = (
             batch_client.wait_for_completion(
                 session=state,
                 timeout=inputs.timeout,
@@ -349,6 +355,9 @@ class BatchInvoiceHandler:
             )
             if inputs.wait
             else None
+        )
+        status = (
+            None if sdk_status is None else BatchSessionStatus.from_status(sdk_status)
         )
         saved_upos = (
             download_batch_upos(
@@ -368,24 +377,25 @@ class BatchInvoiceHandler:
             receipt_dir=inputs.receipt_dir,
         )
         if batch_receipt_file is not None:
-            write_model_file(
-                batch_receipt_file,
-                InvoiceWorkflowReceipt(
-                    mode="batch",
-                    submitted_files=inputs.invoice_files,
-                    batch=BatchInvoiceReceipt(
-                        session_reference=state.reference_number,
-                        files=inputs.invoice_files,
-                        status=status,
-                        upo_files=upo_files,
-                    ),
+            receipt = InvoiceWorkflowReceipt(
+                mode="batch",
+                submitted_files=inputs.invoice_files,
+                batch=BatchInvoiceReceipt(
+                    session_reference=state.reference_number,
+                    files=inputs.invoice_files,
+                    status=status,
+                    upo_files=upo_files,
                 ),
+            )
+            _ = write_text_file(
+                batch_receipt_file,
+                receipt.to_resumable_json(),
                 file_mode=SECRET_MODEL_FILE_MODE,
             )
 
         batch_status = "submitted"
         if status is not None:
-            batch_status = "failed" if status.status.code >= 400 else "completed"
+            batch_status = "failed" if (status.code or 0) >= 400 else "completed"
 
         invoice_count = len(inputs.invoice_files)
         successful_invoice_count: int | None = None
@@ -429,7 +439,11 @@ class BatchInvoiceHandler:
 def query_invoice_metadata(
     auth: AuthenticatedClient, inputs: InvoiceMetadataInput
 ) -> QueryInvoicesMetadataResponse | list[InvoiceMetadata]:
-    effective_date_to = inputs.date_to if inputs.date_to is not None else datetime.now()
+    effective_date_to = (
+        inputs.date_to
+        if inputs.date_to is not None
+        else datetime.now(timezone.utc)
+    )
     filters = InvoicesFilter(
         role=inputs.role.value,
         date_type=inputs.date_type.value,
@@ -498,7 +512,11 @@ def send_invoices(auth: AuthenticatedClient, inputs: InvoiceSendInput) -> Invoic
 def schedule_invoice_export(
     auth: AuthenticatedClient, inputs: InvoiceExportInput
 ) -> ExportHandleSaved:
-    effective_date_to = inputs.date_to if inputs.date_to is not None else datetime.now()
+    effective_date_to = (
+        inputs.date_to
+        if inputs.date_to is not None
+        else datetime.now(timezone.utc)
+    )
     filters = InvoicesFilter(
         role=inputs.role.value,
         date_type=inputs.date_type.value,
@@ -515,7 +533,9 @@ def schedule_invoice_export(
     )
     saved = ExportHandleSaved.from_handle(handle)
     if inputs.handle_file:
-        write_model_file(inputs.handle_file, saved)
+        _ = write_model_file(
+            inputs.handle_file, saved, file_mode=SECRET_MODEL_FILE_MODE
+        )
     return ExportHandleSaved.from_handle(handle, handle_file=inputs.handle_file)
 
 
@@ -560,7 +580,11 @@ def fetch_invoice_export(
 def download_invoice_export(
     auth: AuthenticatedClient, inputs: InvoiceExportDownloadInput
 ) -> FocusedResult[ExportPaths, str]:
-    effective_date_to = inputs.date_to if inputs.date_to is not None else datetime.now()
+    effective_date_to = (
+        inputs.date_to
+        if inputs.date_to is not None
+        else datetime.now(timezone.utc)
+    )
     filters = InvoicesFilter(
         role=inputs.role.value,
         date_type=inputs.date_type.value,
@@ -577,7 +601,9 @@ def download_invoice_export(
     )
     saved = ExportHandleSaved.from_handle(handle)
     if inputs.handle_file:
-        write_model_file(inputs.handle_file, saved)
+        _ = write_model_file(
+            inputs.handle_file, saved, file_mode=SECRET_MODEL_FILE_MODE
+        )
     package = auth.invoices.wait_for_export_package(
         reference_number=handle.reference_number,
         timeout=inputs.timeout,
@@ -602,24 +628,24 @@ def download_batch_upos(
     *,
     auth: AuthenticatedClient,
     session_reference: str,
-    status: SessionStatusResponse | None,
+    status: BatchSessionStatus | None,
     upo_dir: Path,
 ) -> list[SavedFile]:
     if status is None:
         raise ValueError("--upo-dir requires a completed batch status.")
-    if status.status.code >= 400:
+    if status.code is not None and status.code >= 400:
         raise ValueError(
             "Batch processing failed: "
-            f"{session_reference} ({status.status.code}: {status.status.description})"
+            f"{session_reference} ({status.code}: {status.description})"
         )
-    if status.upo is None or not status.upo.pages:
+    if not status.upo_references:
         raise ValueError("Batch UPO is not ready. Re-run with --wait.")
 
     saved: list[SavedFile] = []
-    for index, page in enumerate(status.upo.pages, start=1):
+    for index, reference_number in enumerate(status.upo_references, start=1):
         content = auth.batch.get_upo(
             session=session_reference,
-            upo_reference_number=page.reference_number,
+            upo_reference_number=reference_number,
         )
         target = _batch_upo_path(
             upo_dir=upo_dir, session_reference=session_reference, index=index

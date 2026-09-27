@@ -7,10 +7,11 @@ import typer
 from ksef2.clients.authenticated import AuthenticatedClient
 
 from ksef2_cli.context import read_model, run_authenticated, run_command
-from ksef2_cli.io import SECRET_MODEL_FILE_MODE, write_bytes_file, write_model_file
+from ksef2_cli.io import SECRET_MODEL_FILE_MODE, write_bytes_file, write_text_file
 from ksef2_cli.results import SavedFile
 
 from ksef2_cli.commands.invoices.models import (
+    BatchSessionStatus,
     InvoiceWorkflowReceipt,
     InvoicesStatusResult,
     InvoicesUpoResult,
@@ -59,11 +60,12 @@ def invoices_status(
                         invoice_reference_number=online.invoice_reference
                     )
                 )
-                write_model_file(
+                updated = receipt.model_copy(
+                    update={"online": online.model_copy(update={"status": status})}
+                )
+                _ = write_text_file(
                     receipt_file,
-                    receipt.model_copy(
-                        update={"online": online.model_copy(update={"status": status})}
-                    ),
+                    updated.to_resumable_json(),
                     file_mode=SECRET_MODEL_FILE_MODE,
                 )
                 status_label = "accepted" if status.ksef_number else "processing"
@@ -93,11 +95,16 @@ def invoices_status(
                 if wait
                 else auth.batch.get_status(session=batch.session_reference)
             )
-            write_model_file(
+            updated = receipt.model_copy(
+                update={
+                    "batch": batch.model_copy(
+                        update={"status": BatchSessionStatus.from_status(status)}
+                    )
+                }
+            )
+            _ = write_text_file(
                 receipt_file,
-                receipt.model_copy(
-                    update={"batch": batch.model_copy(update={"status": status})}
-                ),
+                updated.to_resumable_json(),
                 file_mode=SECRET_MODEL_FILE_MODE,
             )
             status_label = "completed" if status.status.code >= 200 else "processing"
@@ -188,15 +195,16 @@ def invoices_upo(
                 saved = SavedFile(
                     path=write_bytes_file(target, content), size=len(content)
                 )
-                write_model_file(
+                updated = receipt.model_copy(
+                    update={
+                        "online": online.model_copy(
+                            update={"status": status, "upo_file": saved.path}
+                        )
+                    }
+                )
+                _ = write_text_file(
                     receipt_file,
-                    receipt.model_copy(
-                        update={
-                            "online": online.model_copy(
-                                update={"status": status, "upo_file": saved.path}
-                            )
-                        }
-                    ),
+                    updated.to_resumable_json(),
                     file_mode=SECRET_MODEL_FILE_MODE,
                 )
                 return InvoicesUpoResult(
@@ -215,37 +223,44 @@ def invoices_upo(
             target_dir = upo_dir
             if target_dir is None:
                 raise ValueError("Provide --upo-dir.")
-            status = (
-                auth.batch.wait_for_completion(
-                    session=batch.session_reference,
-                    timeout=timeout,
-                    poll_interval=poll_interval,
+            cached_status = batch.status
+            if (
+                not wait
+                and cached_status is not None
+                and cached_status.upo_references
+            ):
+                status = cached_status
+            elif wait:
+                status = BatchSessionStatus.from_status(
+                    auth.batch.wait_for_completion(
+                        session=batch.session_reference,
+                        timeout=timeout,
+                        poll_interval=poll_interval,
+                    )
                 )
-                if wait
-                else (
+            else:
+                status = BatchSessionStatus.from_status(
                     auth.batch.get_status(session=batch.session_reference)
-                    if batch.status is None or batch.status.upo is None
-                    else batch.status
                 )
-            )
             saved_upos = download_batch_upos(
                 auth=auth,
                 session_reference=batch.session_reference,
                 status=status,
                 upo_dir=target_dir,
             )
-            write_model_file(
+            updated = receipt.model_copy(
+                update={
+                    "batch": batch.model_copy(
+                        update={
+                            "status": status,
+                            "upo_files": [saved.path for saved in saved_upos],
+                        }
+                    )
+                }
+            )
+            _ = write_text_file(
                 receipt_file,
-                receipt.model_copy(
-                    update={
-                        "batch": batch.model_copy(
-                            update={
-                                "status": status,
-                                "upo_files": [saved.path for saved in saved_upos],
-                            }
-                        )
-                    }
-                ),
+                updated.to_resumable_json(),
                 file_mode=SECRET_MODEL_FILE_MODE,
             )
             return InvoicesUpoResult(

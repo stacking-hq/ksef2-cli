@@ -3,7 +3,7 @@
 from datetime import date
 from pathlib import Path
 from shlex import quote
-from typing import Annotated
+from typing import Annotated, cast
 
 import typer
 from cryptography.hazmat.primitives import serialization
@@ -20,7 +20,7 @@ from ksef2.domain.models.testdata import (
     SubjectTypeEnum,
     SubUnit,
 )
-from ksef2.domain.models.tokens import TokenPermissionEnum
+from ksef2.domain.models.tokens import TokenPermission, TokenPermissionEnum
 
 from ksef2_cli.config import EnvironmentName
 from ksef2_cli.context import get_settings, run_client, run_command, use_client
@@ -99,6 +99,8 @@ def testdata_sandbox(
         selected_permissions = token_permission or list(
             _SANDBOX_DEFAULT_TOKEN_PERMISSIONS
         )
+        # Typer cannot use the TokenPermission Literal alias as an option type, so the
+        # option stays an enum and its values are narrowed for the SDK request.
         token_permissions = [permission.value for permission in selected_permissions]
         sandbox_dir = out_dir.expanduser().resolve() / effective_nip
         cert_file = sandbox_dir / "cert.pem"
@@ -132,13 +134,11 @@ def testdata_sandbox(
                     cert=cert,
                     private_key=private_key,
                     poll_interval=settings.poll_interval,
-                    max_poll_attempts=settings.max_poll_attempts,
+                    timeout=settings.auth_timeout,
                 )
                 token = auth.tokens.generate(
-                    permissions=token_permissions,
+                    permissions=cast(list[TokenPermission], token_permissions),
                     description=token_description,
-                    poll_interval=settings.poll_interval,
-                    max_poll_attempts=settings.max_poll_attempts,
                 )
 
                 env_file.parent.mkdir(parents=True, exist_ok=True)
@@ -156,6 +156,14 @@ def testdata_sandbox(
                     encoding="utf-8",
                 )
                 env_file.chmod(SECRET_MODEL_FILE_MODE)
+
+                # The one-time token secret is only returned by generate(), so it is
+                # persisted above before waiting for the token to activate.
+                auth.tokens.wait_for_activation(
+                    reference_number=token.reference_number,
+                    timeout=settings.auth_timeout,
+                    poll_interval=settings.poll_interval,
+                )
 
                 result = TestSandboxReady(
                     nip=effective_nip,

@@ -124,7 +124,7 @@ type = "test_certificate"
 environment = "production"
 nip = "5261040828"
 poll_interval = 2.0
-max_poll_attempts = 90
+auth_timeout = 180.0
 
 [profiles.prod-client.auth]
 type = "token"
