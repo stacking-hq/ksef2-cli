@@ -13,7 +13,7 @@ from ksef2.domain.models.session import (
 from ksef2.domain.models.testdata import Identifier, Permission
 from pydantic import BaseModel, ConfigDict, Field
 
-from ksef2_cli.config import CliConfig, ProfileConfig
+from ksef2.profiles import CliProfileConfig, ProfileConfig
 
 PayloadT = TypeVar("PayloadT")
 ItemT = TypeVar("ItemT")
@@ -86,7 +86,7 @@ class ConfigShowResult(CliResult):
 
     path: Path
     exists: bool
-    config: CliConfig
+    config: CliProfileConfig
 
 
 class ConfigInitialized(CliResult):
@@ -94,7 +94,7 @@ class ConfigInitialized(CliResult):
 
     path: Path
     mode: str
-    config: CliConfig
+    config: CliProfileConfig
 
 
 class ProfileListItem(CliResult):

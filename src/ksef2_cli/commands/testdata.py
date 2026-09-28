@@ -7,7 +7,7 @@ from typing import Annotated, cast
 
 import typer
 from cryptography.hazmat.primitives import serialization
-from ksef2 import Client
+from ksef2 import Client, Environment
 from ksef2.core.tools import NIP_WEIGHTS, generate_nip
 from ksef2.core.xades import generate_test_certificate
 from ksef2.domain.models.testdata import (
@@ -22,7 +22,6 @@ from ksef2.domain.models.testdata import (
 )
 from ksef2.domain.models.tokens import TokenPermission, TokenPermissionEnum
 
-from ksef2_cli.config import EnvironmentName
 from ksef2_cli.context import get_settings, run_client, run_command, use_client
 from ksef2_cli.io import SECRET_MODEL_FILE_MODE, write_bytes_file
 from ksef2_cli.renderers import console, render
@@ -92,7 +91,7 @@ def testdata_sandbox(
 
     def operation() -> None:
         settings = get_settings(ctx)
-        if settings.environment != EnvironmentName.test:
+        if settings.environment is not Environment.TEST:
             raise ValueError("testdata sandbox requires --env test.")
 
         effective_nip = _sandbox_nip(nip or settings.nip)
@@ -133,8 +132,8 @@ def testdata_sandbox(
                     nip=effective_nip,
                     cert=cert,
                     private_key=private_key,
-                    poll_interval=settings.poll_interval,
-                    timeout=settings.auth_timeout,
+                    poll_interval=settings.effective_poll_interval,
+                    timeout=settings.effective_auth_timeout,
                 )
                 token = auth.tokens.generate(
                     permissions=cast(list[TokenPermission], token_permissions),
@@ -161,8 +160,8 @@ def testdata_sandbox(
                 # persisted above before waiting for the token to activate.
                 auth.tokens.wait_for_activation(
                     reference_number=token.reference_number,
-                    timeout=settings.auth_timeout,
-                    poll_interval=settings.poll_interval,
+                    timeout=settings.effective_auth_timeout,
+                    poll_interval=settings.effective_poll_interval,
                 )
 
                 result = TestSandboxReady(

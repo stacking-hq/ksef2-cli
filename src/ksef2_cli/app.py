@@ -5,6 +5,7 @@ from typing import Annotated
 
 import typer
 
+from ksef2 import KSeFException
 from ksef2.domain.models.auth import ContextIdentifierTypeEnum
 
 from ksef2_cli.commands import (
@@ -87,7 +88,7 @@ def root(
             "--config",
             envvar="KSEF2_CONFIG",
             dir_okay=False,
-            help="Local config file. Defaults to ~/.config/ksef2-cli/config.toml.",
+            help="Local config file. Defaults to ~/.config/ksef2/config.toml.",
         ),
     ] = None,
     no_config: Annotated[
@@ -214,7 +215,7 @@ def root(
             auth_timeout=auth_timeout,
             runtime_overrides=runtime_overrides,
         )
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, KSeFException) as exc:
         raise typer.BadParameter(str(exc), param_hint="--config") from exc
 
 

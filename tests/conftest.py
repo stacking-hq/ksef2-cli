@@ -6,12 +6,12 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from ksef2 import FormSchema
+from ksef2 import Environment, FormSchema
 from ksef2.domain.models.batch import BatchSessionResumeState
 from ksef2.domain.models.session import OnlineSessionResumeState
 from typer.testing import CliRunner
 
-from ksef2_cli.config import EnvironmentName, OutputMode, RuntimeOverrides, Settings
+from ksef2_cli.config import OutputMode, RuntimeOverrides, Settings
 
 # Resume state validates that the session key is Base64 of 32 raw bytes and the IV of 16.
 _SESSION_AES_KEY = base64.b64encode(b"aes-key-32-bytes" * 2).decode("ascii")
@@ -50,23 +50,21 @@ def settings(**overrides: Any) -> Settings:
         "config_file": overrides.pop("config_file", None),
         "config_loaded": False,
         "profile_name": None,
-        "environment": EnvironmentName.test,
+        "profile": None,
+        "environment": Environment.TEST,
         "output": OutputMode.json,
         "verbose": False,
         "nip": "5261040828",
         "token": None,
-        "token_env": None,
-        "context_type": "nip",
+        "context_type": None,
         "test_certificate": False,
         "cert": None,
         "key": None,
         "key_password": None,
-        "key_password_env": None,
         "p12": None,
         "p12_password": None,
-        "p12_password_env": None,
-        "poll_interval": 1.0,
-        "auth_timeout": 60.0,
+        "poll_interval": None,
+        "auth_timeout": None,
         "runtime_overrides": None,
     }
     values.update(overrides)

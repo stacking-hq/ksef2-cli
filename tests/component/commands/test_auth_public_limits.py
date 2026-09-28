@@ -1,14 +1,15 @@
 from conftest import FakeClient, FakeService, cli_args, fake_runtime, payload
 from ksef2.domain.models.limits import SubjectLimits
 from ksef2.domain.models.tokens import GenerateTokenResponse
-from ksef2_cli.app import app
-from ksef2_cli.config import (
-    CliConfig,
+from ksef2.profiles import (
+    CliProfileConfig,
     ProfileAuthConfig,
     ProfileAuthType,
     ProfileConfig,
-    render_cli_config,
+    render_profile_config,
 )
+
+from ksef2_cli.app import app
 
 
 def test_auth_login_uses_configured_auth_method(runner) -> None:
@@ -31,15 +32,15 @@ def test_auth_login_uses_configured_auth_method(runner) -> None:
 def test_auth_login_uses_active_profile(runner, tmp_path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text(
-        render_cli_config(
-            CliConfig(
+        render_profile_config(
+            CliProfileConfig(
                 active_profile="demo",
                 profiles={
                     "demo": ProfileConfig(
                         environment="test",
                         nip="6880313213",
                         auth=ProfileAuthConfig(
-                            type=ProfileAuthType.token,
+                            type=ProfileAuthType.TOKEN,
                             token_env="KSEF2_PROFILE_TOKEN",
                             context_type="nip",
                         ),
@@ -50,7 +51,7 @@ def test_auth_login_uses_active_profile(runner, tmp_path) -> None:
         encoding="utf-8",
     )
     auth = FakeService(
-        with_token=type("Auth", (), {"auth_tokens": {"access_token": "access"}})()
+        with_profile=type("Auth", (), {"auth_tokens": {"access_token": "access"}})()
     )
     fake_client = FakeClient(authentication=auth)
 
@@ -62,8 +63,12 @@ def test_auth_login_uses_active_profile(runner, tmp_path) -> None:
     )
 
     assert payload(result) == {"access_token": "access"}
-    assert auth.called("with_token")["nip"] == "6880313213"
-    assert auth.called("with_token")["ksef_token"] == "profile-token"
+    method, args, kwargs = auth.calls[-1]
+    assert method == "with_profile"
+    assert args == ("demo",)
+    assert kwargs["config_path"] == config_path
+    assert kwargs["timeout"] is None
+    assert kwargs["poll_interval"] is None
 
 
 def test_auth_refresh_requires_and_uses_refresh_token(runner) -> None:
