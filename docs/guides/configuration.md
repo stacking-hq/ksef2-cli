@@ -18,8 +18,14 @@ uv run ksef2 config path
 By default, the CLI uses:
 
 ```text
-~/.config/ksef2-cli/config.toml
+~/.config/ksef2/config.toml
 ```
+
+That is the same file the SDK reads, so `ksef2 profile create` and
+`client.authentication.with_profile()` share one source of truth. A config left
+over at the older `~/.config/ksef2-cli/config.toml` is still picked up while no
+`~/.config/ksef2/config.toml` exists, and keeps being written to until you move
+it yourself.
 
 Override the path with `--config` or `KSEF2_CONFIG`:
 
@@ -124,7 +130,7 @@ type = "test_certificate"
 environment = "production"
 nip = "5261040828"
 poll_interval = 2.0
-auth_timeout = 180.0
+max_poll_attempts = 90
 
 [profiles.prod-client.auth]
 type = "token"
@@ -151,8 +157,14 @@ p12 = "signing-credentials.p12"
 p12_password_env = "KSEF2_P12_PASSWORD"
 ```
 
-Profile names, environment values, auth type strings, and field names match the
-SDK profile models.
+Profile names, environment values, auth type strings, and field names are the SDK
+profile models themselves, not a CLI copy of them. `poll_interval` is the delay
+between status checks and `max_poll_attempts` the number of checks, so
+authenticating with `prod-client` waits `2.0 * 90 = 180` seconds.
+
+Older CLI releases wrote a flat `auth_timeout = 180.0` seconds instead. That key is
+not part of the SDK schema and is ignored, so move it to
+`max_poll_attempts = round(auth_timeout / poll_interval)` to keep the same wait.
 
 ## Ignore local config once
 

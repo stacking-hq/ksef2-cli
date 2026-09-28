@@ -157,7 +157,9 @@ uv run ksef2 --profile prod-token \
 ```
 
 `--auth-timeout` is the total number of seconds to wait for authentication to
-finish; `--auth-poll-interval` is the delay between checks.
+finish; `--auth-poll-interval` is the delay between checks. Without them, a
+profile's own `poll_interval` and `max_poll_attempts` decide both values, and a
+profile without either waits the default `60` seconds in `1`-second checks.
 
 ## Precedence
 
