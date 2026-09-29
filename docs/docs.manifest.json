@@ -3,5 +3,134 @@
   "slug": "cli",
   "name": "KSeF2 CLI",
   "name_pl": "KSeF2 CLI",
-  "min_pages": 1
+  "min_pages": 12,
+  "sidebar": {
+    "link": "intro.mdx",
+    "categories": [
+      {
+        "id": "getting-started",
+        "label": "Getting started",
+        "translations": {
+          "pl": "Pierwsze kroki"
+        },
+        "kind": "tutorial",
+        "items": [
+          {
+            "label": "Overview",
+            "translations": {
+              "pl": "Wprowadzenie"
+            },
+            "path": "intro.mdx"
+          },
+          {
+            "label": "Installation",
+            "translations": {
+              "pl": "Instalacja"
+            },
+            "path": "getting-started/installation.md"
+          },
+          {
+            "label": "Quickstart",
+            "translations": {
+              "pl": "Szybki start"
+            },
+            "path": "getting-started/quickstart.mdx"
+          }
+        ]
+      },
+      {
+        "id": "guides",
+        "label": "Guides",
+        "translations": {
+          "pl": "Przewodniki"
+        },
+        "kind": "how-to",
+        "items": [
+          {
+            "label": "Authentication",
+            "translations": {
+              "pl": "Uwierzytelnianie"
+            },
+            "path": "guides/authentication.md"
+          },
+          {
+            "label": "Configuration",
+            "translations": {
+              "pl": "Konfiguracja"
+            },
+            "path": "guides/configuration.md"
+          },
+          {
+            "label": "Invoice workflows",
+            "translations": {
+              "pl": "Przepływy faktur"
+            },
+            "path": "guides/invoices.md"
+          },
+          {
+            "label": "Online and batch sessions",
+            "translations": {
+              "pl": "Sesje online i wsadowe"
+            },
+            "path": "guides/online-and-batch-sessions.md"
+          },
+          {
+            "label": "Administration",
+            "translations": {
+              "pl": "Administracja"
+            },
+            "path": "guides/administration.md"
+          },
+          {
+            "label": "Public and TEST data",
+            "translations": {
+              "pl": "Dane publiczne i TEST"
+            },
+            "path": "guides/public-and-test-data.md"
+          }
+        ]
+      },
+      {
+        "id": "reference",
+        "label": "Reference",
+        "translations": {
+          "pl": "Referencja"
+        },
+        "kind": "reference",
+        "items": [
+          {
+            "label": "Commands",
+            "translations": {
+              "pl": "Komendy"
+            },
+            "path": "reference/commands.md"
+          }
+        ]
+      },
+      {
+        "id": "concepts",
+        "label": "Concepts",
+        "translations": {
+          "pl": "Koncepcje"
+        },
+        "kind": "explanation",
+        "items": [
+          {
+            "label": "Local state and files",
+            "translations": {
+              "pl": "Stan lokalny i pliki"
+            },
+            "path": "concepts/state-and-cache.md"
+          },
+          {
+            "label": "Architecture",
+            "translations": {
+              "pl": "Architektura"
+            },
+            "path": "contributing/architecture.md"
+          }
+        ]
+      }
+    ]
+  }
 }

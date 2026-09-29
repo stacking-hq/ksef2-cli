@@ -255,5 +255,23 @@ def test_config_path_resolution(tmp_path) -> None:
     assert resolve_config_path(explicit) == explicit
 
     assert default_config_path({"XDG_CONFIG_HOME": str(tmp_path / "xdg")}) == (
-        tmp_path / "xdg" / "ksef2-cli" / "config.toml"
+        tmp_path / "xdg" / "ksef2" / "config.toml"
     )
+
+
+def test_config_path_uses_legacy_file_only_when_preferred_file_is_missing(
+    tmp_path: Path,
+) -> None:
+    xdg_home = tmp_path / "xdg"
+    legacy_path = xdg_home / "ksef2-cli" / "config.toml"
+    legacy_path.parent.mkdir(parents=True)
+    legacy_path.write_text("", encoding="utf-8")
+
+    environ = {"XDG_CONFIG_HOME": str(xdg_home)}
+    assert default_config_path(environ) == legacy_path
+
+    preferred_path = xdg_home / "ksef2" / "config.toml"
+    preferred_path.parent.mkdir(parents=True)
+    preferred_path.write_text("", encoding="utf-8")
+
+    assert default_config_path(environ) == preferred_path

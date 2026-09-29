@@ -7,8 +7,8 @@ description: Contributor reference for the ksef2-cli command modules and shared 
 
 This is a reference for contributors adding or changing commands in `ksef2-cli`.
 
-For the in-progress typed rendering refactor (Pydantic results, singledispatch renderers),
-see [Rendering Refactor Plan](./rendering-refactor-plan.md).
+This page describes the architecture currently present on `main`; contributor
+plans that are not part of the shipped command surface are intentionally omitted.
 
 ## Design Goals
 

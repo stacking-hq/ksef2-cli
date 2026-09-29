@@ -62,6 +62,6 @@ Supported values are:
 
 ## Next steps
 
-- [Run the quickstart](quickstart.md)
+- [Run the quickstart](quickstart.mdx)
 - [Configure authentication](../guides/authentication.md)
 - [Create local defaults](../guides/configuration.md)
