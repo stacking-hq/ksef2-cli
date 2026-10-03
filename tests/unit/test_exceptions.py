@@ -1,7 +1,6 @@
 from io import StringIO
 
-from ksef2 import KSeFApiError, KSeFAuthPollingTimeoutError
-from ksef2.core.exceptions import ExceptionCode
+from ksef2 import ExceptionCode, KSeFApiError, KSeFAuthPollingTimeoutError
 from rich.console import Console
 
 from ksef2_cli.exceptions import (

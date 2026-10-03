@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from ksef2.domain.models.session import (
+from ksef2.models import (
     OnlineSessionResumeState,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
@@ -16,7 +16,7 @@ from pydantic import Field
 from ksef2_cli.results import CliResult, SavedFile
 
 if TYPE_CHECKING:
-    from ksef2.domain.models.invoices import ExportHandle
+    from ksef2.models import ExportHandle
 
 
 InvoiceWorkflowMode = Literal["online", "batch"]
@@ -189,7 +189,7 @@ class ExportHandleSaved(CliResult):
         )
 
     def to_handle(self) -> "ExportHandle":
-        from ksef2.domain.models.invoices import ExportHandle
+        from ksef2.models import ExportHandle
 
         return ExportHandle(
             reference_number=self.reference_number,

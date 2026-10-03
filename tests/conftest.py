@@ -7,8 +7,7 @@ from typing import Any
 
 import pytest
 from ksef2 import FormSchema
-from ksef2.domain.models.batch import BatchSessionResumeState
-from ksef2.domain.models.session import OnlineSessionResumeState
+from ksef2.models import BatchSessionResumeState, OnlineSessionResumeState
 from typer.testing import CliRunner
 
 from ksef2_cli.config import EnvironmentName, OutputMode, RuntimeOverrides, Settings

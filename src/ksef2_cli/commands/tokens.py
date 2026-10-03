@@ -3,8 +3,8 @@
 from typing import Annotated
 
 import typer
-from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.domain.models.tokens import (
+from ksef2.clients import AuthenticatedClient
+from ksef2.models import (
     QueryTokensResponse,
     TokenAuthorIdentifierTypeEnum,
     TokenInfo,
@@ -78,7 +78,7 @@ def tokens_list(
     """List KSeF authorization tokens."""
 
     def list_tokens(auth: AuthenticatedClient) -> QueryTokensResponse | list[TokenInfo]:
-        from ksef2.domain.models.pagination import TokenListParams
+        from ksef2.models import TokenListParams
 
         params = TokenListParams(
             status=[item.value for item in status] or None,

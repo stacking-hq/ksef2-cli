@@ -4,11 +4,13 @@ from pathlib import Path
 from typing import Annotated, Self
 
 import typer
+from ksef2.clients import AuthenticatedClient
+from ksef2.models import (
+    BatchSessionResumeState,
+    SessionInvoicesResponse,
+    SessionStatusResponse,
+)
 from pydantic import BaseModel, model_validator
-
-from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.domain.models.batch import BatchSessionResumeState
-from ksef2.domain.models.session import SessionInvoicesResponse, SessionStatusResponse
 
 from ksef2_cli.config import FORM_SCHEMA_NAMES, FormSchemaChoice
 from ksef2_cli.context import run_authenticated, run_authenticated_command, run_command

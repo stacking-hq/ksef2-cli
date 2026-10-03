@@ -3,14 +3,15 @@
 from pathlib import Path
 from typing import Generic, TypeVar
 
-from ksef2.domain.models.batch import BatchSessionResumeState
-from ksef2.domain.models.invoices import SendInvoiceResponse
-from ksef2.domain.models.session import (
+from ksef2.models import (
+    BatchSessionResumeState,
+    Identifier,
     OnlineSessionResumeState,
+    Permission,
+    SendInvoiceResponse,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
 )
-from ksef2.domain.models.testdata import Identifier, Permission
 from pydantic import BaseModel, ConfigDict, Field
 
 from ksef2_cli.config import CliConfig, ProfileConfig

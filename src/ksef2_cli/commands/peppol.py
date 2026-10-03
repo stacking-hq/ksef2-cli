@@ -4,8 +4,11 @@ from typing import Annotated
 
 import typer
 from ksef2 import Client
-from ksef2.domain.models.pagination import OffsetPaginationParams
-from ksef2.domain.models.peppol import ListPeppolProvidersResponse, PeppolProvider
+from ksef2.models import (
+    ListPeppolProvidersResponse,
+    OffsetPaginationParams,
+    PeppolProvider,
+)
 
 from ksef2_cli.context import run_client_command
 

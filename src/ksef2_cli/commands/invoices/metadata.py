@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.clients.authenticated import AuthenticatedClient
+from ksef2.clients import AuthenticatedClient
 
 from ksef2_cli.commands.invoices.models import (
     InvoiceAmountTypeChoice,

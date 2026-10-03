@@ -1,6 +1,6 @@
 """Plain-text handlers for TEST data command results."""
 
-from ksef2.domain.models.testdata import Permission
+from ksef2.models import Permission
 
 from ksef2_cli.renderers.text import (
     PlainTextRenderer,

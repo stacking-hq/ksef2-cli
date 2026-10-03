@@ -4,23 +4,26 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-
-from ksef2.domain.models.auth import ContextIdentifierTypeEnum
+from ksef2.models import ContextIdentifierTypeEnum
 
 from ksef2_cli.commands import (
     auth,
+    batch,
     certificates,
-    config as config_commands,
     encryption,
     limits,
     online,
     peppol,
     permissions,
-    profile as profile_commands,
     sessions,
     testdata,
     tokens,
-    batch,
+)
+from ksef2_cli.commands import (
+    config as config_commands,
+)
+from ksef2_cli.commands import (
+    profile as profile_commands,
 )
 from ksef2_cli.commands.invoices.group import app as invoices_app
 from ksef2_cli.config import (

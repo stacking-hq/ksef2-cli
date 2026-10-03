@@ -1,7 +1,8 @@
 from typing import Any
 
 from conftest import FakeClient, FakeService, cli_args, fake_runtime, payload
-from ksef2.domain.models.tokens import GenerateTokenResponse
+from ksef2.models import GenerateTokenResponse
+
 from ksef2_cli.app import app
 
 

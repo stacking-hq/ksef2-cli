@@ -4,12 +4,13 @@ from enum import StrEnum
 from typing import Annotated
 
 import typer
-from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.domain.models.auth import (
+from ksef2.clients import AuthenticatedClient
+from ksef2.models import (
     AuthenticationSession,
     AuthenticationSessionsResponse,
+    ListSessionsResponse,
+    SessionSummary,
 )
-from ksef2.domain.models.session import ListSessionsResponse, SessionSummary
 
 from ksef2_cli.context import run_authenticated, run_authenticated_command, run_command
 from ksef2_cli.results import CurrentSessionTerminated, SessionClosed
@@ -100,7 +101,7 @@ def sessions_invoice_list(
     """List historical online or batch invoice sessions."""
 
     def operation() -> ListSessionsResponse | list[SessionSummary]:
-        from ksef2.domain.models.pagination import ListSessionsQuery
+        from ksef2.models import ListSessionsQuery
 
         params = ListSessionsQuery(
             session_type=session_type.value,

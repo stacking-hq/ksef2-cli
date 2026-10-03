@@ -4,10 +4,10 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.domain.models.invoices import SendInvoiceResponse
-from ksef2.domain.models.session import (
+from ksef2.clients import AuthenticatedClient
+from ksef2.models import (
     OnlineSessionResumeState,
+    SendInvoiceResponse,
     SessionInvoicesResponse,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
