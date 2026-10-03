@@ -4,21 +4,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Self, cast
 
-from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.clients.online import OnlineSessionClient
-from ksef2.domain.models.invoices import (
+from ksef2.clients import AuthenticatedClient, OnlineSessionClient
+from ksef2.models import (
+    CurrencyCodes,
+    FormSchema,
     InvoiceExportStatusResponse,
     InvoiceMetadata,
+    InvoiceMetadataParams,
     InvoicesFilter,
     QueryInvoicesMetadataResponse,
     SendInvoiceResponse,
-)
-from ksef2.domain.models.pagination import InvoiceMetadataParams
-from ksef2.domain.models.session import (
-    FormSchema,
     SessionInvoiceStatusResponse,
 )
-from ksef2.domain.types import CurrencyCodes
 from pydantic import BaseModel, Field, model_validator
 
 from ksef2_cli.commands.invoices.models import (
@@ -31,11 +28,11 @@ from ksef2_cli.commands.invoices.models import (
     InvoiceDateTypeChoice,
     InvoiceRoleChoice,
     InvoiceSendModeChoice,
+    InvoicesSendResult,
     InvoiceTypeChoice,
     InvoiceWorkflowBatch,
     InvoiceWorkflowItem,
     InvoiceWorkflowReceipt,
-    InvoicesSendResult,
     InvoicingModeChoice,
     OnlineInvoiceReceipt,
     SortOrderChoice,

@@ -4,20 +4,20 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.domain.models.certificates import (
+from ksef2.clients import AuthenticatedClient
+from ksef2.models import (
     CertificateEnrollmentData,
     CertificateEnrollmentResponse,
     CertificateEnrollmentStatusResponse,
     CertificateInfo,
     CertificateLimitsResponse,
+    CertificatesInfoList,
     CertificateStatusEnum,
     CertificateTypeEnum,
-    CertificatesInfoList,
-    RevocationReasonEnum,
+    OffsetPaginationParams,
     RetrievedCertificatesList,
+    RevocationReasonEnum,
 )
-from ksef2.domain.models.pagination import OffsetPaginationParams
 
 from ksef2_cli.context import run_authenticated, run_command
 from ksef2_cli.results import CertificateRevoked
@@ -113,7 +113,7 @@ def certificates_list(
     """Query certificates."""
 
     def operation() -> CertificatesInfoList | list[CertificateInfo]:
-        from ksef2.domain.models.certificates import validate_certificate_serial_number
+        from ksef2.models import validate_certificate_serial_number
 
         params = OffsetPaginationParams(page_size=page_size, page_offset=page_offset)
         serial = (
@@ -168,7 +168,7 @@ def certificates_retrieve(
     """Retrieve issued certificates by serial number."""
 
     def operation() -> RetrievedCertificatesList:
-        from ksef2.domain.models.certificates import validate_certificate_serial_number
+        from ksef2.models import validate_certificate_serial_number
 
         serials = [
             validate_certificate_serial_number(value) for value in serial_numbers
@@ -201,7 +201,7 @@ def certificates_revoke(
     """Revoke a certificate."""
 
     def operation() -> CertificateRevoked:
-        from ksef2.domain.models.certificates import validate_certificate_serial_number
+        from ksef2.models import validate_certificate_serial_number
 
         serial = validate_certificate_serial_number(serial_number)
         run_authenticated(

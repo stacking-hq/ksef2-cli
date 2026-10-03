@@ -8,9 +8,7 @@ from typing import Annotated, cast
 import typer
 from cryptography.hazmat.primitives import serialization
 from ksef2 import Client
-from ksef2.core.tools import NIP_WEIGHTS, generate_nip
-from ksef2.core.xades import generate_test_certificate
-from ksef2.domain.models.testdata import (
+from ksef2.models import (
     AuthContextIdentifier,
     AuthContextIdentifierTypeEnum,
     Identifier,
@@ -19,8 +17,11 @@ from ksef2.domain.models.testdata import (
     PermissionTypeEnum,
     SubjectTypeEnum,
     SubUnit,
+    TokenPermission,
+    TokenPermissionEnum,
 )
-from ksef2.domain.models.tokens import TokenPermission, TokenPermissionEnum
+from ksef2.testdata import generate_nip
+from ksef2.xades import generate_test_certificate
 
 from ksef2_cli.config import EnvironmentName
 from ksef2_cli.context import get_settings, run_client, run_command, use_client
@@ -196,6 +197,9 @@ def testdata_sandbox(
     run_command(ctx, operation, render_result=False)
 
 
+_NIP_WEIGHTS = (6, 5, 7, 2, 3, 4, 5, 6, 7)
+
+
 def _sandbox_nip(value: str | None) -> str:
     if value is None:
         return generate_nip()
@@ -211,7 +215,7 @@ def _valid_nip(value: str) -> bool:
     if digits[0] == 0 or digits[1:3] == [0, 0]:
         return False
     checksum = (
-        sum(weight * digit for weight, digit in zip(NIP_WEIGHTS, digits[:9])) % 11
+        sum(weight * digit for weight, digit in zip(_NIP_WEIGHTS, digits[:9])) % 11
     )
     return checksum == digits[9]
 

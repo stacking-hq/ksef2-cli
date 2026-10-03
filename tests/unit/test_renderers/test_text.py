@@ -1,14 +1,17 @@
 from datetime import UTC, datetime
 
 import pytest
-from ksef2.domain.models.auth import AuthTokens, RefreshedToken, TokenCredentials
-from ksef2.domain.models.certificates import CertificateLimitsResponse
-from ksef2.domain.models.invoices import ExportHandle
-from ksef2.domain.models.peppol import ListPeppolProvidersResponse, PeppolProvider
-from ksef2.domain.models.tokens import (
+from ksef2.models import (
+    AuthTokens,
+    CertificateLimitsResponse,
+    ExportHandle,
+    ListPeppolProvidersResponse,
+    PeppolProvider,
     QueryTokensResponse,
+    RefreshedToken,
     TokenAuthorIdentifier,
     TokenContextIdentifier,
+    TokenCredentials,
     TokenInfo,
     TokenStatusResponse,
 )

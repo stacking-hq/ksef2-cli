@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Literal, Protocol, TypeVar
 
 from ksef2 import Client, Environment
-from ksef2.clients.authenticated import AuthenticatedClient
+from ksef2.clients import AuthenticatedClient
 from pydantic import BaseModel
 
 from ksef2_cli.config import AuthenticatedRuntime, EnvironmentName, Settings
@@ -21,7 +21,7 @@ ModelT = TypeVar("ModelT", bound=BaseModel)
 
 if TYPE_CHECKING:
     from cryptography.x509 import Certificate
-    from ksef2.core.xades import XAdESPrivateKey
+    from ksef2.xades import XAdESPrivateKey
 
 type CredentialSource = bytes | str | Path
 
@@ -275,7 +275,7 @@ def load_p12_credentials(
     """Load certificate and private key from a PKCS#12/PFX archive."""
 
     if loader is None:
-        from ksef2.core.xades import load_certificate_and_key_from_p12
+        from ksef2.xades import load_certificate_and_key_from_p12
 
         loader = load_certificate_and_key_from_p12
 
@@ -296,10 +296,7 @@ def load_pem_credentials(
     """Load certificate and private key from PEM files."""
 
     if cert_loader is None or key_loader is None:
-        from ksef2.core.xades import (
-            load_certificate_from_pem,
-            load_private_key_from_pem,
-        )
+        from ksef2.xades import load_certificate_from_pem, load_private_key_from_pem
 
         cert_loader = cert_loader or load_certificate_from_pem
         key_loader = key_loader or load_private_key_from_pem

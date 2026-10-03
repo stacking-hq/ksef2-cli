@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.domain.models.invoices import InvoiceExportStatusResponse
+from ksef2.clients import AuthenticatedClient
+from ksef2.models import InvoiceExportStatusResponse
 
 from ksef2_cli.commands.invoices.models import (
     CompressionTypeChoice,
