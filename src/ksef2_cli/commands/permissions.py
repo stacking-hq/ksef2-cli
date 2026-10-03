@@ -6,24 +6,24 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.domain.models import KSeFBaseModel
-from ksef2.domain.models.pagination import OffsetPaginationParams
-from ksef2.domain.models.permissions import (
+from ksef2.clients import AuthenticatedClient
+from ksef2.models import (
     AttachmentPermissionStatus,
-    AuthorizationPermissionTypeEnum,
     AuthorizationPermissionsQueryResponse,
+    AuthorizationPermissionTypeEnum,
     AuthorizationSubjectIdentifierTypeEnum,
     EntityPermission,
-    EntityPermissionTypeEnum,
     EntityPermissionsQueryResponse,
+    EntityPermissionTypeEnum,
     EntityRolesResponse,
     EuEntityAdminContextIdentifierTypeEnum,
-    EuEntityPermissionTypeEnum,
     EuEntityPermissionsQueryResponse,
+    EuEntityPermissionTypeEnum,
     GrantPermissionsResponse,
     IndirectPermissionTypeEnum,
     IndirectTargetIdentifierTypeEnum,
+    KSeFBaseModel,
+    OffsetPaginationParams,
     PermissionOperationStatusResponse,
     PersonalPermissionsQueryResponse,
     PersonPermissionsQueryResponse,
@@ -392,7 +392,7 @@ def permissions_query(
 ) -> None:
     """Run a permission query from a JSON payload."""
 
-    from ksef2.domain.models.permissions import (
+    from ksef2.models import (
         AuthorizationPermissionsQuery,
         EntityPermissionsQuery,
         EuEntityPermissionsQuery,

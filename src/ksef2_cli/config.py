@@ -1,19 +1,19 @@
 """Shared CLI settings, profiles, and simple enum configuration."""
 
 import os
-import tomllib
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Callable, Literal, Mapping, Protocol, Self, TypeVar
 
+import toml
+import tomllib
 from cryptography.x509 import Certificate
 from ksef2 import Client, FormSchema
-from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.core.xades import XAdESPrivateKey
-from ksef2.domain.models.auth import ContextIdentifierTypeEnum
+from ksef2.clients import AuthenticatedClient
+from ksef2.models import ContextIdentifierTypeEnum
+from ksef2.xades import XAdESPrivateKey
 from pydantic import BaseModel, Field, field_validator, model_validator
-import toml
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 

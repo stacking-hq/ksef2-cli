@@ -1,8 +1,7 @@
 import json
 from datetime import UTC, datetime
 
-from ksef2.domain.models.invoices import ExportHandle
-from ksef2.domain.models.tokens import GenerateTokenResponse
+from ksef2.models import ExportHandle, GenerateTokenResponse
 
 from ksef2_cli.commands.invoices.models import ExportHandleSaved, ExportPaths
 from ksef2_cli.config import (
