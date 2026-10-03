@@ -3,5 +3,116 @@
   "slug": "cli",
   "name": "KSeF2 CLI",
   "name_pl": "KSeF2 CLI",
-  "min_pages": 1
+  "min_pages": 1,
+  "locales": [
+    "en"
+  ],
+  "sidebar": {
+    "link": "intro.md",
+    "categories": [
+      {
+        "id": "getting-started",
+        "label": "Getting started",
+        "translations": {
+          "pl": "Pierwsze kroki"
+        },
+        "kind": "tutorial",
+        "items": [
+          {
+            "label": "Overview",
+            "translations": {
+              "pl": "Wprowadzenie"
+            },
+            "path": "intro.md"
+          },
+          {
+            "label": "Installation",
+            "translations": {
+              "pl": "Instalacja"
+            },
+            "path": "getting-started/installation.md"
+          },
+          {
+            "label": "Quickstart",
+            "translations": {
+              "pl": "Szybki start"
+            },
+            "path": "getting-started/quickstart.md"
+          }
+        ]
+      },
+      {
+        "id": "guides",
+        "label": "Guides",
+        "translations": {
+          "pl": "Przewodniki"
+        },
+        "kind": "how-to",
+        "items": [
+          {
+            "label": "Authentication",
+            "translations": {
+              "pl": "Uwierzytelnianie"
+            },
+            "path": "guides/authentication.md"
+          },
+          {
+            "label": "Configuration",
+            "translations": {
+              "pl": "Konfiguracja"
+            },
+            "path": "guides/configuration.md"
+          },
+          {
+            "label": "Invoice workflows",
+            "translations": {
+              "pl": "Przepływy faktur"
+            },
+            "path": "guides/invoices.md"
+          }
+        ]
+      },
+      {
+        "id": "reference",
+        "label": "Reference",
+        "translations": {
+          "pl": "Referencja"
+        },
+        "kind": "reference",
+        "items": [
+          {
+            "label": "Commands",
+            "translations": {
+              "pl": "Komendy"
+            },
+            "path": "reference/commands.md"
+          }
+        ]
+      },
+      {
+        "id": "contributing",
+        "label": "Contributing",
+        "translations": {
+          "pl": "Współtworzenie"
+        },
+        "kind": "reference",
+        "items": [
+          {
+            "label": "Architecture",
+            "translations": {
+              "pl": "Architektura"
+            },
+            "path": "contributing/architecture.md"
+          },
+          {
+            "label": "Rendering refactor plan",
+            "translations": {
+              "pl": "Plan refaktoryzacji renderowania"
+            },
+            "path": "contributing/rendering-refactor-plan.md"
+          }
+        ]
+      }
+    ]
+  }
 }
