@@ -5,17 +5,17 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Literal, Protocol, TypeVar
+from typing import TYPE_CHECKING, Callable, NoReturn, Protocol, TypeVar
 
-from ksef2 import Client, Environment
+from ksef2 import Client
 from ksef2.clients.authenticated import AuthenticatedClient
+from ksef2.profiles import ProfileAuthType
 from pydantic import BaseModel
 
-from ksef2_cli.config import AuthenticatedRuntime, EnvironmentName, Settings
+from ksef2_cli.config import AuthenticatedRuntime, Settings
 from ksef2_cli.exceptions import AuthenticationConfigError
 from ksef2_cli.io import read_model_file
 
-AuthMethod = Literal["token", "test_certificate", "p12", "pem"]
 T = TypeVar("T")
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -48,13 +48,6 @@ class PrivateKeyLoader(Protocol):
     ) -> "XAdESPrivateKey": ...
 
 
-ENVIRONMENT_MAPPING = {
-    EnvironmentName.production: Environment.PRODUCTION,
-    EnvironmentName.demo: Environment.DEMO,
-    EnvironmentName.test: Environment.TEST,
-}
-
-
 @dataclass
 class AuthenticatedContext:
     """An SDK client paired with its authenticated SDK facade."""
@@ -69,7 +62,7 @@ def create_client(settings: Settings) -> Client:
     if settings.runtime_overrides and settings.runtime_overrides.client_factory:
         return settings.runtime_overrides.client_factory()
 
-    return Client(environment=ENVIRONMENT_MAPPING[settings.environment])
+    return Client(environment=settings.environment)
 
 
 @contextmanager
@@ -87,44 +80,92 @@ def run_client(settings: Settings, operation: Callable[[Client], T]) -> T:
         return operation(client)
 
 
-def fail(message: str, *, code: int = 1) -> None:
+def fail(message: str, *, code: int = 1) -> NoReturn:
     """Abort with a user-facing error."""
 
     raise AuthenticationConfigError(message, exit_code=code)
 
 
 def authenticate_client(settings: Settings, client: Client) -> AuthenticatedClient:
-    """Authenticate an SDK client using the configured auth method."""
+    """Authenticate an SDK client from the selected profile or from CLI flags."""
 
+    profile = settings.profile
+    if profile is not None:
+        # ``with_profile()`` reads profile auth, secrets, and polling on its own. Any
+        # CLI auth flag, or a profile-displacing --env/--nip, has to stay CLI-side
+        # because that SDK call cannot override a profile's values.
+        overrides_profile = (
+            settings.nip != profile.nip
+            or settings.environment is not profile.sdk_environment
+            or settings.token is not None
+            or settings.context_type is not None
+            or settings.test_certificate
+            or settings.cert is not None
+            or settings.key is not None
+            or settings.key_password is not None
+            or settings.p12 is not None
+            or settings.p12_password is not None
+        )
+        if not overrides_profile:
+            return client.authentication.with_profile(
+                settings.profile_name,
+                config_path=settings.config_file,
+                timeout=settings.auth_timeout,
+                poll_interval=settings.poll_interval,
+            )
+
+    auth_config = profile.auth if profile is not None else None
     method = select_auth_method(settings)
+    if method is None:
+        if auth_config is None:
+            fail(
+                "Provide one auth method: --token, --test-cert, --cert/--key, or --p12."
+            )
+        method = auth_config.type
+
+    if not settings.nip:
+        fail(
+            "Authentication requires --nip, KSEF2_NIP, or a selected profile with nip."
+        )
 
     match method:
-        case "token":
-            assert settings.nip is not None
+        case ProfileAuthType.TOKEN:
+            token_env = auth_config.token_env if auth_config is not None else None
             token = resolve_secret(
                 value=settings.token,
-                envvar=settings.token_env,
+                envvar=token_env,
                 label="KSeF token",
             )
-            assert token is not None
-            assert settings.context_type is not None
-
+            if token is None:
+                fail(
+                    "Set auth.token_env in the profile or pass --token for token auth."
+                )
+            profile_context_type = (
+                auth_config.context_type if auth_config is not None else None
+            )
+            context_type = settings.context_type or profile_context_type or "nip"
             return client.authentication.with_token(
                 ksef_token=token,
                 nip=settings.nip,
-                context_type=settings.context_type,
-                poll_interval=settings.poll_interval,
-                timeout=settings.auth_timeout,
+                context_type=context_type,
+                poll_interval=settings.effective_poll_interval,
+                timeout=settings.effective_auth_timeout,
             )
-        case "test_certificate":
-            assert settings.nip is not None
+        case ProfileAuthType.TEST_CERTIFICATE:
             return client.authentication.with_test_certificate(
                 nip=settings.nip,
-                poll_interval=settings.poll_interval,
-                timeout=settings.auth_timeout,
+                poll_interval=settings.effective_poll_interval,
+                timeout=settings.effective_auth_timeout,
             )
-        case "p12":
-            assert settings.p12 is not None
+        case ProfileAuthType.XADES_P12:
+            profile_p12 = auth_config.p12 if auth_config is not None else None
+            p12_password_env = (
+                auth_config.p12_password_env if auth_config is not None else None
+            )
+            p12_path = settings.p12 or profile_p12
+            if p12_path is None:
+                fail("Provide --p12 or a profile with auth.p12 for PKCS#12/PFX auth.")
+
             p12_loader = (
                 settings.runtime_overrides.p12_credentials_loader
                 if settings.runtime_overrides
@@ -132,50 +173,52 @@ def authenticate_client(settings: Settings, client: Client) -> AuthenticatedClie
                 else load_p12_credentials
             )
             cert, private_key = p12_loader(
-                settings.p12,
+                p12_path,
                 password=resolve_secret(
                     value=settings.p12_password,
-                    envvar=settings.p12_password_env,
+                    envvar=p12_password_env,
                     label="PKCS#12/PFX password",
                 ),
             )
-
-            assert settings.nip is not None
             return client.authentication.with_xades(
                 nip=settings.nip,
                 cert=cert,
                 private_key=private_key,
-                poll_interval=settings.poll_interval,
-                timeout=settings.auth_timeout,
+                poll_interval=settings.effective_poll_interval,
+                timeout=settings.effective_auth_timeout,
             )
-
-        case "pem":
+        case ProfileAuthType.XADES_PEM:
             pem_loader = (
                 settings.runtime_overrides.pem_credentials_loader
                 if settings.runtime_overrides
                 and settings.runtime_overrides.pem_credentials_loader
                 else load_pem_credentials
             )
+            profile_cert = auth_config.cert if auth_config is not None else None
+            profile_key = auth_config.key if auth_config is not None else None
+            key_password_env = (
+                auth_config.key_password_env if auth_config is not None else None
+            )
+            cert_path = settings.cert or profile_cert
+            key_path = settings.key or profile_key
+            if cert_path is None or key_path is None:
+                fail("Both --cert and --key are required for PEM XAdES authentication.")
 
-            assert settings.cert is not None
-            assert settings.key is not None
             cert, private_key = pem_loader(
-                cert_path=settings.cert,
-                key_path=settings.key,
+                cert_path=cert_path,
+                key_path=key_path,
                 key_password=resolve_secret(
                     value=settings.key_password,
-                    envvar=settings.key_password_env,
+                    envvar=key_password_env,
                     label="PEM private key password",
                 ),
             )
-
-            assert settings.nip is not None
             return client.authentication.with_xades(
                 nip=settings.nip,
                 cert=cert,
                 private_key=private_key,
-                poll_interval=settings.poll_interval,
-                timeout=settings.auth_timeout,
+                poll_interval=settings.effective_poll_interval,
+                timeout=settings.effective_auth_timeout,
             )
 
 
@@ -213,38 +256,26 @@ def read_model(settings: Settings, path: Path, model_type: type[ModelT]) -> Mode
     return read_model_file(path, model_type)
 
 
-def select_auth_method(settings: Settings) -> AuthMethod:
-    """Validate auth settings and return the configured auth method."""
-
-    if not settings.nip:
-        fail(
-            "Authentication requires --nip, KSEF2_NIP, "
-            "or a selected profile with nip."
-        )
+def select_auth_method(settings: Settings) -> ProfileAuthType | None:
+    """Return the auth method requested by CLI flags, or None when the profile owns it."""
 
     has_pem = settings.cert is not None or settings.key is not None
-    configured_methods: list[tuple[AuthMethod, bool]] = [
-        ("token", settings.token is not None or settings.token_env is not None),
-        ("test_certificate", settings.test_certificate),
-        ("p12", settings.p12 is not None),
-        ("pem", has_pem),
+    configured_methods: list[tuple[ProfileAuthType, bool]] = [
+        (ProfileAuthType.TOKEN, settings.token is not None),
+        (ProfileAuthType.TEST_CERTIFICATE, settings.test_certificate),
+        (ProfileAuthType.XADES_P12, settings.p12 is not None),
+        (ProfileAuthType.XADES_PEM, has_pem),
     ]
-    selected: list[AuthMethod] = [
+    selected: list[ProfileAuthType] = [
         name for name, enabled in configured_methods if enabled
     ]
 
-    if not selected:
-        fail("Provide one auth method: --token, --test-cert, --cert/--key, or --p12.")
     if len(selected) > 1:
         fail(
             "Provide only one auth method: --token, --test-cert, --cert/--key, or --p12."
         )
 
-    method = selected[0]
-    if method == "pem" and (settings.cert is None or settings.key is None):
-        fail("Both --cert and --key are required for PEM XAdES authentication.")
-
-    return method
+    return selected[0] if selected else None
 
 
 def resolve_secret(

@@ -1,27 +1,29 @@
 from conftest import cli_args, payload
-from ksef2_cli.app import app
-from ksef2_cli.config import (
-    CONFIG_FILE_MODE,
-    CliConfig,
+from ksef2.profiles import (
+    CliProfileConfig,
     ProfileAuthConfig,
     ProfileAuthType,
     ProfileConfig,
-    render_cli_config,
+    render_profile_config,
 )
+
+from ksef2_cli.app import app
+
+CONFIG_FILE_MODE = 0o600
 
 
 def test_config_show_renders_profile_config(runner, tmp_path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text(
-        render_cli_config(
-            CliConfig(
+        render_profile_config(
+            CliProfileConfig(
                 active_profile="demo",
                 profiles={
                     "demo": ProfileConfig(
                         environment="test",
                         nip="5261040828",
                         auth=ProfileAuthConfig(
-                            type=ProfileAuthType.token,
+                            type=ProfileAuthType.TOKEN,
                             token_env="KSEF2_DEMO_TOKEN",
                             context_type="nip",
                         ),

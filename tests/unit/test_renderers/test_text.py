@@ -15,8 +15,8 @@ from ksef2.domain.models.tokens import (
 from pydantic import BaseModel
 
 from ksef2_cli.commands.invoices.models import ExportHandleSaved, ExportPaths
-from ksef2_cli.config import (
-    CliConfig,
+from ksef2.profiles import (
+    CliProfileConfig,
     ProfileAuthConfig,
     ProfileAuthType,
     ProfileConfig,
@@ -144,13 +144,13 @@ def test_cli_action_models_text_use_yes_no() -> None:
 
 
 def test_config_result_models_text(tmp_path) -> None:
-    config = CliConfig(
+    config = CliProfileConfig(
         active_profile="demo",
         profiles={
             "demo": ProfileConfig(
                 environment="test",
                 nip="5261040828",
-                auth=ProfileAuthConfig(type=ProfileAuthType.test_certificate),
+                auth=ProfileAuthConfig(type=ProfileAuthType.TEST_CERTIFICATE),
             )
         },
     )

@@ -6,7 +6,13 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import Iterable, Sequence
 from urllib.parse import urlencode
 
-from ksef2 import KSeFApiError, KSeFException
+from ksef2 import (
+    KSeFApiError,
+    KSeFException,
+    KSeFInvoiceRenderingError,
+    KSeFRateLimitError,
+    KSeFValidationError,
+)
 from rich.console import Console
 from rich.markup import escape
 
@@ -138,6 +144,21 @@ def error_from_exception(error: Exception) -> CliError:
 
     if isinstance(error, CliError):
         return error
+    if isinstance(error, KSeFInvoiceRenderingError):
+        return UsageError(str(error))
+    if isinstance(error, KSeFValidationError):
+        return ConfigError(str(error))
+    if isinstance(error, KSeFRateLimitError):
+        hints = (
+            f"Wait at least {error.retry_after} seconds before retrying."
+            if error.retry_after is not None
+            else "Wait before retrying the same command."
+        )
+        return RemoteServiceError(
+            str(error),
+            title="KSeF rate limit exceeded",
+            hints=(hints,),
+        )
     if isinstance(error, KSeFApiError):
         return RemoteServiceError(
             f"KSeF request failed with HTTP {error.status_code}.",
