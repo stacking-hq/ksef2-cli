@@ -23,7 +23,7 @@ ksef2 = "ksef2_cli.app:main"
 ksef2-cli = "ksef2_cli.app:main"
 
 [project.urls]
-Documentation = "https://docs.stacking.me/ksef2/cli/intro/"
+Documentation = "https://docs.stacking.me/cli/intro/"
 Repository = "https://github.com/stacking-hq/ksef2-cli"
 Issues = "https://github.com/stacking-hq/ksef2-cli/issues"
 
