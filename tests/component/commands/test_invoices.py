@@ -10,22 +10,21 @@ from conftest import (
     online_state,
     payload,
 )
-from ksef2.domain.models.invoices import (
+from ksef2.models import (
     ExportHandle,
     ExportStatusInfo,
     InvoiceExportStatusResponse,
     InvoicePackage,
+    InvoiceStatusInfo,
     PackagePart,
     SendInvoiceResponse,
-)
-from ksef2.domain.models.session import (
-    InvoiceStatusInfo,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
     StatusInfo,
     Upo,
     UpoPage,
 )
+
 from ksef2_cli.app import app
 from ksef2_cli.commands.invoices.models import ExportHandleSaved, InvoiceWorkflowReceipt
 

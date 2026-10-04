@@ -4,19 +4,18 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.clients.authenticated import AuthenticatedClient
-
-from ksef2_cli.context import read_model, run_authenticated, run_command
-from ksef2_cli.io import SECRET_MODEL_FILE_MODE, write_bytes_file, write_text_file
-from ksef2_cli.results import SavedFile
+from ksef2.clients import AuthenticatedClient
 
 from ksef2_cli.commands.invoices.models import (
     BatchSessionStatus,
-    InvoiceWorkflowReceipt,
     InvoicesStatusResult,
     InvoicesUpoResult,
+    InvoiceWorkflowReceipt,
 )
+from ksef2_cli.context import read_model, run_authenticated, run_command
 from ksef2_cli.invoice_workflows import download_batch_upos
+from ksef2_cli.io import SECRET_MODEL_FILE_MODE, write_bytes_file, write_text_file
+from ksef2_cli.results import SavedFile
 
 
 def _safe_filename(value: str, suffix: str) -> str:

@@ -1,9 +1,10 @@
 from conftest import FakeService, cli_args, fake_runtime, payload
-from ksef2.domain.models.certificates import (
+from ksef2.models import (
     Certificate,
     CertificateLimitsResponse,
     RetrievedCertificatesList,
 )
+
 from ksef2_cli.app import app
 
 

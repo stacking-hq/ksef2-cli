@@ -4,7 +4,7 @@ from typing import Annotated
 
 import typer
 from ksef2 import Client
-from ksef2.domain.models.auth import AuthTokens, RefreshedToken
+from ksef2.models import AuthTokens, RefreshedToken
 
 from ksef2_cli.context import authenticate_client, run_client_command
 

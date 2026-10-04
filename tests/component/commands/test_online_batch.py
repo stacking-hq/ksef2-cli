@@ -10,12 +10,13 @@ from conftest import (
     online_state,
     payload,
 )
-from ksef2.domain.models.batch import BatchSessionResumeState
-from ksef2.domain.models.session import (
+from ksef2.models import (
+    BatchSessionResumeState,
     OnlineSessionResumeState,
     SessionStatusResponse,
     StatusInfo,
 )
+
 from ksef2_cli.app import app
 
 
@@ -225,7 +226,7 @@ def test_online_status_reads_state_written_by_older_cli(runner, tmp_path) -> Non
     session = FakeSession(get_status={"status": "open"})
     auth_service = FakeService(resume_online_session=session)
 
-    with pytest.warns(DeprecationWarning, match="access_token is deprecated"):
+    with pytest.warns(DeprecationWarning, match="access_token.*deprecated"):
         assert payload(
             runner.invoke(
                 app,

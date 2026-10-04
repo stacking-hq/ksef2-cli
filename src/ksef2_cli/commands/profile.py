@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.domain.models.auth import ContextIdentifierTypeEnum
+from ksef2.models import ContextIdentifierTypeEnum
 
 from ksef2_cli.config import (
     CliConfig,

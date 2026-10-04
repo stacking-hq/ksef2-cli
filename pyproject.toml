@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "click>=8.1,<8.2",
-    "ksef2>=0.22.2",
+    "ksef2>=1.0,<2",
     "markdown-it-py>=3,<4",
     "pydantic>=2.13.4",
     "rich>=13.7,<14",
@@ -23,9 +23,18 @@ ksef2 = "ksef2_cli.app:main"
 ksef2-cli = "ksef2_cli.app:main"
 
 [project.urls]
-Documentation = "https://docs.ksef2.dev/cli/"
+Documentation = "https://docs.stacking.me/cli/intro/"
 Repository = "https://github.com/stacking-hq/ksef2-cli"
 Issues = "https://github.com/stacking-hq/ksef2-cli/issues"
+
+# TEMPORARY (until ksef2 1.0.0 is on PyPI, stacking-hq/ksef2#147).
+# The CLI needs names that ksef2.models exports only from 1.0.0, so `ksef2>=1.0,<2`
+# cannot resolve from PyPI yet and `uv sync` fails. Resolve it from the SDK release
+# branch instead. `tool.uv.sources` is uv-only dev config: the built wheel still
+# declares `Requires-Dist: ksef2<2,>=1.0`, so nothing unreleased is published.
+# On release day, delete this table and run `uv lock -P ksef2` in its own commit.
+[tool.uv.sources]
+ksef2 = { git = "https://github.com/stacking-hq/ksef2.git", branch = "chore/08-release-1-0-0" }
 
 [dependency-groups]
 dev = [

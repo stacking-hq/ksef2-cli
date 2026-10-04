@@ -1,6 +1,6 @@
 from conftest import FakeClient, FakeService, cli_args, fake_runtime, payload
-from ksef2.domain.models.limits import SubjectLimits
-from ksef2.domain.models.tokens import GenerateTokenResponse
+from ksef2.models import GenerateTokenResponse, SubjectLimits
+
 from ksef2_cli.app import app
 from ksef2_cli.config import (
     CliConfig,
