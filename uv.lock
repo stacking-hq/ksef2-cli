@@ -350,8 +350,8 @@ wheels = [
 
 [[package]]
 name = "ksef2"
-version = "0.22.2"
-source = { registry = "https://pypi.org/simple" }
+version = "1.0.0"
+source = { git = "https://github.com/stacking-hq/ksef2.git?branch=chore%2F08-release-1-0-0#a81c3ce1973268ce2938703aa2601849268e9890" }
 dependencies = [
     { name = "camel-converter" },
     { name = "cryptography" },
@@ -360,12 +360,9 @@ dependencies = [
     { name = "signxml" },
     { name = "structlog" },
     { name = "tenacity" },
+    { name = "typing-extensions" },
     { name = "xsdata" },
     { name = "xsdata-pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/6f/11/bbfce1878d237c03f41dc0e9dc55d49de2df12655857e23b98a74db62064/ksef2-0.22.2.tar.gz", hash = "sha256:e0def3d5d5bf663ecbd28644ae1e743972f353cd1e80e22a814691bd59423340", size = 1286726, upload-time = "2026-09-25T16:23:28.648Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/42/07/005203c57c07f8c90908da6562ca1357bbc2b4e4423c6280b6b7119c4622/ksef2-0.22.2-py3-none-any.whl", hash = "sha256:8472ea87aba3f7015ed500bfb56b669708209557757b55920f64c4a5242abb56", size = 479588, upload-time = "2026-09-25T16:23:26.994Z" },
 ]
 
 [[package]]
@@ -391,7 +388,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.1,<8.2" },
-    { name = "ksef2", specifier = ">=0.22.2,<2" },
+    { name = "ksef2", git = "https://github.com/stacking-hq/ksef2.git?branch=chore%2F08-release-1-0-0" },
     { name = "markdown-it-py", specifier = ">=3,<4" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "rich", specifier = ">=13.7,<14" },
