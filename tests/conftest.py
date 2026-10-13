@@ -1,5 +1,6 @@
 import base64
 import json
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -90,6 +91,27 @@ def batch_state(reference_number: str = "batch-ref") -> BatchSessionResumeState:
         form_code=FormSchema.FA3,
         part_upload_requests=[],
     )
+
+
+class FakePager:
+    """Stand-in for ``ksef2.clients.Pager``, the 1.0 return type of list calls.
+
+    Construct it with the pages a list call should yield, e.g.
+    ``FakePager([item1, item2], [item3])``. ``first_page()`` returns the first
+    page, ``pages()`` every page, and iterating yields every item.
+    """
+
+    def __init__(self, *pages: list[Any]) -> None:
+        self._pages = [list(page) for page in pages] or [[]]
+
+    def first_page(self) -> list[Any]:
+        return list(self._pages[0])
+
+    def pages(self) -> Iterator[list[Any]]:
+        return iter([list(page) for page in self._pages])
+
+    def __iter__(self) -> Iterator[Any]:
+        return (item for page in self._pages for item in page)
 
 
 class FakeClient:
