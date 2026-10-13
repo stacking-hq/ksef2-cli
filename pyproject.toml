@@ -11,10 +11,8 @@ requires-python = ">=3.12"
 dependencies = [
     "click>=8.1,<8.2",
     "ksef2>=0.22.2,<2",
-    "markdown-it-py>=3,<4",
     "pydantic>=2.13.4",
     "rich>=13.7,<14",
-    "toml>=0.10.2",
     "typer>=0.12,<0.13",
 ]
 
@@ -56,9 +54,6 @@ markers = [
     "component: fake-backed CLI/component tests",
     "e2e: installed CLI and real external-system smoke tests",
 ]
-
-[tool.hatch.build]
-exclude = ["src/ksef2_cli/tui"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ksef2_cli"]
