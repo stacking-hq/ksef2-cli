@@ -9,7 +9,13 @@ from conftest import (
     fake_runtime,
     payload,
 )
-from ksef2.models import SubjectLimits, TokenInfo
+from ksef2.models import (
+    AuthenticationSession,
+    PeppolProvider,
+    SessionSummary,
+    SubjectLimits,
+    TokenInfo,
+)
 from ksef2.profiles import (
     CliProfileConfig,
     ProfileAuthConfig,
@@ -135,21 +141,35 @@ def test_encryption_certificates_uses_public_client(runner) -> None:
     assert invalid.exit_code == 2
 
 
-def test_peppol_providers_query_and_all(runner) -> None:
+def test_peppol_providers_list_first_page_and_all(runner) -> None:
+    provider = PeppolProvider(
+        id="PPL123456",
+        name="Provider",
+        date_created=datetime(2026, 1, 2, tzinfo=UTC),
+    )
     service = FakeService(
-        query={"providers": [{"id": "p1"}]},
-        all=lambda **kwargs: [{"id": "p1"}, {"id": "p2"}],
+        list=FakePager([{"id": "p1"}], [{"id": "p2"}]),
     )
     runtime = fake_runtime(client=FakeClient(peppol=service))
 
     result = runner.invoke(
         app, cli_args("peppol", "providers", "--page-size", "10"), obj=runtime
     )
-    assert payload(result) == {"providers": [{"id": "p1"}]}
-    assert service.called("query")["params"].page_size == 10
+    assert payload(result) == [{"id": "p1"}]
+    assert service.called("list")["params"].page_size == 10
 
     result = runner.invoke(app, cli_args("peppol", "providers", "--all"), obj=runtime)
     assert payload(result) == [{"id": "p1"}, {"id": "p2"}]
+
+    # The provider rows still render in the default text mode.
+    text_runtime = fake_runtime(
+        client=FakeClient(peppol=FakeService(list=FakePager([provider], [provider])))
+    )
+    text = runner.invoke(app, ["--no-config", "peppol", "providers"], obj=text_runtime)
+    assert text.exit_code == 0, text.output
+    assert text.output.strip() == (
+        "id=PPL123456 name=Provider date_created=2026-01-02T00:00:00+00:00"
+    )
 
 
 def test_limits_get_set_reset_and_production(runner, tmp_path) -> None:
@@ -336,20 +356,44 @@ def test_tokens_list_text_mode_renders_token_rows(runner) -> None:
     ]
 
 
+def _authentication_session(reference_number: str) -> AuthenticationSession:
+    return AuthenticationSession(
+        reference_number=reference_number,
+        start_date=datetime(2026, 1, 1, tzinfo=UTC),
+        authentication_method="token",
+        authentication_method_category="token",
+        authentication_method_code="1",
+        authentication_method_display_name="Token",
+        status_code=200,
+        status_description="open",
+    )
+
+
+def _session_summary(reference_number: str) -> SessionSummary:
+    return SessionSummary(
+        reference_number=reference_number,
+        status={"code": 200, "description": "open"},
+        date_created=datetime(2026, 1, 1, tzinfo=UTC),
+        date_updated=datetime(2026, 1, 2, tzinfo=UTC),
+        total_invoice_count=1,
+        successful_invoice_count=1,
+        failed_invoice_count=0,
+    )
+
+
 def test_sessions_commands(runner) -> None:
     session_service = FakeService(
-        query={"items": [{"reference_number": "auth-ref"}]},
-        all=lambda **kwargs: [
-            type("Page", (), {"items": [{"reference_number": "auth-ref"}]})()
-        ],
-        close=None,
+        list=FakePager(
+            [{"reference_number": "auth-ref"}], [{"reference_number": "auth-ref-2"}]
+        ),
+        terminate=None,
         terminate_current=None,
     )
     invoice_service = FakeService(
-        query={"sessions": [{"reference_number": "invoice-ref"}]},
-        all=lambda **kwargs: [
-            type("Page", (), {"sessions": [{"reference_number": "invoice-ref"}]})()
-        ],
+        list=FakePager(
+            [{"reference_number": "invoice-ref"}],
+            [{"reference_number": "invoice-ref-2"}],
+        )
     )
     auth_obj = type(
         "Auth",
@@ -359,11 +403,15 @@ def test_sessions_commands(runner) -> None:
     runtime = fake_runtime(auth=auth_obj)
 
     assert payload(
-        runner.invoke(app, cli_args("sessions", "auth-list"), obj=runtime)
-    ) == {"items": [{"reference_number": "auth-ref"}]}
+        runner.invoke(
+            app, cli_args("sessions", "auth-list", "--page-size", "20"), obj=runtime
+        )
+    ) == [{"reference_number": "auth-ref"}]
+    assert session_service.called("list")["page_size"] == 20
     assert payload(
         runner.invoke(app, cli_args("sessions", "auth-list", "--all"), obj=runtime)
-    ) == [{"reference_number": "auth-ref"}]
+    ) == [{"reference_number": "auth-ref"}, {"reference_number": "auth-ref-2"}]
+
     assert payload(
         runner.invoke(
             app,
@@ -374,19 +422,91 @@ def test_sessions_commands(runner) -> None:
         "reference_number": "auth-ref",
         "closed": True,
     }
+    # The 1.0 terminate() call takes the reference number positionally.
+    assert ("terminate", ("auth-ref",), {}) in session_service.calls
+
     assert payload(
         runner.invoke(app, cli_args("sessions", "auth-terminate-current"), obj=runtime)
     ) == {"terminated_current": True}
-    assert payload(
-        runner.invoke(
-            app, cli_args("sessions", "invoice-list", "--type", "online"), obj=runtime
-        )
-    ) == {"sessions": [{"reference_number": "invoice-ref"}]}
+
     assert payload(
         runner.invoke(
             app,
-            cli_args("sessions", "invoice-list", "--type", "batch", "--all"),
+            cli_args(
+                "sessions",
+                "invoice-list",
+                "--type",
+                "online",
+                "--page-size",
+                "20",
+            ),
             obj=runtime,
         )
     ) == [{"reference_number": "invoice-ref"}]
-    assert invoice_service.called("all")["session_type"] == "batch"
+    assert payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "sessions",
+                "invoice-list",
+                "--type",
+                "batch",
+                "--status",
+                "in_progress",
+                "--status",
+                "failed",
+                "--all",
+            ),
+            obj=runtime,
+        )
+    ) == [{"reference_number": "invoice-ref"}, {"reference_number": "invoice-ref-2"}]
+
+    list_calls = [call for call in invoice_service.calls if call[0] == "list"]
+    # session_type is positional; the status filter travels in `statuses` only.
+    assert [call[1] for call in list_calls] == [("online",), ("batch",)]
+    assert [call[2]["params"].session_type for call in list_calls] == [
+        "online",
+        "batch",
+    ]
+    assert [call[2]["statuses"] for call in list_calls] == [
+        None,
+        ["in_progress", "failed"],
+    ]
+    assert [call[2]["params"].statuses for call in list_calls] == [None, None]
+    assert [call[2]["params"].page_size for call in list_calls] == [20, 10]
+
+
+def test_sessions_list_items_render_in_default_text_mode(runner) -> None:
+    session_service = FakeService(
+        list=FakePager(
+            [_authentication_session("auth-ref")],
+            [_authentication_session("auth-ref-2")],
+        )
+    )
+    invoice_service = FakeService(list=FakePager([_session_summary("invoice-ref")]))
+    auth_obj = type(
+        "Auth",
+        (),
+        {"sessions": session_service, "invoice_sessions": invoice_service},
+    )()
+    runtime = fake_runtime(auth=auth_obj)
+
+    first_page = runner.invoke(
+        app, ["--no-config", "sessions", "auth-list"], obj=runtime
+    )
+    assert first_page.exit_code == 0, first_page.output
+    assert "reference_number: auth-ref" in first_page.output
+    assert "auth-ref-2" not in first_page.output
+
+    all_pages = runner.invoke(
+        app, ["--no-config", "sessions", "auth-list", "--all"], obj=runtime
+    )
+    assert "reference_number: auth-ref-2" in all_pages.output
+
+    invoice_list = runner.invoke(
+        app,
+        ["--no-config", "sessions", "invoice-list", "--type", "online"],
+        obj=runtime,
+    )
+    assert invoice_list.exit_code == 0, invoice_list.output
+    assert "reference_number: invoice-ref" in invoice_list.output

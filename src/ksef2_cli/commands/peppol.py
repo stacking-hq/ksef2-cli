@@ -4,11 +4,7 @@ from typing import Annotated
 
 import typer
 from ksef2 import Client
-from ksef2.models import (
-    ListPeppolProvidersResponse,
-    OffsetPaginationParams,
-    PeppolProvider,
-)
+from ksef2.models import OffsetPaginationParams, PeppolProvider
 
 from ksef2_cli.context import run_client_command
 
@@ -24,13 +20,9 @@ def peppol_providers(
 ) -> None:
     """List PEPPOL providers."""
 
-    def query_providers(
-        client: Client,
-    ) -> ListPeppolProvidersResponse | list[PeppolProvider]:
+    def list_providers(client: Client) -> list[PeppolProvider]:
         params = OffsetPaginationParams(page_size=page_size, page_offset=page_offset)
+        pager = client.peppol.list(params=params)
+        return list(pager) if all_pages else pager.first_page()
 
-        if all_pages:
-            return list(client.peppol.all(params=params))
-        return client.peppol.query(params=params)
-
-    run_client_command(ctx, query_providers)
+    run_client_command(ctx, list_providers)
