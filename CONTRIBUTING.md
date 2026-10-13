@@ -39,6 +39,19 @@ The SDK's own docs describe the 1.0 API: `docs/en/reference/public-api.md`
 (stable imports and the deprecated-to-replacement table) and
 `docs/en/reference/migration-1-0.md` in the SDK repository.
 
+## Command reference
+
+`docs/reference/commands.md` is generated, not edited. After adding, removing,
+or changing a command or option, regenerate it and commit the result:
+
+```bash
+uv run python scripts/generate_command_reference.py
+uv run python scripts/generate_command_reference.py --check   # non-zero when stale
+```
+
+`tests/unit/test_command_reference.py` runs the same generator in memory, so a
+commit that changes the CLI without regenerating the page fails the suite.
+
 ## Checks
 
 Every pull request must pass:
