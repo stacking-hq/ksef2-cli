@@ -879,7 +879,7 @@ def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
 
 
 # The filters `invoices metadata` accepts; export commands send the same InvoicesFilter.
-INVOICE_FILTER_ARGS = (
+_INVOICE_FILTER_ARGS = (
     "--date-to",
     "2026-01-31T00:00:00Z",
     "--currency",
@@ -964,7 +964,7 @@ def test_invoice_export_sends_metadata_filters(runner, tmp_path) -> None:
                 "export",
                 "--date-from",
                 "2026-01-01T00:00:00Z",
-                *INVOICE_FILTER_ARGS,
+                *_INVOICE_FILTER_ARGS,
             ),
             obj=runtime,
         )
@@ -981,7 +981,7 @@ def test_invoice_export_sends_metadata_filters(runner, tmp_path) -> None:
                 "export-download",
                 "--date-from",
                 "2026-01-01T00:00:00Z",
-                *INVOICE_FILTER_ARGS,
+                *_INVOICE_FILTER_ARGS,
                 "--out-dir",
                 str(download_dir),
             ),
