@@ -16,7 +16,7 @@ from pydantic import BaseModel, ValidationError, model_validator
 
 from ksef2_cli.batch_artifact import read_prepared_batch, write_prepared_batch
 from ksef2_cli.config import FORM_SCHEMA_NAMES, FormSchemaChoice
-from ksef2_cli.context import run_authenticated, run_authenticated_command, run_command
+from ksef2_cli.context import run_authenticated, run_command
 from ksef2_cli.exceptions import RemoteServiceError, UsageError
 from ksef2_cli.io import (
     SECRET_MODEL_FILE_MODE,
@@ -122,24 +122,6 @@ def _upload_failure(
         title="Batch upload failed",
         hints=tuple(hints),
     )
-
-
-def _upo_references(session: BatchSessionClient) -> list[str]:
-    """Return the UPO page references KSeF reported for this batch session."""
-
-    status = session.get_status()
-    return [page.reference_number for page in status.upo.pages] if status.upo else []
-
-
-def _upo_page(pages: list[bytes], references: list[str], upo_reference: str) -> bytes:
-    """Pick one page out of ``download_upo()``, which returns them in status order."""
-
-    if upo_reference not in references:
-        known = ", ".join(references) if references else "none reported"
-        raise ValueError(
-            f"Batch session reports {known} for UPO references, not {upo_reference!r}."
-        )
-    return pages[references.index(upo_reference)]
 
 
 @app.command("prepare")
@@ -352,10 +334,10 @@ class BatchSendInput(BaseModel):
     @model_validator(mode="after")
     def validate_options(self) -> Self:
         if self.reference and self.state_file:
-            raise ValueError("Use either --reference or --state-file, not both.")
+            raise UsageError("Use either --reference or --state-file, not both.")
 
         if not self.reference and not self.state_file:
-            raise ValueError("Provide --reference or --state-file.")
+            raise UsageError("Provide --reference or --state-file.")
 
         return self
 
@@ -383,9 +365,9 @@ def batch_status(
 ) -> None:
     """Fetch or wait for batch session status."""
 
-    inputs = BatchSendInput(reference=reference, state_file=state_file)
-
     def operation() -> SessionStatusResponse:
+        inputs = BatchSendInput(reference=reference, state_file=state_file)
+
         def get_batch_status(auth: AuthenticatedClient) -> SessionStatusResponse:
             with auth.batch_session(state=inputs.session_reference) as session:
                 if wait:
@@ -417,9 +399,9 @@ def batch_list(
 ) -> None:
     """List invoices submitted in a batch session."""
 
-    inputs = BatchSendInput(reference=reference, state_file=state_file)
-
     def operation() -> SessionInvoicesResponse:
+        inputs = BatchSendInput(reference=reference, state_file=state_file)
+
         def list_batch_invoices(auth: AuthenticatedClient) -> SessionInvoicesResponse:
             with auth.batch_session(state=inputs.session_reference) as session:
                 if failed:
@@ -449,12 +431,19 @@ def batch_upo(
 ) -> None:
     """Download a collective UPO page for a batch session."""
 
-    inputs = BatchSendInput(reference=reference, state_file=state_file)
+    def operation() -> SavedFile:
+        inputs = BatchSendInput(reference=reference, state_file=state_file)
+        state = inputs.session_reference
+        session_reference = (
+            state.reference_number if isinstance(state, BatchSessionResumeState) else state
+        )
 
-    def get_upo(auth: AuthenticatedClient) -> SavedFile:
-        with auth.batch_session(state=inputs.session_reference) as session:
-            pages = session.download_upo()
-            content = _upo_page(pages, _upo_references(session), upo_reference)
+        def get_upo(auth: AuthenticatedClient) -> bytes:
+            return auth.invoice_sessions.download_upo(
+                session_reference, upo_reference_number=upo_reference
+            )
+
+        content = run_authenticated(ctx, get_upo)
         return SavedFile(path=write_bytes_file(output_file, content), size=len(content))
 
-    run_authenticated_command(ctx, get_upo)
+    run_command(ctx, operation)

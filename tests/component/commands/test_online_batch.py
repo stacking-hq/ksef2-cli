@@ -1,7 +1,8 @@
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
 from conftest import (
@@ -12,6 +13,7 @@ from conftest import (
     online_state,
     payload,
 )
+from ksef2 import ExceptionCode, KSeFNotReadyError
 from ksef2.models import (
     BatchSessionResumeState,
     OnlineSessionResumeState,
@@ -311,12 +313,14 @@ def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
         wait=_session_status("completed"),
         list_invoices={"invoices": [{"reference_number": "invoice-ref"}]},
         list_failed_invoices={"invoices": [{"reference_number": "failed-ref"}]},
-        download_upo=[b"batch-upo"],
     )
     # ``auth.batch`` is a service object and ``auth.batch_session`` a factory, so
     # neither can come from FakeService's catch-all attribute lookup.
+    invoice_sessions = FakeService(download_upo=b"batch-upo")
     auth_service = SimpleNamespace(
-        batch=batch_service, batch_session=lambda **kwargs: session
+        batch=batch_service,
+        batch_session=lambda **kwargs: session,
+        invoice_sessions=invoice_sessions,
     )
     runtime = fake_runtime(auth=auth_service)
 
@@ -431,7 +435,91 @@ def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
     ) == {"path": str(out), "bytes": len(b"batch-upo")}
     assert out.read_bytes() == b"batch-upo"
 
-    unknown = runner.invoke(
+    assert invoice_sessions.calls == [
+        ("download_upo", ("batch-ref",), {"upo_reference_number": "upo-ref"})
+    ]
+
+
+@pytest.mark.parametrize("command", ["status", "list", "upo"])
+@pytest.mark.parametrize("conflicting", [False, True])
+def test_batch_session_flags_fail_before_authentication(
+    runner, tmp_path, command, conflicting
+) -> None:
+    state_file = tmp_path / "state.json"
+    _ = state_file.write_text(batch_state().to_json(), encoding="utf-8")
+    runtime = fake_runtime()
+    authenticated: list[bool] = []
+
+    def authenticate() -> NoReturn:
+        authenticated.append(True)
+        raise AssertionError("Invalid flags must fail before authentication")
+
+    runtime = replace(runtime, authenticated_client_factory=authenticate)
+    args = ["batch", command]
+    if command == "upo":
+        args.extend(["--upo-reference", "upo-2", "--out", str(tmp_path / "upo.xml")])
+    if conflicting:
+        args.extend(["--reference", "batch-ref", "--state-file", str(state_file)])
+
+    result = runner.invoke(app, cli_args(*args), obj=runtime)
+
+    assert result.exit_code == 1
+    assert "Error:" in result.output
+    assert (
+        "Use either --reference or --state-file, not both."
+        if conflicting
+        else "Provide --reference or --state-file."
+    ) in result.output
+    assert "Traceback" not in result.output
+    assert authenticated == []
+
+
+@pytest.mark.parametrize("use_state_file", [False, True])
+def test_batch_upo_downloads_only_requested_page(runner, tmp_path, use_state_file) -> None:
+    state_file = tmp_path / "state.json"
+    _ = state_file.write_text(batch_state().to_json(), encoding="utf-8")
+    # Only the direct endpoint is available: opening a batch session or fetching
+    # its status and all pages would fail this invocation.
+    invoice_sessions = FakeService(download_upo=b"second-upo-page")
+    runtime = fake_runtime(auth=SimpleNamespace(invoice_sessions=invoice_sessions))
+    output = tmp_path / "upo.xml"
+    session_args = (
+        ["--state-file", str(state_file)]
+        if use_state_file
+        else ["--reference", "batch-ref"]
+    )
+
+    result = runner.invoke(
+        app,
+        cli_args(
+            "batch",
+            "upo",
+            *session_args,
+            "--upo-reference",
+            "upo-2",
+            "--out",
+            str(output)
+        ),
+        obj=runtime,
+    )
+
+    assert payload(result) == {"path": str(output), "bytes": len(b"second-upo-page")}
+    assert output.read_bytes() == b"second-upo-page"
+    assert invoice_sessions.calls == [
+        ("download_upo", ("batch-ref",), {"upo_reference_number": "upo-2"})
+    ]
+
+
+def test_batch_upo_reports_endpoint_failure_without_writing_file(runner, tmp_path) -> None:
+    invoice_sessions = FakeService(
+        download_upo=KSeFNotReadyError(
+            404,
+            ExceptionCode.NOT_PROCESSED_YET,
+            "UPO page upo-2 is not ready for batch-ref",
+        )
+    )
+    output = tmp_path / "upo.xml"
+    result = runner.invoke(
         app,
         cli_args(
             "batch",
@@ -439,11 +527,13 @@ def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
             "--reference",
             "batch-ref",
             "--upo-reference",
-            "nope",
+            "upo-2",
             "--out",
-            str(out),
+            str(output),
         ),
-        obj=runtime,
+        obj=fake_runtime(auth=SimpleNamespace(invoice_sessions=invoice_sessions)),
     )
-    assert unknown.exit_code == 1
-    assert "upo-ref" in unknown.output
+
+    assert result.exit_code == 1
+    assert "UPO page upo-2 is not ready for batch-ref" in result.output
+    assert not output.exists()
