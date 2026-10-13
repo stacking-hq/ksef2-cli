@@ -199,6 +199,21 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   online close --state-file online-state.json
 ```
 
+Use `sessions upo` instead of `online upo` when you have the session reference
+but no saved session state or workflow receipt. It works for online and batch
+sessions and still requires authentication:
+
+```bash
+uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+  sessions upo --session "$SESSION_REFERENCE" \
+  --ksef-number "$KSEF_NUMBER" --out invoice-upo.xml
+```
+
+Provide exactly one of `--ksef-number`, `--invoice-reference`, or
+`--upo-reference`. Use `--upo-reference` for a session UPO page.
+`--out` is required, just as for `online upo`. If KSeF has not issued the UPO
+yet, the command reports that processing is unfinished and asks you to retry later.
+
 Use the `batch` group when you need direct access to batch session state:
 
 ```bash
