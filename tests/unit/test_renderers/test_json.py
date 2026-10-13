@@ -1,7 +1,7 @@
 import json
 from datetime import UTC, datetime
 
-from ksef2.models import ExportHandle, GenerateTokenResponse
+from ksef2.models import ExportResumeState, GenerateTokenResponse
 
 from ksef2_cli.commands.invoices.models import ExportHandleSaved, ExportPaths
 from ksef2.profiles import (
@@ -179,22 +179,27 @@ def test_saved_file_json_uses_bytes_alias(tmp_path) -> None:
     }
 
 
-def test_export_handle_json_uses_base64_and_omits_empty_handle_file(tmp_path) -> None:
-    handle = ExportHandle(reference_number="export-ref", aes_key=b"abc", iv=b"def")
-
-    assert json.loads(json_renderer.render(ExportHandleSaved.from_handle(handle))) == {
+def test_export_handle_json_redacts_secrets_and_omits_empty_handle_file(tmp_path) -> None:
+    state = ExportResumeState(
+        reference_number="export-ref",
+        aes_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        iv="AAAAAAAAAAAAAAAAAAAAAA==",
+    )
+    redacted_state = {
+        "format_version": 1,
         "reference_number": "export-ref",
-        "aes_key": "YWJj",
-        "iv": "ZGVm",
+        "aes_key": "**********",
+        "iv": "**********",
+    }
+    assert json.loads(json_renderer.render(ExportHandleSaved(state=state))) == {
+        "state": redacted_state,
     }
     assert json.loads(
         json_renderer.render(
-            ExportHandleSaved.from_handle(handle, handle_file=tmp_path / "handle.json")
+            ExportHandleSaved(state=state, handle_file=tmp_path / "handle.json")
         )
     ) == {
-        "reference_number": "export-ref",
-        "aes_key": "YWJj",
-        "iv": "ZGVm",
+        "state": redacted_state,
         "handle_file": str(tmp_path / "handle.json"),
     }
 

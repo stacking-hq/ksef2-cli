@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Self, cast
 
 from ksef2 import KSeFInvoiceRejectedError, KSeFSessionError
-from ksef2.clients import AuthenticatedClient, ExportJob, OnlineSessionClient
+from ksef2.clients import AuthenticatedClient, OnlineSessionClient
 from ksef2.models import (
     CurrencyCodes,
     ExportResumeState,
@@ -43,7 +43,6 @@ from ksef2_cli.config import FormSchemaChoice
 from ksef2_cli.io import (
     SECRET_MODEL_FILE_MODE,
     write_bytes_file,
-    write_model_file,
     write_text_file,
 )
 from ksef2_cli.parsing import parse_optional_bool
@@ -185,7 +184,7 @@ class InvoiceExportInput(InvoiceFilterInput):
 
 
 class InvoiceExportFetchInput(BaseModel):
-    handle: ExportHandleSaved
+    handle: ExportResumeState
     output_dir: Path = Path("downloads")
     wait: bool = False
     timeout: float = Field(default=120.0, ge=1.0)
@@ -520,13 +519,14 @@ def schedule_invoice_export(
         if inputs.compression_type
         else None,
     )
-    handle = job.resume_state().to_handle()
-    saved = ExportHandleSaved.from_handle(handle)
+    state = job.resume_state()
     if inputs.handle_file:
-        _ = write_model_file(
-            inputs.handle_file, saved, file_mode=SECRET_MODEL_FILE_MODE
+        _ = write_text_file(
+            inputs.handle_file,
+            state.to_json(indent=2),
+            file_mode=SECRET_MODEL_FILE_MODE,
         )
-    return ExportHandleSaved.from_handle(handle, handle_file=inputs.handle_file)
+    return ExportHandleSaved(state=state, handle_file=inputs.handle_file)
 
 
 # An export's AES material only decrypts its package, which `wait()` does. Reading the
@@ -549,15 +549,10 @@ def get_invoice_export_status(
     ).get_status()
 
 
-def _export_job(auth: AuthenticatedClient, handle: ExportHandleSaved) -> ExportJob:
-    """Get back the export a saved handle file refers to."""
-    return auth.invoices.export(state=ExportResumeState.from_handle(handle.to_handle()))
-
-
 def fetch_invoice_export(
     auth: AuthenticatedClient, inputs: InvoiceExportFetchInput
 ) -> FocusedResult[ExportPaths, str]:
-    job = _export_job(auth, inputs.handle)
+    job = auth.invoices.export(state=inputs.handle)
     # The package is only reachable through wait(); this check keeps the answer for an
     # export that is still building a clear "not ready" instead of a polling timeout.
     if not inputs.wait and job.get_status().package is None:
@@ -588,10 +583,12 @@ def download_invoice_export(
         if inputs.compression_type
         else None,
     )
-    saved = ExportHandleSaved.from_handle(job.resume_state().to_handle())
+    state = job.resume_state()
     if inputs.handle_file:
-        _ = write_model_file(
-            inputs.handle_file, saved, file_mode=SECRET_MODEL_FILE_MODE
+        _ = write_text_file(
+            inputs.handle_file,
+            state.to_json(indent=2),
+            file_mode=SECRET_MODEL_FILE_MODE,
         )
     paths = job.wait(
         timeout=inputs.timeout,

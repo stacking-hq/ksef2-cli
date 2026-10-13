@@ -34,7 +34,7 @@ from ksef2.models import (
 )
 
 from ksef2_cli.app import app
-from ksef2_cli.commands.invoices.models import ExportHandleSaved, InvoiceWorkflowReceipt
+from ksef2_cli.commands.invoices.models import InvoiceWorkflowReceipt
 
 
 class FakeSession(FakeService):
@@ -849,9 +849,15 @@ def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
         obj=runtime,
     )
     data = payload(result)
-    assert data["reference_number"] == "export-ref"
+    assert data["state"] == {
+        "format_version": 1,
+        "reference_number": "export-ref",
+        "aes_key": "**********",
+        "iv": "**********",
+    }
     assert data["handle_file"] == str(handle_file)
     assert json.loads(handle_file.read_text(encoding="utf-8")) == {
+        "format_version": 1,
         "reference_number": "export-ref",
         "aes_key": _EXPORT_AES_KEY,
         "iv": _EXPORT_IV,
@@ -958,6 +964,10 @@ def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
         "handle_file": str(download_handle),
         "paths": [str(download_dir / "out.xml")],
     }
+    assert ExportResumeState.from_json(download_handle.read_text(encoding="utf-8")) == state
+    assert (download_handle.stat().st_mode & 0o777) == 0o600
+    assert _EXPORT_AES_KEY not in result.output
+    assert _EXPORT_IV not in result.output
     assert _last_called(service, "export")["filters"] is not None
     assert jobs[4].called("wait")["poll_interval"] == 2.0
 
@@ -1053,7 +1063,7 @@ def test_invoice_export_sends_metadata_filters(runner, tmp_path) -> None:
             obj=runtime,
         )
     )
-    assert export["reference_number"] == "export-ref"
+    assert export["state"]["reference_number"] == "export-ref"
     export_filters = _last_called(service, "export")["filters"]
 
     download_dir = tmp_path / "download"
@@ -1118,13 +1128,7 @@ def test_invoice_export_sends_metadata_filters(runner, tmp_path) -> None:
 def test_invoice_export_fetch_requires_ready_package(runner, tmp_path) -> None:
     handle_file = tmp_path / "handle.json"
     handle_file.write_text(
-        json.dumps(
-            ExportHandleSaved.from_handle(_export_state().to_handle()).model_dump(
-                mode="json",
-                by_alias=True,
-                exclude_none=True,
-            )
-        ),
+        _export_state().to_json(indent=2),
         encoding="utf-8",
     )
     job = FakeExportJob(_export_state(), get_status=_export_status())
@@ -1140,3 +1144,31 @@ def test_invoice_export_fetch_requires_ready_package(runner, tmp_path) -> None:
     assert result.exit_code == 1
     assert "Export package is not ready" in result.output
     assert [name for name, _, _ in job.calls] == ["get_status"]
+
+
+@pytest.mark.parametrize("json_output", [False, True])
+@pytest.mark.parametrize("save_handle", [False, True])
+def test_invoice_export_redacts_stdout(runner, tmp_path, json_output, save_handle) -> None:
+    state = _export_state()
+    invoices = FakeService(export=FakeExportJob(state))
+    runtime = fake_runtime(auth=type("Auth", (), {"invoices": invoices})())
+    args = ["--no-config"]
+    if json_output:
+        args.append("--json")
+    args.extend(["invoices", "export", "--date-from", "2026-01-01T00:00:00Z"])
+    handle_file = tmp_path / "handle.json"
+    if save_handle:
+        handle_file.write_text("old handle", encoding="utf-8")
+        handle_file.chmod(0o644)
+        args.extend(["--handle-file", str(handle_file)])
+
+    result = runner.invoke(app, args, obj=runtime)
+
+    assert result.exit_code == 0, result.output
+    assert _EXPORT_AES_KEY not in result.output
+    assert _EXPORT_IV not in result.output
+    assert "**********" in result.output
+    assert "export-ref" in result.output
+    if save_handle:
+        assert ExportResumeState.from_json(handle_file.read_text(encoding="utf-8")) == state
+        assert (handle_file.stat().st_mode & 0o777) == 0o600
