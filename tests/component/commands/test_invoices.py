@@ -635,6 +635,7 @@ def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
         )
     )["package"]
     assert status_body == {
+        "compression_type": "zip",
         "invoice_count": 1,
         "size": 1,
         "parts": [

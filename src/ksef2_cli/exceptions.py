@@ -139,10 +139,15 @@ def error_from_exception(error: Exception) -> CliError:
     if isinstance(error, CliError):
         return error
     if isinstance(error, KSeFApiError):
+        details = [*str(error).splitlines(), f"HTTP status: {error.status_code}"]
+        if error.ksef_code is not None:
+            details.append(f"KSeF code: {error.ksef_code}")
+        if error.trace_id:
+            details.append(f"Trace ID: {error.trace_id}")
         return RemoteServiceError(
             f"KSeF request failed with HTTP {error.status_code}.",
             title="KSeF rejected the request",
-            details=tuple(str(error).splitlines()),
+            details=tuple(details),
         )
     if isinstance(error, KSeFException):
         return RemoteServiceError(str(error), title="KSeF operation failed")
