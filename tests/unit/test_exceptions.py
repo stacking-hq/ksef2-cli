@@ -87,7 +87,7 @@ _AUTH_REJECTION = KSeFAuthError(
 )
 
 
-_ERROR_MESSAGE = "str(error)"
+_ERROR_MESSAGE = "sdk message"
 
 
 def _case(
@@ -265,7 +265,7 @@ def test_each_sdk_exception_maps_to_its_own_cli_error(
     assert error.title == title
     assert bool(error.hints) is hinted
     assert error.exit_code == 1
-    expected = str(sdk_error) if message is _ERROR_MESSAGE else message
+    expected = sdk_error.args[0] if message is _ERROR_MESSAGE else message
     assert error.message == expected
 
 
@@ -345,7 +345,7 @@ def test_branches_that_predate_the_1_0_mapping_keep_working(
 
     assert type(error) is cli_error
     assert error.title == title
-    assert error.message == str(sdk_error)
+    assert error.message == sdk_error.args[0]
     assert error.hints == (() if hint is None else (hint,))
 
 
@@ -429,3 +429,19 @@ def test_unexpected_error_report_url_redacts_command() -> None:
     assert "secret-token" not in url
     assert "%3Credacted%3E" in url
     assert "Unexpected+CLI+error" in url
+
+
+@pytest.mark.parametrize(
+    ("sdk_error", "cli_error", "title", "hinted", "message"), _MAPPING_CASES
+)
+def test_sdk_hints_for_python_callers_stay_out_of_cli_errors(
+    sdk_error: Exception,
+    cli_error: type[CliError],
+    title: str,
+    hinted: bool,
+    message: str | None,
+) -> None:
+    error = error_from_exception(sdk_error)
+
+    shown = [error.message, *error.details]
+    assert not any("Hint:" in line for line in shown), shown

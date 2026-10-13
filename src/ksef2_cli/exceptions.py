@@ -201,14 +201,14 @@ def error_from_exception(error: Exception) -> CliError:
         # The CLI keeps one client open for the whole command, so this is our bug.
         return UnexpectedCliError(error)
     if isinstance(error, _USAGE_SDK_ERRORS):
-        return UsageError(str(error))
+        return UsageError(_sdk_message(error))
     if isinstance(error, KSeFInvoiceRenderingError):
-        return UsageError(str(error))
+        return UsageError(_sdk_message(error))
     if isinstance(error, KSeFValidationError):
-        return ConfigError(str(error))
+        return ConfigError(_sdk_message(error))
     if isinstance(error, KSeFAuthenticationExpiredError):
         return AuthenticationConfigError(
-            str(error),
+            _sdk_message(error),
             title="Authentication expired",
             hints=("Authenticate again with: ksef2 auth login",),
         )
@@ -233,19 +233,19 @@ def error_from_exception(error: Exception) -> CliError:
             else "Wait before retrying the same command."
         )
         return RemoteServiceError(
-            str(error),
+            _sdk_message(error),
             title="KSeF rate limit exceeded",
             hints=(hints,),
         )
     if isinstance(error, _AUTH_INCOMPLETE_SDK_ERRORS):
         return AuthenticationConfigError(
-            str(error),
+            _sdk_message(error),
             title="Authentication did not complete",
             hints=("Raise --auth-timeout, or check that the credentials are valid.",),
         )
     if isinstance(error, _POLLING_TIMEOUT_SDK_ERRORS):
         return RemoteServiceError(
-            str(error),
+            _sdk_message(error),
             title="Timed out waiting for KSeF",
             hints=(
                 "KSeF is still working, so check the status later or raise --timeout "
@@ -253,7 +253,7 @@ def error_from_exception(error: Exception) -> CliError:
             ),
         )
     if isinstance(error, _REPORTED_FAILURE_SDK_ERRORS):
-        return RemoteServiceError(str(error), title="KSeF reported a failure")
+        return RemoteServiceError(_sdk_message(error), title="KSeF reported a failure")
     if isinstance(error, KSeFApiError):
         return _from_api_error(
             error,
@@ -261,12 +261,22 @@ def error_from_exception(error: Exception) -> CliError:
             title="KSeF rejected the request",
         )
     if isinstance(error, KSeFException):
-        return RemoteServiceError(str(error), title="KSeF operation failed")
+        return RemoteServiceError(_sdk_message(error), title="KSeF operation failed")
     if isinstance(error, ValueError):
         return UsageError(str(error))
     if isinstance(error, OSError):
         return FileCliError.from_os_error(error)
     return UnexpectedCliError(error)
+
+
+def _sdk_message(error: KSeFException) -> str:
+    """Return the SDK message without the ``Hint:`` line ``str(error)`` appends.
+
+    SDK hints name Python calls such as ``wait()`` or ``with_token()``, which
+    mean nothing on the command line; the CLI error carries its own hints.
+    """
+
+    return str(error.args[0]) if error.args else str(error)
 
 
 def _from_api_error(
@@ -279,7 +289,7 @@ def _from_api_error(
 ) -> CliError:
     """Build a CLI error that keeps the HTTP status, KSeF code and trace ID of an API error."""
 
-    details = [*str(error).splitlines(), f"HTTP status: {error.status_code}"]
+    details = [*_sdk_message(error).splitlines(), f"HTTP status: {error.status_code}"]
     if error.ksef_code is not None:
         details.append(f"KSeF code: {error.ksef_code}")
     if error.trace_id:
