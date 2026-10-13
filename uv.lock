@@ -351,7 +351,7 @@ wheels = [
 [[package]]
 name = "ksef2"
 version = "0.22.2"
-source = { git = "https://github.com/stacking-hq/ksef2.git?branch=main#9c38d3fe058295684d7f06df7276d37f03782bac" }
+source = { git = "https://github.com/stacking-hq/ksef2.git?branch=main#742ac5ae0480edc2f512930fe64662f57f5d0792" }
 dependencies = [
     { name = "camel-converter" },
     { name = "cryptography" },
