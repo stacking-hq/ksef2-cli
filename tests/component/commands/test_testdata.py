@@ -1,7 +1,13 @@
 from typing import Any
 
-from conftest import FakeClient, FakeService, cli_args, fake_runtime, payload
-from ksef2.models import GenerateTokenResponse
+from conftest import (
+    FakeClient,
+    FakeService,
+    FakeTokenHandle,
+    cli_args,
+    fake_runtime,
+    payload,
+)
 
 from ksef2_cli.app import app
 
@@ -33,12 +39,10 @@ def test_testdata_sandbox_creates_temporary_subject_credentials_and_token(
     runner, tmp_path
 ) -> None:
     temporal = FakeTemporalTestData()
-    tokens = FakeService(
-        generate=GenerateTokenResponse(
-            reference_number="token-reference",
-            token="sandbox-token",
-        )
+    token_handle = FakeTokenHandle(
+        reference_number="token-reference", token="sandbox-token"
     )
+    tokens = FakeService(generate=token_handle)
     auth = type("Auth", (), {"tokens": tokens})()
     authentication = FakeService(with_xades=auth)
     runtime = fake_runtime(
@@ -54,6 +58,10 @@ def test_testdata_sandbox_creates_temporary_subject_credentials_and_token(
             cli_args(
                 "--env",
                 "test",
+                "--auth-timeout",
+                "30",
+                "--auth-poll-interval",
+                "0.5",
                 "testdata",
                 "sandbox",
                 "--description",
@@ -94,6 +102,7 @@ def test_testdata_sandbox_creates_temporary_subject_credentials_and_token(
     }
     assert authentication.called("with_xades")["nip"] == generated_nip
     assert tokens.called("generate")["permissions"] == ["invoice_read", "invoice_write"]
+    assert token_handle.wait_calls == [{"timeout": 30.0, "poll_interval": 0.5}]
 
     assert cert_file.read_text(encoding="utf-8").startswith("-----BEGIN CERTIFICATE")
     assert key_file.read_text(encoding="utf-8").startswith("-----BEGIN PRIVATE KEY")

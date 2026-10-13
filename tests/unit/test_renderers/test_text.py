@@ -54,6 +54,14 @@ def test_token_response_text_handlers() -> None:
         )
         == "reference_number: token-ref\nstatus: active"
     )
+    assert (
+        plain_renderer.render(
+            GeneratedToken(
+                reference_number="token-ref", token="secret", status="active"
+            )
+        )
+        == "reference_number: token-ref\ntoken: secret\nstatus: active"
+    )
 
 
 def test_token_list_text_uses_row_handlers_and_list_recursion() -> None:

@@ -1,5 +1,15 @@
-from conftest import FakeClient, FakeService, cli_args, fake_runtime, payload
-from ksef2.models import GenerateTokenResponse, SubjectLimits
+from datetime import UTC, datetime
+
+from conftest import (
+    FakeClient,
+    FakePager,
+    FakeService,
+    FakeTokenHandle,
+    cli_args,
+    fake_runtime,
+    payload,
+)
+from ksef2.models import SubjectLimits, TokenInfo
 from ksef2.profiles import (
     CliProfileConfig,
     ProfileAuthConfig,
@@ -197,13 +207,14 @@ def test_limits_get_set_reset_and_production(runner, tmp_path) -> None:
 
 
 def test_tokens_commands(runner) -> None:
+    handle = FakeTokenHandle(reference_number="token-ref", token="secret")
     service = FakeService(
-        generate=GenerateTokenResponse(reference_number="token-ref", token="secret"),
-        list_page={"tokens": [{"reference_number": "r1"}]},
-        list_all=lambda **kwargs: [
-            type("Page", (), {"tokens": [{"reference_number": "r1"}]})()
-        ],
-        status={"status": "active"},
+        generate=handle,
+        list=FakePager(
+            [{"reference_number": "r1"}],
+            [{"reference_number": "r2"}],
+        ),
+        get_status={"status": "active"},
         revoke=None,
     )
     runtime = fake_runtime(auth=type("Auth", (), {"tokens": service})())
@@ -227,8 +238,30 @@ def test_tokens_commands(runner) -> None:
             ),
             obj=runtime,
         )
-    ) == {"reference_number": "token-ref", "token": "secret"}
+    ) == {"reference_number": "token-ref", "token": "secret", "status": None}
     assert service.called("generate")["permissions"] == ["invoice_read"]
+    assert handle.wait_calls == []
+
+    assert payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "--auth-timeout",
+                "30",
+                "--auth-poll-interval",
+                "0.5",
+                "tokens",
+                "generate",
+                "--description",
+                "demo",
+                "--permission",
+                "invoice_read",
+                "--wait",
+            ),
+            obj=runtime,
+        )
+    ) == {"reference_number": "token-ref", "token": "secret", "status": "active"}
+    assert handle.wait_calls == [{"timeout": 30.0, "poll_interval": 0.5}]
 
     invalid = runner.invoke(
         app,
@@ -241,11 +274,19 @@ def test_tokens_commands(runner) -> None:
         runner.invoke(
             app, cli_args("tokens", "list", "--status", "active"), obj=runtime
         )
-    ) == {"tokens": [{"reference_number": "r1"}]}
-    assert service.called("list_page")["params"].status == ["active"]
-    assert payload(
-        runner.invoke(app, cli_args("tokens", "list", "--all"), obj=runtime)
     ) == [{"reference_number": "r1"}]
+    assert service.called("list")["params"].status == ["active"]
+    assert payload(
+        runner.invoke(
+            app,
+            cli_args("tokens", "list", "--all", "--page-size", "50"),
+            obj=runtime,
+        )
+    ) == [{"reference_number": "r1"}, {"reference_number": "r2"}]
+    list_params = [
+        kwargs["params"] for name, _, kwargs in service.calls if name == "list"
+    ]
+    assert [params.page_size for params in list_params] == [10, 50]
     assert payload(
         runner.invoke(
             app, cli_args("tokens", "status", "--reference", "r1"), obj=runtime
@@ -259,6 +300,40 @@ def test_tokens_commands(runner) -> None:
         "reference_number": "r1",
         "revoked": True,
     }
+
+
+def _token_info(reference_number: str) -> TokenInfo:
+    return TokenInfo(
+        reference_number=reference_number,
+        author_identifier={"type": "nip", "value": "5261040828"},
+        context_identifier={"type": "nip", "value": "5261040828"},
+        description="demo",
+        requested_permissions=["invoice_read"],
+        date_created=datetime(2026, 1, 2, tzinfo=UTC),
+        last_use_date=None,
+        status="active",
+        status_details=None,
+    )
+
+
+def test_tokens_list_text_mode_renders_token_rows(runner) -> None:
+    # The 1.0 pager has no continuation token, so both modes hand the renderer a
+    # plain list of TokenInfo.
+    service = FakeService(list=FakePager([_token_info("t1")], [_token_info("t2")]))
+    runtime = fake_runtime(auth=type("Auth", (), {"tokens": service})())
+
+    first_page = runner.invoke(app, ["--no-config", "tokens", "list"], obj=runtime)
+    assert [line.split()[0] for line in first_page.output.splitlines()] == [
+        "reference_number=t1"
+    ]
+
+    all_pages = runner.invoke(
+        app, ["--no-config", "tokens", "list", "--all"], obj=runtime
+    )
+    assert [line.split()[0] for line in all_pages.output.splitlines()] == [
+        "reference_number=t1",
+        "reference_number=t2",
+    ]
 
 
 def test_sessions_commands(runner) -> None:

@@ -158,9 +158,8 @@ def testdata_sandbox(
                 env_file.chmod(SECRET_MODEL_FILE_MODE)
 
                 # The one-time token secret is only returned by generate(), so it is
-                # persisted above before waiting for the token to activate.
-                auth.tokens.wait_for_activation(
-                    reference_number=token.reference_number,
+                # persisted above before the handle waits for the token to activate.
+                token.wait(
                     timeout=settings.effective_auth_timeout,
                     poll_interval=settings.effective_poll_interval,
                 )

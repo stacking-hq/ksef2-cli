@@ -139,7 +139,7 @@ Common high-level invoice options:
 
 | Command | Purpose |
 | --- | --- |
-| `tokens generate` | Generate a KSeF token. |
+| `tokens generate` | Generate a KSeF token, and wait for it to activate with `--wait`. |
 | `tokens list` | List KSeF tokens. |
 | `tokens status` | Fetch token status. |
 | `tokens revoke` | Revoke a token. |
