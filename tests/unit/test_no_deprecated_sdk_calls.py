@@ -91,17 +91,7 @@ DEPRECATED_SERVICE_METHODS = frozenset(
 )
 
 # (path relative to src/ksef2_cli, "owner.method") -> number of call sites.
-PENDING_MIGRATION: dict[tuple[str, str], int] = {
-    ("commands/certificates.py", "certificates.all"): 1,
-    ("commands/certificates.py", "certificates.query"): 1,
-    ("commands/peppol.py", "peppol.all"): 1,
-    ("commands/peppol.py", "peppol.query"): 1,
-    ("commands/sessions.py", "invoice_sessions.all"): 1,
-    ("commands/sessions.py", "invoice_sessions.query"): 1,
-    ("commands/sessions.py", "sessions.all"): 1,
-    ("commands/sessions.py", "sessions.close"): 1,
-    ("commands/sessions.py", "sessions.query"): 1,
-}
+PENDING_MIGRATION: dict[tuple[str, str], int] = {}
 
 
 def _owner(node: ast.expr) -> str:

@@ -135,18 +135,17 @@ def test_encryption_certificates_uses_public_client(runner) -> None:
     assert invalid.exit_code == 2
 
 
-def test_peppol_providers_query_and_all(runner) -> None:
+def test_peppol_providers_list_and_all(runner) -> None:
     service = FakeService(
-        query={"providers": [{"id": "p1"}]},
-        all=lambda **kwargs: [{"id": "p1"}, {"id": "p2"}],
+        list=FakePager([{"id": "p1"}], [{"id": "p2"}]),
     )
     runtime = fake_runtime(client=FakeClient(peppol=service))
 
     result = runner.invoke(
         app, cli_args("peppol", "providers", "--page-size", "10"), obj=runtime
     )
-    assert payload(result) == {"providers": [{"id": "p1"}]}
-    assert service.called("query")["params"].page_size == 10
+    assert payload(result) == [{"id": "p1"}]
+    assert service.called("list")["params"].page_size == 10
 
     result = runner.invoke(app, cli_args("peppol", "providers", "--all"), obj=runtime)
     assert payload(result) == [{"id": "p1"}, {"id": "p2"}]
@@ -338,18 +337,14 @@ def test_tokens_list_text_mode_renders_token_rows(runner) -> None:
 
 def test_sessions_commands(runner) -> None:
     session_service = FakeService(
-        query={"items": [{"reference_number": "auth-ref"}]},
-        all=lambda **kwargs: [
-            type("Page", (), {"items": [{"reference_number": "auth-ref"}]})()
-        ],
-        close=None,
+        list=FakePager(
+            [{"reference_number": "auth-ref"}], [{"reference_number": "auth-ref-2"}]
+        ),
+        terminate=None,
         terminate_current=None,
     )
     invoice_service = FakeService(
-        query={"sessions": [{"reference_number": "invoice-ref"}]},
-        all=lambda **kwargs: [
-            type("Page", (), {"sessions": [{"reference_number": "invoice-ref"}]})()
-        ],
+        list=FakePager([{"reference_number": "invoice-ref"}]),
     )
     auth_obj = type(
         "Auth",
@@ -360,10 +355,20 @@ def test_sessions_commands(runner) -> None:
 
     assert payload(
         runner.invoke(app, cli_args("sessions", "auth-list"), obj=runtime)
-    ) == {"items": [{"reference_number": "auth-ref"}]}
+    ) == [{"reference_number": "auth-ref"}]
     assert payload(
         runner.invoke(app, cli_args("sessions", "auth-list", "--all"), obj=runtime)
-    ) == [{"reference_number": "auth-ref"}]
+    ) == [{"reference_number": "auth-ref"}, {"reference_number": "auth-ref-2"}]
+
+    # ksef2 1.0 pages auth sessions internally; the cursor is rejected loudly.
+    cursor = runner.invoke(
+        app,
+        cli_args("sessions", "auth-list", "--continuation-token", "ct"),
+        obj=runtime,
+    )
+    assert cursor.exit_code == 1
+    assert "--continuation-token" in cursor.output
+
     assert payload(
         runner.invoke(
             app,
@@ -374,6 +379,7 @@ def test_sessions_commands(runner) -> None:
         "reference_number": "auth-ref",
         "closed": True,
     }
+    assert session_service.called("terminate")["reference_number"] == "auth-ref"
     assert payload(
         runner.invoke(app, cli_args("sessions", "auth-terminate-current"), obj=runtime)
     ) == {"terminated_current": True}
@@ -381,7 +387,7 @@ def test_sessions_commands(runner) -> None:
         runner.invoke(
             app, cli_args("sessions", "invoice-list", "--type", "online"), obj=runtime
         )
-    ) == {"sessions": [{"reference_number": "invoice-ref"}]}
+    ) == [{"reference_number": "invoice-ref"}]
     assert payload(
         runner.invoke(
             app,
@@ -389,4 +395,9 @@ def test_sessions_commands(runner) -> None:
             obj=runtime,
         )
     ) == [{"reference_number": "invoice-ref"}]
-    assert invoice_service.called("all")["session_type"] == "batch"
+    list_types = [
+        kwargs["session_type"]
+        for name, _, kwargs in invoice_service.calls
+        if name == "list"
+    ]
+    assert list_types == ["online", "batch"]

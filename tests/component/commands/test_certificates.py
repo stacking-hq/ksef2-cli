@@ -1,4 +1,4 @@
-from conftest import FakeService, cli_args, fake_runtime, payload
+from conftest import FakePager, FakeService, cli_args, fake_runtime, payload
 from ksef2.models import (
     Certificate,
     CertificateLimitsResponse,
@@ -87,8 +87,7 @@ def test_certificate_list_retrieve_and_revoke(runner, tmp_path) -> None:
         ]
     )
     service = FakeService(
-        query={"certificates": [{"serial_number": serial}]},
-        all=lambda **kwargs: [{"serial_number": serial}],
+        list=FakePager([{"serial_number": serial}]),
         retrieve=result,
         revoke=None,
     )
@@ -98,8 +97,8 @@ def test_certificate_list_retrieve_and_revoke(runner, tmp_path) -> None:
         runner.invoke(
             app, cli_args("certificates", "list", "--page-size", "10"), obj=runtime
         )
-    ) == {"certificates": [{"serial_number": serial}]}
-    assert service.called("query")["params"].page_size == 10
+    ) == [{"serial_number": serial}]
+    assert service.called("list")["params"].page_size == 10
 
     assert payload(
         runner.invoke(app, cli_args("certificates", "list", "--all"), obj=runtime)

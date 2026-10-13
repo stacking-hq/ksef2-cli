@@ -7,8 +7,6 @@ import typer
 from ksef2.clients import AuthenticatedClient
 from ksef2.models import (
     AuthenticationSession,
-    AuthenticationSessionsResponse,
-    ListSessionsResponse,
     SessionSummary,
 )
 
@@ -25,23 +23,32 @@ def sessions_auth_list(
         int | None, typer.Option("--page-size", min=10, max=100)
     ] = None,
     continuation_token: Annotated[
-        str | None, typer.Option("--continuation-token")
+        str | None,
+        typer.Option(
+            "--continuation-token",
+            help="Unsupported since ksef2 1.0; paging is handled internally.",
+        ),
     ] = None,
     all_pages: Annotated[bool, typer.Option("--all", help="Fetch all pages.")] = False,
 ) -> None:
     """List active authentication sessions."""
 
+    def validate() -> None:
+        if continuation_token:
+            raise ValueError(
+                "--continuation-token is no longer supported; ksef2 1.0 pages "
+                "sessions internally. Use --page-size and --all instead."
+            )
+
     def list_sessions(
         auth: AuthenticatedClient,
-    ) -> AuthenticationSessionsResponse | list[AuthenticationSession]:
+    ) -> list[AuthenticationSession]:
+        pager = auth.sessions.list(page_size=page_size)
         if all_pages:
-            pages = list(auth.sessions.all(page_size=page_size))
-            return [item for page in pages for item in page.items]
-        return auth.sessions.query(
-            page_size=page_size, continuation_token=continuation_token
-        )
+            return list(pager)
+        return pager.first_page()
 
-    run_authenticated_command(ctx, list_sessions)
+    run_authenticated_command(ctx, list_sessions, validate=validate)
 
 
 @app.command("auth-close")
@@ -54,7 +61,7 @@ def sessions_auth_close(
     def operation() -> SessionClosed:
         run_authenticated(
             ctx,
-            lambda auth: auth.sessions.close(reference_number=reference_number),
+            lambda auth: auth.sessions.terminate(reference_number=reference_number),
         )
         return SessionClosed(reference_number=reference_number)
 
@@ -100,7 +107,7 @@ def sessions_invoice_list(
 ) -> None:
     """List historical online or batch invoice sessions."""
 
-    def operation() -> ListSessionsResponse | list[SessionSummary]:
+    def operation() -> list[SessionSummary]:
         from ksef2.models import ListSessionsQuery
 
         params = ListSessionsQuery(
@@ -112,17 +119,13 @@ def sessions_invoice_list(
 
         def list_invoice_sessions(
             auth: AuthenticatedClient,
-        ) -> ListSessionsResponse | list[SessionSummary]:
-            if all_pages:
-                pages = list(
-                    auth.invoice_sessions.all(
-                        session_type=session_type.value, params=params
-                    )
-                )
-                return [session for page in pages for session in page.sessions]
-            return auth.invoice_sessions.query(
+        ) -> list[SessionSummary]:
+            pager = auth.invoice_sessions.list(
                 session_type=session_type.value, params=params
             )
+            if all_pages:
+                return list(pager)
+            return pager.first_page()
 
         return run_authenticated(ctx, list_invoice_sessions)
 

@@ -11,7 +11,6 @@ from ksef2.models import (
     CertificateEnrollmentStatusResponse,
     CertificateInfo,
     CertificateLimitsResponse,
-    CertificatesInfoList,
     CertificateStatusEnum,
     CertificateTypeEnum,
     OffsetPaginationParams,
@@ -112,7 +111,7 @@ def certificates_list(
 ) -> None:
     """Query certificates."""
 
-    def operation() -> CertificatesInfoList | list[CertificateInfo]:
+    def operation() -> list[CertificateInfo]:
         from ksef2.models import validate_certificate_serial_number
 
         params = OffsetPaginationParams(page_size=page_size, page_offset=page_offset)
@@ -122,21 +121,8 @@ def certificates_list(
 
         def list_certificates(
             auth: AuthenticatedClient,
-        ) -> CertificatesInfoList | list[CertificateInfo]:
-            if all_pages:
-                return list(
-                    auth.certificates.all(
-                        certificate_serial_number=serial,
-                        name=name,
-                        certificate_type=certificate_type.value
-                        if certificate_type
-                        else None,
-                        status=status.value if status else None,
-                        expires_after=expires_after,
-                        params=params,
-                    )
-                )
-            return auth.certificates.query(
+        ) -> list[CertificateInfo]:
+            pager = auth.certificates.list(
                 certificate_serial_number=serial,
                 name=name,
                 certificate_type=certificate_type.value if certificate_type else None,
@@ -144,6 +130,9 @@ def certificates_list(
                 expires_after=expires_after,
                 params=params,
             )
+            if all_pages:
+                return list(pager)
+            return pager.first_page()
 
         return run_authenticated(ctx, list_certificates)
 
