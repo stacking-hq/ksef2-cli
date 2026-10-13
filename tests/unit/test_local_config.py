@@ -1,3 +1,6 @@
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 from ksef2 import Environment
 from ksef2 import KSeFValidationError
@@ -18,6 +21,87 @@ from ksef2_cli.config import (
 )
 
 CONFIG_FILE_MODE = 0o600
+
+
+@pytest.mark.parametrize(
+    ("profile", "environ", "active_profile", "expected_name"),
+    [
+        (None, {}, "demo", "demo"),
+        (None, {PROFILE_ENV_VAR: "prod"}, "demo", "prod"),
+        ("demo", {PROFILE_ENV_VAR: "prod"}, "prod", "demo"),
+        ("", {PROFILE_ENV_VAR: "prod"}, "demo", "prod"),
+        (None, {PROFILE_ENV_VAR: ""}, "demo", "demo"),
+        (None, {}, None, None),
+    ],
+)
+def test_resolve_settings_reads_config_once(
+    tmp_path, profile, environ, active_profile, expected_name
+) -> None:
+    config_path = tmp_path / "config.toml"
+    write_cli_config(
+        config_path,
+        CliProfileConfig(
+            active_profile=active_profile,
+            profiles={
+                "demo": ProfileConfig(
+                    environment="test",
+                    nip="1111111111",
+                    auth=ProfileAuthConfig(type=ProfileAuthType.TEST_CERTIFICATE),
+                ),
+                "prod": ProfileConfig(
+                    environment="production",
+                    nip="2222222222",
+                    auth=ProfileAuthConfig(type=ProfileAuthType.TEST_CERTIFICATE),
+                ),
+            },
+        ),
+    )
+
+    with patch.object(Path, "read_text", autospec=True, side_effect=Path.read_text) as read:
+        settings = resolve_settings(
+            config_file=config_path, profile=profile, environ=environ
+        )
+
+    read.assert_called_once_with(config_path, encoding="utf-8")
+    assert settings.profile_name == expected_name
+
+
+@pytest.mark.parametrize(
+    ("profile", "environ", "missing_name"),
+    [
+        ("missing", {}, "missing"),
+        (None, {PROFILE_ENV_VAR: "missing"}, "missing"),
+        ("", {}, None),
+        (None, {PROFILE_ENV_VAR: ""}, None),
+    ],
+)
+def test_resolve_settings_preserves_profile_selection_errors(
+    tmp_path, profile, environ, missing_name
+) -> None:
+    config_path = tmp_path / "config.toml"
+    write_cli_config(config_path, CliProfileConfig())
+
+    with pytest.raises(KSeFValidationError) as caught:
+        resolve_settings(config_file=config_path, profile=profile, environ=environ)
+
+    if missing_name is None:
+        assert str(caught.value) == (
+            "No ksef2-cli profile selected. Pass a profile name, set KSEF2_PROFILE, "
+            f"or configure active_profile in {config_path}."
+        )
+        assert caught.value.context == {
+            "code": "VALIDATION_ERROR",
+            "config_path": str(config_path),
+        }
+    else:
+        assert str(caught.value) == (
+            f"ksef2-cli profile 'missing' is not defined in {config_path}."
+        )
+        assert caught.value.context == {
+            "code": "VALIDATION_ERROR",
+            "config_path": str(config_path),
+            "profile_name": "missing",
+        }
 
 
 def test_cli_config_loads_profiles_and_resolves_active_settings(tmp_path) -> None:

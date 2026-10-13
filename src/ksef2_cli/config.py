@@ -6,10 +6,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Callable, Mapping, Protocol, TypeVar
 
-import toml
-import tomllib
 from cryptography.x509 import Certificate
-from ksef2 import Client, Environment, FormSchema
+from ksef2 import Client, Environment, FormSchema, KSeFValidationError
 from ksef2.clients import AuthenticatedClient
 from ksef2.models import ContextIdentifierType, ContextIdentifierTypeEnum
 
@@ -20,7 +18,6 @@ from ksef2.profiles import (
     CliProfileConfig,
     ProfileConfig,
     default_profile_config_path,
-    load_cli_profile,
     load_profile_config,
     write_profile_config,
 )
@@ -204,17 +201,29 @@ def resolve_settings(
         if profile is not None:
             raise ValueError("--profile cannot be used with --no-config.")
     else:
-        # ``load_cli_profile`` owns selection order and unknown-profile errors, but
-        # raises when nothing is selected, so an empty local config is detected first.
         local_config = load_profile_config(resolved_config_file)
         if (
             profile is not None
             or PROFILE_ENV_VAR in env
             or local_config.active_profile is not None
         ):
-            selected_name, selected_profile = load_cli_profile(
-                profile, config_path=resolved_config_file, environ=env
+            selected_name = (
+                profile or env.get(PROFILE_ENV_VAR) or local_config.active_profile
             )
+            if selected_name is None:
+                raise KSeFValidationError(
+                    "No ksef2-cli profile selected. Pass a profile name, set KSEF2_PROFILE, "
+                    f"or configure active_profile in {resolved_config_file}.",
+                    config_path=str(resolved_config_file),
+                )
+            selected_profile = local_config.profiles.get(selected_name)
+            if selected_profile is None:
+                raise KSeFValidationError(
+                    f"ksef2-cli profile {selected_name!r} is not defined in "
+                    f"{resolved_config_file}.",
+                    config_path=str(resolved_config_file),
+                    profile_name=selected_name,
+                )
 
     resolved_environment = Environment.PRODUCTION
     if selected_profile is not None:
