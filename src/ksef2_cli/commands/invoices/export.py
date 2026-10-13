@@ -7,6 +7,28 @@ import typer
 from ksef2.clients import AuthenticatedClient
 from ksef2.models import InvoiceExportStatusResponse
 
+from ksef2_cli.commands.invoices.filters import (
+    AmountMaxOption,
+    AmountMinOption,
+    AmountTypeOption,
+    AttachmentOption,
+    BuyerNipOption,
+    BuyerOtherIdOption,
+    BuyerVatUeOption,
+    CurrencyOption,
+    DateFromOption,
+    DateToOption,
+    DateTypeOption,
+    FormOption,
+    InvoiceNumberOption,
+    InvoiceTypeOption,
+    InvoicingModeOption,
+    KsefNumberOption,
+    PermanentStorageHwmOption,
+    RoleOption,
+    SellerNipOption,
+    SelfInvoicingOption,
+)
 from ksef2_cli.commands.invoices.models import (
     CompressionTypeChoice,
     ExportHandleSaved,
@@ -31,21 +53,26 @@ from ksef2_cli.results import FocusedResult
 
 def invoices_export(
     ctx: typer.Context,
-    date_from: Annotated[
-        str, typer.Option("--date-from", help="Start datetime/date, ISO format.")
-    ],
-    date_to: Annotated[
-        str | None, typer.Option("--date-to", help="End datetime/date, ISO format.")
-    ] = None,
-    role: Annotated[
-        InvoiceRoleChoice, typer.Option("--role")
-    ] = InvoiceRoleChoice.SELLER,
-    date_type: Annotated[
-        InvoiceDateTypeChoice, typer.Option("--date-type")
-    ] = InvoiceDateTypeChoice.ISSUE_DATE,
-    amount_type: Annotated[
-        InvoiceAmountTypeChoice, typer.Option("--amount-type")
-    ] = InvoiceAmountTypeChoice.BRUTTO,
+    date_from: DateFromOption,
+    date_to: DateToOption = None,
+    role: RoleOption = InvoiceRoleChoice.SELLER,
+    date_type: DateTypeOption = InvoiceDateTypeChoice.ISSUE_DATE,
+    amount_type: AmountTypeOption = InvoiceAmountTypeChoice.BRUTTO,
+    restrict_hwm: PermanentStorageHwmOption = False,
+    currency: CurrencyOption = [],
+    invoice_type: InvoiceTypeOption = [],
+    seller_nip: SellerNipOption = None,
+    buyer_nip: BuyerNipOption = None,
+    buyer_vat_ue: BuyerVatUeOption = None,
+    buyer_other_id: BuyerOtherIdOption = None,
+    invoice_number: InvoiceNumberOption = None,
+    ksef_number: KsefNumberOption = None,
+    amount_min: AmountMinOption = None,
+    amount_max: AmountMaxOption = None,
+    form: FormOption = None,
+    invoicing_mode: InvoicingModeOption = None,
+    attachment: AttachmentOption = None,
+    self_invoicing: SelfInvoicingOption = None,
     only_metadata: Annotated[
         bool, typer.Option("--only-metadata", help="Export only metadata.")
     ] = False,
@@ -72,6 +99,21 @@ def invoices_export(
             role=role,
             date_type=date_type,
             amount_type=amount_type,
+            restrict_to_permanent_storage_hwm_date=restrict_hwm,
+            currency=currency,
+            invoice_type=invoice_type,
+            seller_nip=seller_nip,
+            buyer_nip=buyer_nip,
+            buyer_vat_ue=buyer_vat_ue,
+            buyer_other_id=buyer_other_id,
+            invoice_number=invoice_number,
+            ksef_number=ksef_number,
+            amount_min=amount_min,
+            amount_max=amount_max,
+            form=form,
+            invoicing_mode=invoicing_mode,
+            attachment=attachment,
+            self_invoicing=self_invoicing,
             only_metadata=only_metadata,
             compression_type=compression_type,
             handle_file=handle_file,
@@ -131,21 +173,26 @@ def invoices_export_fetch(
 
 def invoices_export_download(
     ctx: typer.Context,
-    date_from: Annotated[
-        str, typer.Option("--date-from", help="Start datetime/date, ISO format.")
-    ],
-    date_to: Annotated[
-        str | None, typer.Option("--date-to", help="End datetime/date, ISO format.")
-    ] = None,
-    role: Annotated[
-        InvoiceRoleChoice, typer.Option("--role")
-    ] = InvoiceRoleChoice.SELLER,
-    date_type: Annotated[
-        InvoiceDateTypeChoice, typer.Option("--date-type")
-    ] = InvoiceDateTypeChoice.ISSUE_DATE,
-    amount_type: Annotated[
-        InvoiceAmountTypeChoice, typer.Option("--amount-type")
-    ] = InvoiceAmountTypeChoice.BRUTTO,
+    date_from: DateFromOption,
+    date_to: DateToOption = None,
+    role: RoleOption = InvoiceRoleChoice.SELLER,
+    date_type: DateTypeOption = InvoiceDateTypeChoice.ISSUE_DATE,
+    amount_type: AmountTypeOption = InvoiceAmountTypeChoice.BRUTTO,
+    restrict_hwm: PermanentStorageHwmOption = False,
+    currency: CurrencyOption = [],
+    invoice_type: InvoiceTypeOption = [],
+    seller_nip: SellerNipOption = None,
+    buyer_nip: BuyerNipOption = None,
+    buyer_vat_ue: BuyerVatUeOption = None,
+    buyer_other_id: BuyerOtherIdOption = None,
+    invoice_number: InvoiceNumberOption = None,
+    ksef_number: KsefNumberOption = None,
+    amount_min: AmountMinOption = None,
+    amount_max: AmountMaxOption = None,
+    form: FormOption = None,
+    invoicing_mode: InvoicingModeOption = None,
+    attachment: AttachmentOption = None,
+    self_invoicing: SelfInvoicingOption = None,
     output_dir: Annotated[Path, typer.Option("--out-dir", file_okay=False)] = Path(
         "downloads"
     ),
@@ -170,6 +217,21 @@ def invoices_export_download(
             role=role,
             date_type=date_type,
             amount_type=amount_type,
+            restrict_to_permanent_storage_hwm_date=restrict_hwm,
+            currency=currency,
+            invoice_type=invoice_type,
+            seller_nip=seller_nip,
+            buyer_nip=buyer_nip,
+            buyer_vat_ue=buyer_vat_ue,
+            buyer_other_id=buyer_other_id,
+            invoice_number=invoice_number,
+            ksef_number=ksef_number,
+            amount_min=amount_min,
+            amount_max=amount_max,
+            form=form,
+            invoicing_mode=invoicing_mode,
+            attachment=attachment,
+            self_invoicing=self_invoicing,
             output_dir=output_dir,
             only_metadata=only_metadata,
             compression_type=compression_type,

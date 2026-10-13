@@ -1,5 +1,6 @@
 """Authentication and invoice-session inspection command group."""
 
+from datetime import datetime
 from enum import StrEnum
 from typing import Annotated
 
@@ -7,11 +8,19 @@ import typer
 from ksef2.clients import AuthenticatedClient
 from ksef2.models import (
     AuthenticationSession,
+    ListSessionsQuery,
     SessionSummary,
 )
 
 from ksef2_cli.context import run_authenticated, run_authenticated_command, run_command
+from ksef2_cli.parsing import parse_iso_datetime
 from ksef2_cli.results import CurrentSessionTerminated, SessionClosed
+
+
+def _session_date(value: str | None, option_name: str) -> datetime | None:
+    """Parse one optional session-date option, e.g. ``2026-01-01T00:00:00Z``."""
+    return None if value is None else parse_iso_datetime(value, option_name=option_name)
+
 
 app = typer.Typer(help="Inspect authentication and historical invoice sessions.")
 
@@ -43,6 +52,8 @@ def sessions_auth_list(
     def list_sessions(
         auth: AuthenticatedClient,
     ) -> list[AuthenticationSession]:
+        # The auth-session listing takes a page size only: ksef2 has no date or status
+        # filters on it, unlike `invoice_sessions.list()` with its `ListSessionsQuery`.
         pager = auth.sessions.list(page_size=page_size)
         if all_pages:
             return list(pager)
@@ -102,19 +113,51 @@ def sessions_invoice_list(
         typer.Option("--status", help="Session status filter. Repeat for multiple."),
     ] = [],
     reference_number: Annotated[str | None, typer.Option("--reference")] = None,
+    created_from: Annotated[
+        str | None,
+        typer.Option("--created-from", help="Created at or after, ISO datetime/date."),
+    ] = None,
+    created_to: Annotated[
+        str | None,
+        typer.Option("--created-to", help="Created at or before, ISO datetime/date."),
+    ] = None,
+    closed_from: Annotated[
+        str | None,
+        typer.Option("--closed-from", help="Closed at or after, ISO datetime/date."),
+    ] = None,
+    closed_to: Annotated[
+        str | None,
+        typer.Option("--closed-to", help="Closed at or before, ISO datetime/date."),
+    ] = None,
+    modified_from: Annotated[
+        str | None,
+        typer.Option(
+            "--modified-from", help="Modified at or after, ISO datetime/date."
+        ),
+    ] = None,
+    modified_to: Annotated[
+        str | None,
+        typer.Option(
+            "--modified-to", help="Modified at or before, ISO datetime/date."
+        ),
+    ] = None,
     page_size: Annotated[int, typer.Option("--page-size", min=10, max=100)] = 10,
     all_pages: Annotated[bool, typer.Option("--all", help="Fetch all pages.")] = False,
 ) -> None:
     """List historical online or batch invoice sessions."""
 
     def operation() -> list[SessionSummary]:
-        from ksef2.models import ListSessionsQuery
-
         params = ListSessionsQuery(
             session_type=session_type.value,
             reference_number=reference_number,
             statuses=[item.value for item in status] or None,
             page_size=page_size,
+            date_created_from=_session_date(created_from, "--created-from"),
+            date_created_to=_session_date(created_to, "--created-to"),
+            date_closed_from=_session_date(closed_from, "--closed-from"),
+            date_closed_to=_session_date(closed_to, "--closed-to"),
+            date_modified_from=_session_date(modified_from, "--modified-from"),
+            date_modified_to=_session_date(modified_to, "--modified-to"),
         )
 
         def list_invoice_sessions(

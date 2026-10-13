@@ -17,6 +17,7 @@ from conftest import (
 from ksef2.models import (
     ExportResumeState,
     ExportStatusInfo,
+    FormSchema,
     InvoiceExportStatusResponse,
     InvoicePackage,
     InvoiceStatusInfo,
@@ -875,6 +876,159 @@ def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
     }
     assert _last_called(service, "export")["filters"] is not None
     assert jobs[4].called("wait")["poll_interval"] == 2.0
+
+
+# The filters `invoices metadata` accepts; export commands send the same InvoicesFilter.
+INVOICE_FILTER_ARGS = (
+    "--date-to",
+    "2026-01-31T00:00:00Z",
+    "--currency",
+    "PLN",
+    "--currency",
+    "EUR",
+    "--invoice-type",
+    "vat",
+    "--invoice-type",
+    "kor",
+    "--seller-nip",
+    "5261040828",
+    "--buyer-nip",
+    "5261040555",
+    "--invoice-number",
+    "FA/1/2026",
+    "--ksef-number",
+    "ksef-1",
+    "--amount-min",
+    "10",
+    "--amount-max",
+    "100",
+    "--form",
+    "FA3",
+    "--invoicing-mode",
+    "offline",
+    "--attachment",
+    "yes",
+    "--self-invoicing",
+    "no",
+    "--restrict-hwm",
+)
+
+
+def test_invoices_metadata_permanent_storage_high_water_mark(runner) -> None:
+    service = FakeService(search=lambda **kwargs: FakeSearch([]))
+    runtime = fake_runtime(auth=type("Auth", (), {"invoices": service})())
+
+    unrestricted = runner.invoke(
+        app,
+        cli_args("invoices", "metadata", "--date-from", "2026-01-01T00:00:00Z"),
+        obj=runtime,
+    )
+    assert payload(unrestricted) == {"invoices": []}
+    # KSeF does not restrict without this flag and false asks it not to, so an unset
+    # flag leaves the field out of the filter instead of sending false.
+    unrestricted_filters = _last_called(service, "search")["filters"]
+    assert unrestricted_filters.restrict_to_permanent_storage_hwm_date is None
+
+    restricted = runner.invoke(
+        app,
+        cli_args(
+            "invoices",
+            "metadata",
+            "--date-from",
+            "2026-01-01T00:00:00Z",
+            "--restrict-to-permanent-storage-hwm-date",
+        ),
+        obj=runtime,
+    )
+    assert payload(restricted) == {"invoices": []}
+    restricted_filters = _last_called(service, "search")["filters"]
+    assert restricted_filters.restrict_to_permanent_storage_hwm_date is True
+
+
+def test_invoice_export_sends_metadata_filters(runner, tmp_path) -> None:
+    """``invoices export`` and ``export-download`` accept the metadata filter set."""
+    service = FakeService(
+        export=lambda **_kwargs: FakeExportJob(
+            _export_state(),
+            get_status=_export_status(_invoice_package()),
+            wait=FakeExported("out.xml"),
+        )
+    )
+    runtime = fake_runtime(auth=type("Auth", (), {"invoices": service})())
+
+    export = payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "invoices",
+                "export",
+                "--date-from",
+                "2026-01-01T00:00:00Z",
+                *INVOICE_FILTER_ARGS,
+            ),
+            obj=runtime,
+        )
+    )
+    assert export["reference_number"] == "export-ref"
+    export_filters = _last_called(service, "export")["filters"]
+
+    download_dir = tmp_path / "download"
+    download = payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "invoices",
+                "export-download",
+                "--date-from",
+                "2026-01-01T00:00:00Z",
+                *INVOICE_FILTER_ARGS,
+                "--out-dir",
+                str(download_dir),
+            ),
+            obj=runtime,
+        )
+    )
+    assert download["reference_number"] == "export-ref"
+    download_filters = _last_called(service, "export")["filters"]
+
+    for filters in (export_filters, download_filters):
+        assert filters.date_to == datetime(2026, 1, 31, tzinfo=UTC)
+        assert filters.currency_codes == ["PLN", "EUR"]
+        assert filters.invoice_types == ["vat", "kor"]
+        assert filters.seller_nip == "5261040828"
+        assert filters.buyer_nip == "5261040555"
+        assert filters.invoice_number == "FA/1/2026"
+        assert filters.ksef_number == "ksef-1"
+        assert filters.amount_min == 10.0
+        assert filters.amount_max == 100.0
+        assert filters.invoice_schema is FormSchema.FA3
+        assert filters.invoicing_mode == "offline"
+        assert filters.has_attachment is True
+        assert filters.is_self_invoicing is False
+        assert filters.restrict_to_permanent_storage_hwm_date is True
+
+    # KSeF accepts one buyer identifier at a time, so the other two go separately.
+    buyer_ids = [
+        ("--buyer-vat-ue", "buyer_vat_ue", "PL1234567890"),
+        ("--buyer-other-id", "buyer_other_id", "other-id"),
+    ]
+    for option, field, value in buyer_ids:
+        payload(
+            runner.invoke(
+                app,
+                cli_args(
+                    "invoices",
+                    "export",
+                    "--date-from",
+                    "2026-01-01T00:00:00Z",
+                    option,
+                    value,
+                ),
+                obj=runtime,
+            )
+        )
+        filters = _last_called(service, "export")["filters"]
+        assert getattr(filters, field) == value
 
 
 def test_invoice_export_fetch_requires_ready_package(runner, tmp_path) -> None:

@@ -90,12 +90,15 @@ def _batch_upo_path(upo_dir: Path, session_reference: str, index: int) -> Path:
     return upo_dir / _safe_filename(f"batch-{session_reference}-upo-{index}", ".xml")
 
 
-class InvoiceMetadataInput(BaseModel):
+class InvoiceFilterInput(BaseModel):
+    """The ``InvoicesFilter`` fields that metadata and export commands both accept."""
+
     date_from: datetime
     date_to: datetime | None = None
     role: InvoiceRoleChoice = InvoiceRoleChoice.SELLER
     date_type: InvoiceDateTypeChoice = InvoiceDateTypeChoice.ISSUE_DATE
     amount_type: InvoiceAmountTypeChoice = InvoiceAmountTypeChoice.BRUTTO
+    restrict_to_permanent_storage_hwm_date: bool = False
     currency: list[str] = Field(default_factory=list)
     invoice_type: list[InvoiceTypeChoice] = Field(default_factory=list)
     seller_nip: str | None = None
@@ -110,6 +113,9 @@ class InvoiceMetadataInput(BaseModel):
     invoicing_mode: InvoicingModeChoice | None = None
     attachment: str | None = None
     self_invoicing: str | None = None
+
+
+class InvoiceMetadataInput(InvoiceFilterInput):
     page_size: int = Field(default=10, ge=10, le=250)
     page_offset: int = Field(default=0, ge=0)
     sort_order: SortOrderChoice = SortOrderChoice.ASC
@@ -171,12 +177,7 @@ class InvoiceSendInput(BaseModel):
         return self
 
 
-class InvoiceExportInput(BaseModel):
-    date_from: datetime
-    date_to: datetime | None = None
-    role: InvoiceRoleChoice = InvoiceRoleChoice.SELLER
-    date_type: InvoiceDateTypeChoice = InvoiceDateTypeChoice.ISSUE_DATE
-    amount_type: InvoiceAmountTypeChoice = InvoiceAmountTypeChoice.BRUTTO
+class InvoiceExportInput(InvoiceFilterInput):
     only_metadata: bool = False
     compression_type: CompressionTypeChoice | None = None
     handle_file: Path | None = None
@@ -190,12 +191,7 @@ class InvoiceExportFetchInput(BaseModel):
     poll_interval: float = Field(default=2.0, ge=0.1)
 
 
-class InvoiceExportDownloadInput(BaseModel):
-    date_from: datetime
-    date_to: datetime | None = None
-    role: InvoiceRoleChoice = InvoiceRoleChoice.SELLER
-    date_type: InvoiceDateTypeChoice = InvoiceDateTypeChoice.ISSUE_DATE
-    amount_type: InvoiceAmountTypeChoice = InvoiceAmountTypeChoice.BRUTTO
+class InvoiceExportDownloadInput(InvoiceFilterInput):
     output_dir: Path = Path("downloads")
     only_metadata: bool = False
     compression_type: CompressionTypeChoice | None = None
@@ -422,20 +418,24 @@ class BatchInvoiceHandler:
         )
 
 
-def query_invoice_metadata(
-    auth: AuthenticatedClient, inputs: InvoiceMetadataInput
-) -> QueryInvoicesMetadataResponse | list[InvoiceMetadata]:
+def build_invoices_filter(inputs: InvoiceFilterInput) -> InvoicesFilter:
+    """Turn the CLI filter fields into the filter metadata and export commands send."""
     effective_date_to = (
         inputs.date_to
         if inputs.date_to is not None
         else datetime.now(timezone.utc)
     )
-    filters = InvoicesFilter(
+    return InvoicesFilter(
         role=inputs.role.value,
         date_type=inputs.date_type.value,
         date_from=inputs.date_from,
         date_to=effective_date_to,
         amount_type=inputs.amount_type.value,
+        # KSeF does not restrict without this flag, and false asks it not to, so the
+        # field is left out unless the caller asked for the high-water mark.
+        restrict_to_permanent_storage_hwm_date=(
+            True if inputs.restrict_to_permanent_storage_hwm_date else None
+        ),
         currency_codes=cast(list[CurrencyCodes], inputs.currency)
         if inputs.currency
         else None,
@@ -455,6 +455,12 @@ def query_invoice_metadata(
             inputs.self_invoicing, option_name="--self-invoicing"
         ),
     )
+
+
+def query_invoice_metadata(
+    auth: AuthenticatedClient, inputs: InvoiceMetadataInput
+) -> QueryInvoicesMetadataResponse | list[InvoiceMetadata]:
+    filters = build_invoices_filter(inputs)
     params = InvoiceMetadataParams(
         page_size=inputs.page_size,
         page_offset=inputs.page_offset,
@@ -496,18 +502,7 @@ def send_invoices(auth: AuthenticatedClient, inputs: InvoiceSendInput) -> Invoic
 def schedule_invoice_export(
     auth: AuthenticatedClient, inputs: InvoiceExportInput
 ) -> ExportHandleSaved:
-    effective_date_to = (
-        inputs.date_to
-        if inputs.date_to is not None
-        else datetime.now(timezone.utc)
-    )
-    filters = InvoicesFilter(
-        role=inputs.role.value,
-        date_type=inputs.date_type.value,
-        date_from=inputs.date_from,
-        date_to=effective_date_to,
-        amount_type=inputs.amount_type.value,
-    )
+    filters = build_invoices_filter(inputs)
     job = auth.invoices.export(
         filters=filters,
         only_metadata=inputs.only_metadata,
@@ -575,18 +570,7 @@ def fetch_invoice_export(
 def download_invoice_export(
     auth: AuthenticatedClient, inputs: InvoiceExportDownloadInput
 ) -> FocusedResult[ExportPaths, str]:
-    effective_date_to = (
-        inputs.date_to
-        if inputs.date_to is not None
-        else datetime.now(timezone.utc)
-    )
-    filters = InvoicesFilter(
-        role=inputs.role.value,
-        date_type=inputs.date_type.value,
-        date_from=inputs.date_from,
-        date_to=effective_date_to,
-        amount_type=inputs.amount_type.value,
-    )
+    filters = build_invoices_filter(inputs)
     job = auth.invoices.export(
         filters=filters,
         only_metadata=inputs.only_metadata,

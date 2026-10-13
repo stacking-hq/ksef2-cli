@@ -401,3 +401,58 @@ def test_sessions_commands(runner) -> None:
         if name == "list"
     ]
     assert list_types == ["online", "batch"]
+
+
+def test_sessions_invoice_list_date_filters(runner) -> None:
+    invoice_service = FakeService(list=FakePager([{"reference_number": "invoice-ref"}]))
+    runtime = fake_runtime(
+        auth=type("Auth", (), {"invoice_sessions": invoice_service})()
+    )
+
+    result = runner.invoke(
+        app,
+        cli_args(
+            "sessions",
+            "invoice-list",
+            "--type",
+            "online",
+            "--created-from",
+            "2026-01-01T00:00:00Z",
+            "--created-to",
+            "2026-01-02T00:00:00Z",
+            "--closed-from",
+            "2026-01-03T00:00:00Z",
+            "--closed-to",
+            "2026-01-04T00:00:00Z",
+            "--modified-from",
+            "2026-01-05T00:00:00Z",
+            "--modified-to",
+            "2026-01-06T00:00:00Z",
+        ),
+        obj=runtime,
+    )
+
+    assert payload(result) == [{"reference_number": "invoice-ref"}]
+    params = invoice_service.called("list")["params"]
+    assert params.date_created_from == datetime(2026, 1, 1, tzinfo=UTC)
+    assert params.date_created_to == datetime(2026, 1, 2, tzinfo=UTC)
+    assert params.date_closed_from == datetime(2026, 1, 3, tzinfo=UTC)
+    assert params.date_closed_to == datetime(2026, 1, 4, tzinfo=UTC)
+    assert params.date_modified_from == datetime(2026, 1, 5, tzinfo=UTC)
+    assert params.date_modified_to == datetime(2026, 1, 6, tzinfo=UTC)
+
+    # A date the SDK would reject is reported as a CLI usage error instead.
+    bad_date = runner.invoke(
+        app,
+        cli_args(
+            "sessions",
+            "invoice-list",
+            "--type",
+            "online",
+            "--closed-from",
+            "yesterday",
+        ),
+        obj=runtime,
+    )
+    assert bad_date.exit_code == 1
+    assert "--closed-from must be an ISO 8601" in bad_date.output
