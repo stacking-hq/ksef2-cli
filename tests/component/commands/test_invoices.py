@@ -542,13 +542,16 @@ def test_invoices_status_and_upo_from_online_receipt(runner, tmp_path) -> None:
         == 0
     )
 
-    resume_session = FakeSession(
-        wait_for_invoice_ready=_invoice_processing_status(),
-        get_invoice_upo_by_reference=b"<upo/>",
+    # The receipt carries only the invoice reference, so both commands rebuild the
+    # submission handle from the resumed session and work through it.
+    resume_submission = FakeSubmission(
+        "invoice-ref",
+        wait=_invoice_processing_status(),
+        get_status=_invoice_processing_status(),
+        download_upo=b"<upo/>",
     )
-    resume_runtime = fake_runtime(
-        auth=FakeService(resume_online_session=resume_session)
-    )
+    resume_session = FakeSession(submission=lambda **kwargs: resume_submission)
+    resume_runtime = fake_runtime(auth=FakeService(online_session=resume_session))
     status = payload(
         runner.invoke(
             app,
@@ -691,17 +694,15 @@ def test_invoices_status_and_upo_from_batch_receipt(runner, tmp_path) -> None:
         == 0
     )
 
-    service = FakeService(
-        wait_for_completion=_batch_processing_status(),
+    # Status polling and UPO pages both come from a session client reopened from
+    # the receipt's reference number.
+    receipt_session = FakeService(
+        wait=_batch_processing_status(),
+        get_status=_batch_processing_status(),
+        download_upo=[b"<batch-upo/>"],
     )
-    # `invoices upo` still polls through the batch service, and reads the pages
-    # from a session client opened from the receipt's reference number.
-    upo_session = FakeService(download_upo=[b"<batch-upo/>"])
     runtime = fake_runtime(
-        auth=SimpleNamespace(
-            batch=service,
-            batch_session=lambda **kwargs: upo_session,
-        )
+        auth=SimpleNamespace(batch_session=lambda **kwargs: receipt_session)
     )
     status = payload(
         runner.invoke(
