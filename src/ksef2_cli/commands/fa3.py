@@ -11,20 +11,15 @@ from typing import Annotated
 
 import typer
 from ksef2.fa3 import FA3InvoiceBuilder, parse_invoice_xml
-from ksef2.renderers import InvoicePDFExporter, InvoiceXSLTRenderer
+from ksef2.renderers import InvoiceXSLTRenderer
 
 from ksef2_cli.context import run_command
-from ksef2_cli.exceptions import CliError
 from ksef2_cli.io import write_text_file
 from ksef2_cli.results import SavedFile
+from ksef2_cli.runtime import create_pdf_exporter
 
 app = typer.Typer(
     help="Build, inspect, and render FA(3) invoices locally, without KSeF access."
-)
-
-PDF_INSTALL_HINT = (
-    "Install the optional PDF dependencies: pip install 'ksef2[pdf]' "
-    "or uv add 'ksef2[pdf]'."
 )
 
 # Hand-written instead of dumped from the builder, so it stays a readable starting
@@ -172,7 +167,11 @@ def fa3_render(
     def operation() -> object:
         # The exporter is built first so a missing optional extra fails before the
         # command has written anything the user has to clean up.
-        exporter = _pdf_exporter(code_lookups) if pdf is not None else None
+        exporter = (
+            create_pdf_exporter(enable_code_lookups=code_lookups)
+            if pdf is not None
+            else None
+        )
         renderer = InvoiceXSLTRenderer(enable_code_lookups=code_lookups)
 
         if out is None and pdf is None:
@@ -213,20 +212,6 @@ def fa3_draft_example(
 
 def _read_draft(path: Path) -> str:
     return sys.stdin.read() if str(path) == "-" else path.read_text(encoding="utf-8")
-
-
-def _pdf_exporter(code_lookups: bool) -> InvoicePDFExporter:
-    """Build the optional WeasyPrint exporter, naming the missing extra when absent."""
-
-    try:
-        return InvoicePDFExporter(enable_code_lookups=code_lookups)
-    except ImportError as exc:
-        raise CliError(
-            "PDF rendering needs dependencies that are not installed.",
-            title="Optional dependency missing",
-            details=(str(exc),),
-            hints=(PDF_INSTALL_HINT,),
-        ) from exc
 
 
 def _write(path: Path, content: str) -> SavedFile:

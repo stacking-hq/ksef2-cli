@@ -17,6 +17,7 @@ from conftest import (
     fake_runtime,
     online_state,
     payload,
+    plain,
 )
 from ksef2.models import (
     ExportResumeState,
@@ -32,9 +33,11 @@ from ksef2.models import (
     Upo,
     UpoPage,
 )
+from ksef2.renderers import PDFPageSize
 
 from ksef2_cli.app import app
 from ksef2_cli.commands.invoices.models import InvoiceWorkflowReceipt
+from ksef2_cli.config import RuntimeOverrides
 
 
 class FakeSession(FakeService):
@@ -78,15 +81,22 @@ class FakeExportJob(FakeService):
 class FakeExported:
     """Stand-in for ``ExportedInvoices``, the result of ``ExportJob.wait()``.
 
-    ``save()`` reports what extracting into ``directory`` would write, without
-    unpacking an archive.
+    ``save()`` writes a stub invoice XML for each name it was built with, the way
+    extracting a real package into ``directory`` would.
     """
 
     def __init__(self, *names: str) -> None:
         self._names = list(names)
 
     def save(self, directory: Path) -> list[Path]:
-        return [Path(directory) / name for name in self._names]
+        target = Path(directory)
+        target.mkdir(parents=True, exist_ok=True)
+        paths: list[Path] = []
+        for name in self._names:
+            path = target / name
+            path.write_text("<invoice/>", encoding="utf-8")
+            paths.append(path)
+        return paths
 
 
 # The resume state validates that its key is Base64 of 32 raw bytes and the IV of 16.
@@ -1040,7 +1050,7 @@ def test_invoices_metadata_permanent_storage_high_water_mark(runner) -> None:
 
 
 def test_invoice_export_sends_metadata_filters(runner, tmp_path) -> None:
-    """``invoices export`` and ``export-download`` accept the metadata filter set."""
+    """``invoices export``, ``export-download`` and ``export-pdf`` accept the metadata filters."""
     service = FakeService(
         export=lambda **_kwargs: FakeExportJob(
             _export_state(),
@@ -1048,7 +1058,10 @@ def test_invoice_export_sends_metadata_filters(runner, tmp_path) -> None:
             wait=FakeExported("out.xml"),
         )
     )
-    runtime = fake_runtime(auth=type("Auth", (), {"invoices": service})())
+    runtime = fake_runtime(
+        auth=type("Auth", (), {"invoices": service})(),
+        invoice_pdf_renderer=lambda _path, *, page_size: b"%PDF-1.4",
+    )
 
     export = payload(
         runner.invoke(
@@ -1085,7 +1098,28 @@ def test_invoice_export_sends_metadata_filters(runner, tmp_path) -> None:
     assert download["reference_number"] == "export-ref"
     download_filters = _last_called(service, "export")["filters"]
 
-    for filters in (export_filters, download_filters):
+    pdf_dir = tmp_path / "pdfs"
+    rendered_pdf = payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "invoices",
+                "export-pdf",
+                "--date-from",
+                "2026-01-01T00:00:00Z",
+                *_INVOICE_FILTER_ARGS,
+                "--out-dir",
+                str(tmp_path / "pdf-xml"),
+                "--pdf-dir",
+                str(pdf_dir),
+            ),
+            obj=runtime,
+        )
+    )
+    assert rendered_pdf["reference_number"] == "export-ref"
+    pdf_filters = _last_called(service, "export")["filters"]
+
+    for filters in (export_filters, download_filters, pdf_filters):
         assert filters.date_to == datetime(2026, 1, 31, tzinfo=UTC)
         assert filters.currency_codes == ["PLN", "EUR"]
         assert filters.invoice_types == ["vat", "kor"]
@@ -1172,3 +1206,181 @@ def test_invoice_export_redacts_stdout(runner, tmp_path, json_output, save_handl
     if save_handle:
         assert ExportResumeState.from_json(handle_file.read_text(encoding="utf-8")) == state
         assert (handle_file.stat().st_mode & 0o777) == 0o600
+
+
+def _export_pdf_runtime(
+    *, with_fake_renderer: bool = True
+) -> tuple[RuntimeOverrides, list[tuple[Path, PDFPageSize | None]]]:
+    """Runtime whose export writes two invoice XML files and whose PDF renderer is a spy.
+
+    ``with_fake_renderer=False`` leaves the real exporter path in place so a test can
+    exercise the missing-extra error.
+    """
+
+    rendered: list[tuple[Path, PDFPageSize | None]] = []
+
+    def fake_render(invoice_xml_path: Path, *, page_size: PDFPageSize | None) -> bytes:
+        rendered.append((invoice_xml_path, page_size))
+        return b"%PDF-1.4 " + invoice_xml_path.name.encode()
+
+    service = FakeService(
+        export=lambda **_kwargs: FakeExportJob(
+            _export_state(),
+            get_status=_export_status(_invoice_package()),
+            wait=FakeExported("invoice-one.xml", "invoice-two.xml"),
+        )
+    )
+    runtime = fake_runtime(
+        auth=type("Auth", (), {"invoices": service})(),
+        invoice_pdf_renderer=fake_render if with_fake_renderer else None,
+    )
+    return runtime, rendered
+
+
+def test_invoices_export_pdf_renders_each_downloaded_invoice(runner, tmp_path) -> None:
+    runtime, rendered = _export_pdf_runtime()
+    out_dir = tmp_path / "xml"
+    pdf_dir = tmp_path / "pdfs"
+
+    data = payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "invoices",
+                "export-pdf",
+                "--date-from",
+                "2026-01-01T00:00:00Z",
+                "--out-dir",
+                str(out_dir),
+                "--pdf-dir",
+                str(pdf_dir),
+                "--paper-size",
+                "a3-landscape",
+            ),
+            obj=runtime,
+        )
+    )
+
+    assert data["reference_number"] == "export-ref"
+    assert [pdf["path"] for pdf in data["pdfs"]] == [
+        str(pdf_dir / "invoice-one.pdf"),
+        str(pdf_dir / "invoice-two.pdf"),
+    ]
+    assert data["invoice_xml_files"] == [
+        str(out_dir / "invoice-one.xml"),
+        str(out_dir / "invoice-two.xml"),
+    ]
+    assert (pdf_dir / "invoice-one.pdf").read_bytes() == b"%PDF-1.4 invoice-one.xml"
+    # The renderer must be handed the decrypted XML, not the encrypted package, and
+    # each PDF must be built for the paper size the command asked for.
+    assert rendered == [
+        (out_dir / "invoice-one.xml", PDFPageSize.A3_LANDSCAPE),
+        (out_dir / "invoice-two.xml", PDFPageSize.A3_LANDSCAPE),
+    ]
+
+
+def test_invoices_export_pdf_defaults_to_the_out_dir(runner, tmp_path) -> None:
+    runtime, rendered = _export_pdf_runtime()
+    out_dir = tmp_path / "invoices"
+
+    data = payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "invoices",
+                "export-pdf",
+                "--date-from",
+                "2026-01-01T00:00:00Z",
+                "--out-dir",
+                str(out_dir),
+            ),
+            obj=runtime,
+        )
+    )
+
+    assert [pdf["path"] for pdf in data["pdfs"]] == [
+        str(out_dir / "invoice-one.pdf"),
+        str(out_dir / "invoice-two.pdf"),
+    ]
+    assert (out_dir / "invoice-two.pdf").exists()
+    # Without --handle-file there is no handle to report, so the key stays out of the JSON.
+    assert "handle_file" not in data
+    # Without --paper-size the stylesheet decides the paper, so nothing is overridden.
+    assert [page_size for _, page_size in rendered] == [None, None]
+
+
+def test_invoices_export_pdf_saves_a_readable_handle_privately(runner, tmp_path) -> None:
+    """The export handle holds the package key, so it is written 0600 and never printed."""
+
+    runtime, _ = _export_pdf_runtime()
+    handle_file = tmp_path / "handle.json"
+
+    result = runner.invoke(
+        app,
+        cli_args(
+            "invoices",
+            "export-pdf",
+            "--date-from",
+            "2026-01-01T00:00:00Z",
+            "--out-dir",
+            str(tmp_path / "out"),
+            "--handle-file",
+            str(handle_file),
+        ),
+        obj=runtime,
+    )
+
+    data = payload(result)
+    assert data["handle_file"] == str(handle_file)
+    assert ExportResumeState.from_json(handle_file.read_text(encoding="utf-8")) == (
+        _export_state()
+    )
+    assert (handle_file.stat().st_mode & 0o777) == 0o600
+    assert _EXPORT_AES_KEY not in result.output
+    assert _EXPORT_IV not in result.output
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [
+        # The pdf extra is absent.
+        ModuleNotFoundError("No module named 'weasyprint'", name="weasyprint"),
+        # The extra is installed but WeasyPrint's native Pango/GLib libraries are not.
+        OSError("cannot load library 'libgobject-2.0-0': dlopen: no such file"),
+    ],
+    ids=["no-extra", "no-system-libraries"],
+)
+def test_invoices_export_pdf_reports_a_missing_pdf_extra(
+    runner, tmp_path, monkeypatch, missing
+) -> None:
+    """Without a working renderer the user needs the install hint, not a bug-report URL."""
+
+    import ksef2_cli.runtime as runtime_module
+
+    def exporter_that_cannot_start(*_args: Any, **_kwargs: Any) -> None:
+        raise missing
+
+    monkeypatch.setattr(
+        runtime_module, "InvoicePDFExporter", exporter_that_cannot_start
+    )
+    runtime, _ = _export_pdf_runtime(with_fake_renderer=False)
+
+    result = runner.invoke(
+        app,
+        cli_args(
+            "invoices",
+            "export-pdf",
+            "--date-from",
+            "2026-01-01T00:00:00Z",
+            "--out-dir",
+            str(tmp_path / "out"),
+        ),
+        obj=runtime,
+    )
+
+    assert result.exit_code == 1
+    assert "PDF rendering needs dependencies that are not installed" in plain(
+        result.output
+    )
+    assert 'ksef2-cli[pdf]' in plain(result.output)
+    assert "issues/new" not in result.output

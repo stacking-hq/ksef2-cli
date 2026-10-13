@@ -9,10 +9,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from conftest import cli_args, payload
+from conftest import cli_args, payload, plain
 from ksef2.fa3 import FA3InvoiceBuilder
 from ksef2_cli.app import app
-from ksef2_cli.commands import fa3
+from ksef2_cli import runtime
 
 DRAFT: dict[str, Any] = {
     "header": {"system_info": "ksef2-cli test"},
@@ -232,7 +232,10 @@ def test_render_rejects_missing_invoice_file(runner, tmp_path) -> None:
 
 
 class FakePdfExporter:
-    def __init__(self, *, enable_code_lookups: bool = False) -> None:
+    def __init__(
+        self, *, page_size: object | None = None, enable_code_lookups: bool = False
+    ) -> None:
+        self.page_size = page_size
         self.enable_code_lookups = enable_code_lookups
 
     def export_to_file(self, invoice_xml_path: Path, output_pdf_path: Path) -> Path:
@@ -244,7 +247,7 @@ class FakePdfExporter:
 def test_render_writes_html_and_pdf(
     runner, invoice_file, tmp_path, monkeypatch
 ) -> None:
-    monkeypatch.setattr(fa3, "InvoicePDFExporter", FakePdfExporter)
+    monkeypatch.setattr(runtime, "InvoicePDFExporter", FakePdfExporter)
     html = tmp_path / "invoice.html"
     pdf = tmp_path / "invoice.pdf"
 
@@ -274,7 +277,7 @@ def test_render_pdf_names_the_missing_extra(
     def missing_extra(*args: object, **kwargs: object) -> None:
         raise ImportError("InvoicePDFExporter requires the optional PDF dependencies.")
 
-    monkeypatch.setattr(fa3, "InvoicePDFExporter", missing_extra)
+    monkeypatch.setattr(runtime, "InvoicePDFExporter", missing_extra)
     html = tmp_path / "invoice.html"
 
     result = runner.invoke(
@@ -292,5 +295,5 @@ def test_render_pdf_names_the_missing_extra(
     )
 
     assert result.exit_code == 1
-    assert "ksef2[pdf]" in result.output
+    assert "ksef2[pdf]" in plain(result.output)
     assert not html.exists()

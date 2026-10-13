@@ -12,10 +12,16 @@ from ksef2 import Client
 from ksef2.clients import AuthenticatedClient
 from ksef2.models import AuthenticationResumeState
 from ksef2.profiles import ProfileAuthType
+from ksef2.renderers import InvoicePDFExporter, PDFPageSize
 from pydantic import BaseModel, SecretStr, ValidationError
 
 from ksef2_cli.config import AuthenticatedRuntime, Settings
-from ksef2_cli.exceptions import AuthenticationConfigError
+from ksef2_cli.exceptions import (
+    PDF_INSTALL_HINT,
+    PDF_SYSTEM_LIBS_HINT,
+    AuthenticationConfigError,
+    MissingOptionalDependencyError,
+)
 from ksef2_cli.io import (
     SECRET_MODEL_FILE_MODE,
     read_model_file,
@@ -268,6 +274,51 @@ def run_authenticated(
     # the access token, and the file it resumed from has to end up current.
     _ = write_back_resume_state(settings, authenticated.auth)
     return result
+
+
+def create_pdf_exporter(
+    *, page_size: PDFPageSize | None = None, enable_code_lookups: bool = False
+) -> InvoicePDFExporter:
+    """Build the SDK's WeasyPrint exporter, naming the install command when it is absent.
+
+    WeasyPrint ships as the optional ``pdf`` extra, so the exporter is built when a PDF
+    command runs rather than at import. A missing extra is an install problem, not an
+    internal error, and mapping it here keeps both PDF commands saying the same thing.
+    """
+
+    try:
+        return InvoicePDFExporter(
+            page_size=page_size, enable_code_lookups=enable_code_lookups
+        )
+    except (ImportError, OSError) as error:
+        # ImportError when the extra is absent, OSError when WeasyPrint is installed but
+        # the native Pango/GLib libraries are not. Both mean "install this", and only
+        # this call site is covered, so an unrelated import bug still reports as a bug.
+        raise MissingOptionalDependencyError(
+            "PDF rendering needs dependencies that are not installed.",
+            title="Optional dependency missing",
+            details=(str(error),),
+            hints=(PDF_INSTALL_HINT, PDF_SYSTEM_LIBS_HINT),
+        ) from error
+
+
+def render_invoice_pdf(
+    settings: Settings,
+    invoice_xml_path: Path,
+    *,
+    page_size: PDFPageSize | None = None,
+) -> bytes:
+    """Render one decrypted invoice XML file to PDF bytes.
+
+    A ``page_size`` of ``None`` leaves the paper to the stylesheet.
+    """
+
+    if settings.runtime_overrides and settings.runtime_overrides.invoice_pdf_renderer:
+        return settings.runtime_overrides.invoice_pdf_renderer(
+            invoice_xml_path, page_size=page_size
+        )
+
+    return create_pdf_exporter(page_size=page_size).export_from_path(invoice_xml_path)
 
 
 def read_model(settings: Settings, path: Path, model_type: type[ModelT]) -> ModelT:

@@ -318,6 +318,7 @@ def fake_runtime(
     model_reader: Any | None = None,
     p12_credentials_loader: Any | None = None,
     pem_credentials_loader: Any | None = None,
+    invoice_pdf_renderer: Any | None = None,
 ) -> RuntimeOverrides:
     fake_client = client or FakeClient()
     authenticated_factory = (
@@ -331,4 +332,5 @@ def fake_runtime(
         model_reader=model_reader,
         p12_credentials_loader=p12_credentials_loader,
         pem_credentials_loader=pem_credentials_loader,
+        invoice_pdf_renderer=invoice_pdf_renderer,
     )
