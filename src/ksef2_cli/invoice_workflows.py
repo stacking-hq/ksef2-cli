@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Self, cast
 
+from ksef2 import KSeFInvoiceRejectedError, KSeFSessionError
 from ksef2.clients import AuthenticatedClient, ExportJob, OnlineSessionClient
 from ksef2.models import (
     CurrencyCodes,
@@ -251,10 +252,13 @@ class OnlineInvoiceHandler:
             invoice_reference = submission.reference_number
 
             if self.inputs.wait:
-                status = submission.wait(
-                    timeout=self.inputs.timeout,
-                    poll_interval=self.inputs.poll_interval,
-                )
+                try:
+                    status = submission.wait(
+                        timeout=self.inputs.timeout,
+                        poll_interval=self.inputs.poll_interval,
+                    )
+                except KSeFInvoiceRejectedError as exc:
+                    status = exc.status
                 ksef_number = status.ksef_number
                 if status.status.code >= 400:
                     item_status = "failed"
@@ -333,14 +337,20 @@ class BatchInvoiceHandler:
             )
 
         state = session.resume_state()
-        sdk_status = (
-            session.wait(timeout=inputs.timeout, poll_interval=inputs.poll_interval)
-            if inputs.wait
-            else None
-        )
+        sdk_status = None
+        wait_failed = False
+        if inputs.wait:
+            try:
+                sdk_status = session.wait(
+                    timeout=inputs.timeout, poll_interval=inputs.poll_interval
+                )
+            except KSeFSessionError:
+                wait_failed = True
+                sdk_status = session.get_status()
         status = (
             None if sdk_status is None else BatchSessionStatus.from_status(sdk_status)
         )
+        batch_failed = wait_failed or (status is not None and (status.code or 0) >= 400)
         saved_upos = (
             download_batch_upos(
                 auth=self.auth,
@@ -348,7 +358,7 @@ class BatchInvoiceHandler:
                 status=status,
                 upo_dir=inputs.upo_dir,
             )
-            if inputs.upo_dir is not None
+            if inputs.upo_dir is not None and not batch_failed
             else []
         )
         upo_files = [saved.path for saved in saved_upos]
@@ -377,7 +387,7 @@ class BatchInvoiceHandler:
 
         batch_status = "submitted"
         if status is not None:
-            batch_status = "failed" if (status.code or 0) >= 400 else "completed"
+            batch_status = "failed" if batch_failed else "completed"
 
         invoice_count = len(inputs.invoice_files)
         successful_invoice_count: int | None = None
