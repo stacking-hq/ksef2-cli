@@ -12,10 +12,12 @@ from ksef2.profiles import (
     ProfileStore,
 )
 
-from ksef2_cli.config import EnvironmentName
+from ksef2_cli.config import EnvironmentName, OutputMode
 from ksef2_cli.context import get_settings, run_command
+from ksef2_cli.exceptions import UsageError
 from ksef2_cli.results import (
     ProfileCurrent,
+    ProfileDeleted,
     ProfileListItem,
     ProfileListResult,
     ProfileSaved,
@@ -114,6 +116,24 @@ def profile_create(
             help="Select this profile after saving it.",
         ),
     ] = True,
+    poll_interval: Annotated[
+        float | None,
+        typer.Option(
+            "--poll-interval",
+            min=0.1,
+            help="Seconds between authentication status checks made with this profile.",
+            show_default=False,
+        ),
+    ] = None,
+    max_poll_attempts: Annotated[
+        int | None,
+        typer.Option(
+            "--max-poll-attempts",
+            min=1,
+            help="How many authentication status checks this profile waits for.",
+            show_default=False,
+        ),
+    ] = None,
     force: Annotated[
         bool, typer.Option("--force", help="Replace an existing profile.")
     ] = False,
@@ -136,7 +156,13 @@ def profile_create(
             p12=p12,
             p12_password_env=p12_password_env,
         )
-        profile = ProfileConfig(environment=environment, nip=nip, auth=auth)
+        profile = ProfileConfig(
+            environment=environment,
+            nip=nip,
+            auth=auth,
+            poll_interval=poll_interval,
+            max_poll_attempts=max_poll_attempts,
+        )
         store = _profile_store(ctx)
         if name in store.load().profiles and not force:
             fail(f"Profile {name!r} already exists. Re-run with --force to replace it.")
@@ -212,6 +238,36 @@ def profile_use(
 
     def operation() -> ProfileSelected:
         return ProfileSelected(name=name, profile=_profile_store(ctx).use(name))
+
+    run_command(ctx, operation)
+
+
+@app.command("delete")
+def profile_delete(
+    ctx: typer.Context,
+    name: Annotated[str, typer.Argument(help="Profile name.")],
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", help="Delete without asking for confirmation."),
+    ] = False,
+) -> None:
+    """Remove a profile, leaving no profile active when it was the selected one."""
+
+    def operation() -> ProfileDeleted:
+        store = _profile_store(ctx)
+        was_active = store.load().active_profile == name
+
+        if not yes:
+            if get_settings(ctx).output is OutputMode.json:
+                raise UsageError(
+                    "JSON output has no confirmation prompt, so deleting a profile "
+                    "needs --yes."
+                )
+            if not typer.confirm(f"Delete profile {name!r}?"):
+                return ProfileDeleted(name=name, deleted=False, was_active=was_active)
+
+        _ = store.delete(name)
+        return ProfileDeleted(name=name, was_active=was_active)
 
     run_command(ctx, operation)
 

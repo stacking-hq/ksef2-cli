@@ -33,6 +33,7 @@ from ksef2_cli.results import (
     OnlineSendItem,
     OnlineSendResult,
     ProfileCurrent,
+    ProfileDeleted,
     ProfileListItem,
     ProfileListResult,
     ProfileSaved,
@@ -159,6 +160,18 @@ def register() -> None:
                 ("environment", value.profile.environment.value),
                 ("nip", value.profile.nip),
                 ("auth", value.profile.auth.type.value),
+                ("poll_interval", value.profile.poll_interval),
+                ("max_poll_attempts", value.profile.max_poll_attempts),
+            )
+        )
+
+    @register_text(ProfileDeleted)
+    def _(value: ProfileDeleted, renderer: PlainTextRenderer) -> str:
+        return format_fields(
+            (
+                ("name", value.name),
+                ("deleted", value.deleted),
+                ("was_active", value.was_active),
             )
         )
 

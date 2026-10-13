@@ -85,6 +85,13 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 | `profile current` | Show the active profile. |
 | `profile show [NAME]` | Show one profile, or the active profile when omitted. |
 | `profile use NAME` | Select the active profile. |
+| `profile delete NAME` | Remove a profile, asking for confirmation first. |
+
+| Option | Purpose |
+| --- | --- |
+| `profile create --poll-interval SECONDS` | Delay between authentication status checks made with this profile. At least `0.1`. |
+| `profile create --max-poll-attempts N` | How many authentication status checks this profile waits for. At least `1`. |
+| `profile delete --yes` | Delete without asking. Required with `--json`, which has no confirmation prompt. |
 
 ### `invoices`
 

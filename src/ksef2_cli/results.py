@@ -137,6 +137,19 @@ class ProfileCurrent(CliResult):
     profile: ProfileConfig | None = None
 
 
+class ProfileDeleted(CliResult):
+    """Result for removing a CLI profile.
+
+    ``deleted`` is false when the user declined the confirmation prompt, and
+    ``was_active`` reports whether the profile was the selected one beforehand,
+    in which case no profile is active now.
+    """
+
+    name: str
+    deleted: bool = True
+    was_active: bool = False
+
+
 class GeneratedToken(CliResult):
     """One-time credential printed by ``tokens generate``.
 
