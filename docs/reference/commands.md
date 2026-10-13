@@ -150,10 +150,25 @@ These commands use the SDK's public builder and renderer APIs and never call the
 
 | Command | Purpose |
 | --- | --- |
+| `batch prepare` | Build and encrypt batch parts and store them for a later submit. |
 | `batch submit` | Prepare, upload, close, and optionally wait for a batch session. |
+| `batch upload` | Send stored parts again to a session whose upload failed. |
 | `batch status` | Fetch or wait for batch session status. |
 | `batch list` | List invoices submitted in a batch session. |
 | `batch upo` | Download a collective UPO page. |
+
+Parts are the expensive part of a batch: every one of them is packed and encrypted with
+a session key fetched before any session exists. `batch prepare` writes them, together
+with that key, into an artifact directory that `batch submit --prepared` uploads as it
+stands. Keep the directory as protected as a credential file.
+
+| Option | Purpose |
+| --- | --- |
+| `batch prepare INVOICE... --out DIR` | Build the package into `DIR`: `prepared.json` plus `parts/part-NNNN.bin`. `--form`, `--offline`, and `--max-part-size` are recorded in the artifact. |
+| `batch submit INVOICE...` | Prepare and submit in one call, the way it always worked. |
+| `batch submit --prepared DIR` | Upload a stored package instead of building a new one. The build options above do not apply. |
+| `batch submit --state-file FILE` | Write session state. When the upload is rejected, `FILE` keeps the state of the interrupted session instead, which is what a retry resumes. |
+| `batch upload --prepared DIR --state-file FILE` | Re-send the stored parts to the session in `FILE`, which is how you recover an upload KSeF or its storage rejected. |
 
 ### `sessions`
 

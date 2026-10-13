@@ -11,8 +11,14 @@ from ksef2 import Environment, FormSchema
 from ksef2.models import (
     AuthenticationResumeState,
     AuthTokens,
+    BatchEncryptionData,
+    BatchFilePart,
+    BatchFileInfo,
+    BatchInvoiceHash,
+    BatchPreparedPart,
     BatchSessionResumeState,
     OnlineSessionResumeState,
+    PreparedBatch,
     TokenStatusResponse,
 )
 from typer.testing import CliRunner
@@ -127,6 +133,58 @@ def batch_state(reference_number: str = "batch-ref") -> BatchSessionResumeState:
         iv=base64.b64decode(_SESSION_IV, validate=True),
         form_code=FormSchema.FA3,
         part_upload_requests=[],
+    )
+
+
+# Encrypted part payloads, as they come back from batch preparation.
+PREPARED_PARTS = [b"encrypted-part-one", b"encrypted-part-two"]
+
+
+def prepared_batch(*, offline_mode: bool = False) -> PreparedBatch:
+    """A prepared package shaped the way ``auth.batch.prepare()`` returns one.
+
+    Parts keep the order they were prepared in, which is the order the recovery digest
+    covers, so a test that needs another order has to reorder the returned model.
+    """
+
+    parts = [
+        BatchPreparedPart(
+            ordinal_number=index,
+            content=content,
+            file_size=len(content),
+            file_hash=f"part-hash-{index}",
+        )
+        for index, content in enumerate(PREPARED_PARTS, start=1)
+    ]
+    return PreparedBatch(
+        form_code=FormSchema.FA3,
+        offline_mode=offline_mode,
+        batch_file=BatchFileInfo(
+            file_size=sum(len(part.content) for part in parts),
+            file_hash="batch-file-hash",
+            parts=[
+                BatchFilePart(
+                    ordinal_number=part.ordinal_number,
+                    file_size=part.file_size,
+                    file_hash=part.file_hash,
+                )
+                for part in parts
+            ],
+        ),
+        parts=parts,
+        encryption=BatchEncryptionData.from_bytes(
+            aes_key=b"aes-key-32-bytes" * 2,
+            iv=b"iv-16-bytes!!!!!",
+            encrypted_key=b"encrypted-session-key",
+            public_key_id="key-id",
+        ),
+        invoices=[
+            BatchInvoiceHash(
+                file_name=f"invoice-{part.ordinal_number}.xml",
+                invoice_hash=f"invoice-hash-{part.ordinal_number}",
+            )
+            for part in parts
+        ],
     )
 
 

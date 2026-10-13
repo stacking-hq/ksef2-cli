@@ -136,6 +136,16 @@ ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   --upo-dir upos
 ```
 
+Prepare a batch separately when its parts should survive a failed upload:
+
+```bash
+ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+  batch prepare invoice-1.xml invoice-2.xml --out batch-parts
+
+ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+  batch submit --prepared batch-parts --state-file batch-state.json
+```
+
 Use `--json` before the command group when output is consumed by scripts.
 
 ## Documentation

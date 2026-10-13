@@ -44,7 +44,11 @@ def write_text_file(
     return path
 
 
-def write_bytes_file(path: Path, content: bytes) -> Path:
+def write_bytes_file(
+    path: Path, content: bytes, *, file_mode: int | None = None
+) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
+    if file_mode is not None:
+        path.chmod(file_mode)
     return path

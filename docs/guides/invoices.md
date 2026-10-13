@@ -209,3 +209,34 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   --upo-reference "$UPO_REFERENCE" \
   --out batch-upo.xml
 ```
+
+### Prepare once, upload more than once
+
+Packing and encrypting the parts costs more than posting them, and none of it depends on
+a session. `batch prepare` writes the finished package to a directory, so a rejected
+upload retries against the parts that already exist:
+
+```bash
+uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+  batch prepare invoice-1.xml invoice-2.xml \
+  --out batch-parts
+
+uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+  batch submit --prepared batch-parts \
+  --wait \
+  --state-file batch-state.json
+```
+
+When KSeF's storage rejects an upload, the same two files carry the recovery: the failed
+`submit` leaves the interrupted session state in `--state-file`, and `batch upload` sends
+the stored parts to that session instead of opening a new one:
+
+```bash
+uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+  batch upload --prepared batch-parts \
+  --state-file batch-state.json \
+  --wait
+```
+
+The artifact holds a session key and the invoice payloads, so treat `batch-parts` the way
+you treat a credential file and remove it when the batch is done.

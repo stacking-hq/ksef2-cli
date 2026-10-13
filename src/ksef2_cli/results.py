@@ -159,6 +159,15 @@ class OnlineSessionOpened(CliResult):
     state: OnlineSessionResumeState
 
 
+class BatchPrepared(CliResult):
+    """Result for building a batch package that a later command uploads."""
+
+    path: Path
+    digest: str
+    parts: int
+    invoices: int
+
+
 class BatchSubmitted(CliResult):
     """Result for submitting a batch invoice session."""
 

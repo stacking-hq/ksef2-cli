@@ -20,6 +20,7 @@ from ksef2_cli.commands.invoices.models import (
 )
 from ksef2_cli.results import (
     ActionResult,
+    BatchPrepared,
     BatchSubmitted,
     CertificateRevoked,
     ConfigInitialized,
@@ -172,6 +173,17 @@ def register() -> None:
                 ("state_file", value.state_file),
                 ("state", value.state),
                 ("status", value.status),
+            )
+        )
+
+    @register_text(BatchPrepared)
+    def _(value: BatchPrepared, renderer: PlainTextRenderer) -> str:
+        return format_fields(
+            (
+                ("path", value.path),
+                ("invoices", value.invoices),
+                ("parts", value.parts),
+                ("digest", value.digest),
             )
         )
 
