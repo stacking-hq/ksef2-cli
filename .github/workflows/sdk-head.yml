@@ -1,0 +1,33 @@
+name: SDK head
+
+# The `next` branch locks ksef2 to a commit on the SDK's main branch. This job
+# re-resolves ksef2 to the newest main commit and runs the suite, so a PR shows
+# when the SDK has moved on in a way the CLI no longer handles. It reports
+# drift without blocking; refresh the lock with `uv lock -P ksef2` to adopt it.
+on:
+  pull_request:
+    branches:
+      - next
+  push:
+    branches:
+      - next
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  test-against-sdk-main:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'next' || '' }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+      - run: uv lock -P ksef2
+      - run: grep -A2 '^name = "ksef2"$' uv.lock
+      - run: uv sync --all-groups
+      - run: uv run python -W error::DeprecationWarning -m pytest -q
