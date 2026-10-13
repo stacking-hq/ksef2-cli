@@ -69,6 +69,20 @@
               "pl": "Przepływy faktur"
             },
             "path": "guides/invoices.md"
+          },
+          {
+            "label": "FA(3) invoices locally",
+            "translations": {
+              "pl": "Faktury FA(3) lokalnie"
+            },
+            "path": "guides/fa3.md"
+          },
+          {
+            "label": "Collective identifiers",
+            "translations": {
+              "pl": "Identyfikatory zbiorcze"
+            },
+            "path": "guides/collective.md"
           }
         ]
       },

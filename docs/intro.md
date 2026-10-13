@@ -20,6 +20,8 @@ environment variables or a trusted secret manager in shared environments.
 - [Choose an authentication method](guides/authentication.md)
 - [Use local configuration](guides/configuration.md)
 - [Work with invoices and sessions](guides/invoices.md)
+- [Build FA(3) invoices locally](guides/fa3.md)
+- [Group invoices with collective identifiers](guides/collective.md)
 - [Review the command reference](reference/commands.md)
 
 ## Command shape
@@ -41,6 +43,8 @@ The command groups mirror the SDK domains:
 
 - `auth`
 - `invoices`
+- `collective`
+- `fa3`
 - `online`
 - `batch`
 - `tokens`
@@ -52,3 +56,4 @@ The command groups mirror the SDK domains:
 - `encryption`
 - `testdata`
 - `config`
+- `profile`

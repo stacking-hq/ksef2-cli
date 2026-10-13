@@ -7,6 +7,10 @@ Invoice workflows usually start with the `invoices` command group. Use the
 lower-level `online` and `batch` groups only when you need explicit session
 control. Use `--json` when commands are part of a script or CI job.
 
+See [FA(3) invoices locally](fa3.md) to build invoice XML without contacting
+KSeF, and [Collective identifiers](collective.md) to group invoices that are
+already in KSeF.
+
 ## Query metadata
 
 ```bash
@@ -18,18 +22,24 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
   --all
 ```
 
-Useful filters include:
+`invoices metadata`, `invoices export`, and `invoices export-download` accept the
+same filters, so a query you tuned against metadata replays unchanged on an
+export:
 
-- `--role`
-- `--date-type`
-- `--amount-type`
-- `--seller-nip`
-- `--buyer-nip`
-- `--invoice-number`
-- `--ksef-number`
-- `--form`
-- `--attachment yes|no`
-- `--self-invoicing yes|no`
+- Window: `--date-from` (required) and `--date-to` over the field named by
+  `--date-type` (`issue_date`, `invoicing_date`, `permanent_storage`)
+- Counterparty: `--seller-nip`, `--buyer-nip`, `--buyer-vat-ue`, `--buyer-other-id`
+- Identity: `--invoice-number`, `--ksef-number`, `--form`, `--invoice-type`,
+  `--currency`, `--invoicing-mode`
+- Money: `--amount-type` with `--amount-min` and `--amount-max`
+- Flags: `--role`, `--attachment yes|no`, `--self-invoicing yes|no`
+
+`--restrict-hwm` (short for `--restrict-to-permanent-storage-hwm-date`) restricts
+the result set to the permanent-storage high-water mark, so repeated requests
+return the same invoices. Without it the query runs against whatever KSeF holds
+when it processes the request, and repeating a query while invoices arrive gives a
+different set each time. Add the flag when rows must stay stable across requests,
+such as a paged metadata walk or an export you retry after a failure.
 
 ## Download one processed invoice
 
@@ -53,7 +63,10 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
 
 ## Schedule and fetch an export
 
-First schedule the export and save its decryption handle:
+The filters above carry over. Export adds `--only-metadata` to skip the invoice
+payloads, `--compression-type zip|tar_gz` for the package format, and
+`--handle-file` to save the decryption handle. First schedule the export and save
+that handle:
 
 ```bash
 uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
@@ -80,16 +93,21 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   --out-dir downloads
 ```
 
-For a one-command export/download flow:
+For a one-command flow that waits for the export on its own:
 
 ```bash
 uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   invoices export-download \
   --role seller \
   --date-from 2026-01-01T00:00:00Z \
-  --wait \
+  --timeout 300 \
   --out-dir downloads
 ```
+
+`export-download` has no `--wait`: it always waits, for `--timeout` seconds
+(default `120`) checked every `--poll-interval` seconds. Use the separate
+`export` and `export-fetch` commands when you need to walk away between
+scheduling and downloading.
 
 ## Send invoices
 

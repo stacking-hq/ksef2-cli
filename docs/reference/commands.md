@@ -37,6 +37,7 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 | --- | --- |
 | `auth` | Authenticate and refresh access tokens. |
 | `invoices` | Send, confirm, query, download, export, and fetch invoices. |
+| `collective` | Generate and query collective invoice identifiers. |
 | `fa3` | Build, inspect, and render FA(3) invoices locally, without KSeF access. |
 | `online` | Open, resume, inspect, and close online invoice sessions. |
 | `batch` | Submit and inspect batch invoice sessions. |
@@ -97,7 +98,7 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 | `invoices export` | Schedule an invoice export and save the handle. |
 | `invoices export-status` | Fetch invoice export status. |
 | `invoices export-fetch` | Fetch and decrypt an export package using a saved handle. |
-| `invoices export-download` | Schedule, wait for, and download an export package. |
+| `invoices export-download` | Schedule, wait for, and download an export package. It always waits, bounded by `--timeout` and `--poll-interval`. |
 
 Common high-level invoice options:
 
@@ -113,6 +114,58 @@ Common high-level invoice options:
 | `invoices status --receipt FILE` | Check or wait for the workflow represented by a receipt. |
 | `invoices upo --receipt FILE --out FILE` | Download one online invoice UPO. |
 | `invoices upo --receipt FILE --upo-dir DIR` | Download online or batch UPO files into a directory. |
+
+`invoices metadata`, `invoices export`, and `invoices export-download` send the
+same filter object, so they share these options. The three commands differ only
+in the extra options after this table.
+
+| Option | Purpose |
+| --- | --- |
+| `--date-from` / `--date-to` | Window over the field named by `--date-type`, ISO datetime or date. `--date-from` is required. |
+| `--date-type` | `issue_date` (default), `invoicing_date`, or `permanent_storage`. |
+| `--role` | `seller` (default), `buyer`, `third_subject`, or `authorized_subject`. |
+| `--restrict-hwm` | Restrict results to the permanent-storage high-water mark, so repeated requests return a stable set. Full name: `--restrict-to-permanent-storage-hwm-date`. |
+| `--currency` | Currency code. Repeat for multiple. |
+| `--invoice-type` | Invoice type, such as `vat`, `kor`, `zal`, `upr`. Repeat for multiple. |
+| `--seller-nip` / `--buyer-nip` | Match one seller or buyer NIP. |
+| `--buyer-vat-ue` / `--buyer-other-id` | Match a buyer EU VAT ID or another buyer identifier. |
+| `--invoice-number` / `--ksef-number` | Match the seller invoice number or the KSeF number. |
+| `--amount-type` | `brutto` (default), `netto`, or `vat`. Names the field the amount bounds compare against. |
+| `--amount-min` / `--amount-max` | Amount bounds for the chosen amount type. |
+| `--form` | Form schema: `FA2`, `FA3`, `FA_RR1`, `PEF3`, `PEF_KOR3`. |
+| `--invoicing-mode` | `online` or `offline`. |
+| `--attachment yes\|no` | Filter by attachment presence. |
+| `--self-invoicing yes\|no` | Filter by the self-invoicing flag. |
+
+Export-only options: `--only-metadata`, `--compression-type zip\|tar_gz`, and
+`--handle-file FILE` to save the decryption handle for `export-fetch`.
+`export-download` and `export-fetch` add `--out-dir`, `--timeout`, and
+`--poll-interval`; only `export-fetch` has `--wait`. `metadata` pages with
+`--page-size`, `--page-offset`, `--sort-order`, and `--all`.
+
+### `collective`
+
+A collective identifier groups invoices that are already in KSeF. Every command
+here takes KSeF numbers, never local files.
+
+| Command | Purpose |
+| --- | --- |
+| `collective generate` | Generate a collective identifier for a set of invoices. |
+| `collective list` | Query collective identifiers visible in the current context. |
+| `collective list-for-invoice` | List collective identifiers that reference one KSeF invoice. |
+| `collective list-invoices NUMBERS...` | List the invoices grouped under collective identifiers. |
+
+| Option | Purpose |
+| --- | --- |
+| `generate --invoice KSEF_NUMBER` | KSeF number of an invoice to group. Repeat for multiple invoices. |
+| `generate --invoices-file FILE` | JSON array of `{ksef_number, payment, description}`. Merged with any `--invoice` values. |
+| `list --date-from` / `--date-to` | Creation window, ISO datetime or date. `--date-from` is required, `--date-to` defaults to now. |
+| `list --number` | Exact identifier number. |
+| `list --invoice-count-min` / `--invoice-count-max` | Filter by the number of grouped invoices. |
+| `list --current-context yes\|no` | Limit to identifiers created in this context. |
+| `list-for-invoice --ksef-number` | Invoice to look up. Required. |
+| `list-invoices NUMBERS...` | Identifier numbers; KSeF accepts at most 10 per request. |
+| `--page-size` / `--all` | Page size from 10 to 200, or fetch every page. Applies to the three listing commands. |
 
 ### `fa3`
 
@@ -177,7 +230,17 @@ stands. Keep the directory as protected as a credential file.
 | `sessions auth-list` | List authentication sessions. |
 | `sessions auth-close` | Close an authentication session. |
 | `sessions auth-terminate-current` | Terminate the current authentication session. |
-| `sessions invoice-list` | List historical invoice sessions. |
+| `sessions invoice-list` | List historical online or batch invoice sessions. |
+
+| Option | Purpose |
+| --- | --- |
+| `invoice-list --type online\|batch` | Session type to list. Required. |
+| `invoice-list --status` | `in_progress`, `succeeded`, `failed`, or `cancelled`. Repeat for multiple. |
+| `invoice-list --reference` | Match one session reference. |
+| `invoice-list --created-from` / `--created-to` | Created-at window, ISO datetime or date. |
+| `invoice-list --closed-from` / `--closed-to` | Closed-at window, ISO datetime or date. |
+| `invoice-list --modified-from` / `--modified-to` | Last-modified window, ISO datetime or date. |
+| `invoice-list --page-size` / `--all` | Page size from 10 to 100, or fetch every page. |
 
 ### `tokens`
 
@@ -244,3 +307,4 @@ stands. Keep the directory as protected as a credential file.
 | `testdata unblock-context` | Unblock a TEST context. |
 | `testdata grant-permissions` | Grant TEST permissions. |
 | `testdata revoke-permissions` | Revoke TEST permissions. |
+| `testdata update-certificate-valid-to` | Shorten a TEST-environment certificate's validity. Needs `--serial-number` and `--valid-to` (ISO datetime). |

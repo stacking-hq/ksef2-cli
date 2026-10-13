@@ -1,0 +1,90 @@
+---
+title: FA(3) Invoices Locally
+description: Build, inspect, and render FA(3) invoice XML with KSeF2 CLI, without contacting KSeF.
+---
+
+The `fa3` group wraps the SDK's public builder and renderer. It never opens a
+client, so none of these commands need a NIP, token, or certificate. Use them to
+turn a JSON draft into schema-valid FA(3) XML, to read an invoice someone handed
+you, and to produce a printable view. Building an invoice here does not send it;
+submit the resulting XML with [invoices send](invoices.md#send-invoices).
+
+## 1. Start from a draft
+
+```bash
+uv run ksef2 fa3 draft-example --out draft.json
+```
+
+Without `--out` the draft prints to stdout. The draft is a plain JSON object with
+`header`, `seller`, `buyer`, and `body`; `body.rows` holds the line items, and the
+builder computes the amounts and the VAT summary, so the draft has no totals to
+keep in sync.
+
+## 2. Build the XML
+
+```bash
+uv run ksef2 fa3 build --in draft.json --out invoice.xml
+```
+
+Pass `--in -` to read the draft from stdin, which is how you pipe a draft from
+another tool:
+
+```bash
+cat draft.json | uv run ksef2 fa3 build --in - --out invoice.xml
+```
+
+| Option | Purpose |
+| --- | --- |
+| `--out FILE` | Where to write the XML. Without it the XML goes to stdout. |
+| `--pretty` / `--no-pretty` | Indent the XML. On by default. |
+| `--validate` / `--no-validate` | Check the XML against the FA(3) schema before writing it. On by default. |
+
+`--no-validate` skips only the schema check. The builder still rejects drafts it
+cannot turn into an invoice, and the message names the missing part:
+
+```text
+Error: Invoice seller is required but not set.
+```
+
+## 3. Inspect an invoice
+
+```bash
+uv run ksef2 fa3 inspect --in invoice.xml
+```
+
+Text output prints one line each for `header`, `seller`, `buyer`, and `body`, so
+you can check a counterparty, the invoice number, or a single row's computed
+amounts. Add `--json` for the whole parsed invoice as one object:
+
+```bash
+uv run ksef2 --json fa3 inspect --in invoice.xml | jq '.body.rows[0]'
+```
+
+## 4. Render HTML, and PDF if you need it
+
+```bash
+uv run ksef2 fa3 render --in invoice.xml --out invoice.html
+```
+
+PDF needs the SDK's optional dependencies:
+
+```bash
+uv add 'ksef2[pdf]'          # project checkout
+pip install 'ksef2[pdf]'     # installed CLI
+
+uv run ksef2 fa3 render --in invoice.xml --out invoice.html --pdf invoice.pdf
+```
+
+Without those dependencies the command checks for them first and exits non-zero
+naming the extra, so neither the HTML nor a half-written PDF appears.
+
+`--code-lookups` lets the bundled stylesheet read local files and URLs so coded
+values, such as VAT codes, print as names instead of codes. That means the
+stylesheet reads what the invoice XML asks it to read, so enable it only for
+invoice XML you trust.
+
+## Related pages
+
+- [Invoice workflows](invoices.md)
+- [Collective identifiers](collective.md)
+- [Command reference](../reference/commands.md)

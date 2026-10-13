@@ -33,6 +33,9 @@ uv run ksef2 --profile test-company --json auth login
 Global options such as `--profile`, `--env`, `--nip`, `--test-cert`, and
 `--json` must appear before the command group.
 
+To authenticate once and reuse it instead of logging in per command, add
+`--save-state FILE` to `auth login` and point `--auth-state FILE` at the result.
+
 ## 3. Query invoice metadata
 
 ```bash
@@ -54,6 +57,9 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
 ```
 
 ## 4. Send one invoice and get a UPO
+
+Need an invoice XML to send? `fa3 draft-example` and `fa3 build` create one
+locally, without any credentials. See [FA(3) invoices locally](../guides/fa3.md).
 
 ```bash
 uv run ksef2 --profile test-company \
@@ -94,4 +100,6 @@ uv run ksef2 --profile test-company \
 - [Authentication](../guides/authentication.md)
 - [Configuration](../guides/configuration.md)
 - [Invoice workflows](../guides/invoices.md)
+- [FA(3) invoices locally](../guides/fa3.md)
+- [Collective identifiers](../guides/collective.md)
 - [Command reference](../reference/commands.md)
