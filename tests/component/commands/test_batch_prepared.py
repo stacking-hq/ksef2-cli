@@ -11,6 +11,7 @@ from conftest import (
     cli_args,
     fake_runtime,
     payload,
+    plain,
     prepared_batch,
 )
 from ksef2 import KSeFBatchUploadError, KSeFExternalTransferError
@@ -269,7 +270,7 @@ def test_batch_upload_reports_an_artifact_that_does_not_fit_the_session(
     )
 
     assert result.exit_code == 1
-    assert "no longer match the package" in result.output
+    assert "no longer match the package" in plain(result.output)
 
 
 @pytest.mark.parametrize("missing", ["--prepared", "--state-file"])
@@ -289,7 +290,7 @@ def test_batch_upload_needs_the_artifact_and_the_session_state(
     result = runner.invoke(app, cli_args("batch", "upload", *args), obj=runtime)
 
     assert result.exit_code == 2
-    assert missing in result.output
+    assert missing in plain(result.output)
 
 
 def test_all_in_one_submit_failure_points_at_prepare(runner, tmp_path) -> None:

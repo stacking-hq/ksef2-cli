@@ -1,5 +1,6 @@
 import base64
 import json
+import re
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -50,6 +51,19 @@ def pytest_collection_modifyitems(
 
 def cli_args(*args: str) -> list[str]:
     return ["--no-config", "--json", *args]
+
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def plain(output: str) -> str:
+    """Output as one line of text, whatever colour and wrapping the terminal added.
+
+    CI forces colour and an 80-column width, which splits long messages (they embed
+    the temporary directory) across lines and wraps option names in escape codes.
+    """
+
+    return " ".join(_ANSI.sub("", output).split())
 
 
 def payload(result: Any) -> Any:
