@@ -231,9 +231,13 @@ stands. Keep the directory as protected as a credential file.
 | `sessions auth-close` | Close an authentication session. |
 | `sessions auth-terminate-current` | Terminate the current authentication session. |
 | `sessions invoice-list` | List historical online or batch invoice sessions. |
+| `sessions upo` | Download invoice UPO XML or a session UPO page without saved session state. |
 
 | Option | Purpose |
 | --- | --- |
+| `upo --session REF` | Online or batch session reference. Required; no state or receipt file is needed. |
+| `upo --ksef-number N` / `--invoice-reference R` / `--upo-reference U` | Exactly one identifier is required. `--upo-reference` selects a session UPO page. |
+| `upo --out FILE` / `-o FILE` | Write UPO XML to a file. Required, as for `online upo`. Existing files are overwritten. |
 | `invoice-list --type online\|batch` | Session type to list. Required. |
 | `invoice-list --status` | `in_progress`, `succeeded`, `failed`, or `cancelled`. Repeat for multiple. |
 | `invoice-list --reference` | Match one session reference. |

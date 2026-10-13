@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -13,8 +14,9 @@ from ksef2.models import (
 )
 
 from ksef2_cli.context import run_authenticated, run_authenticated_command, run_command
+from ksef2_cli.io import write_bytes_file
 from ksef2_cli.parsing import parse_iso_datetime
-from ksef2_cli.results import CurrentSessionTerminated, SessionClosed
+from ksef2_cli.results import CurrentSessionTerminated, SavedFile, SessionClosed
 
 
 def _session_date(value: str | None, option_name: str) -> datetime | None:
@@ -23,6 +25,42 @@ def _session_date(value: str | None, option_name: str) -> datetime | None:
 
 
 app = typer.Typer(help="Inspect authentication and historical invoice sessions.")
+
+
+@app.command("upo")
+def sessions_upo(
+    ctx: typer.Context,
+    session_reference: Annotated[str, typer.Option("--session")],
+    output_file: Annotated[Path, typer.Option("--out", "-o", dir_okay=False)],
+    ksef_number: Annotated[str | None, typer.Option("--ksef-number")] = None,
+    invoice_reference: Annotated[
+        str | None, typer.Option("--invoice-reference")
+    ] = None,
+    upo_reference: Annotated[str | None, typer.Option("--upo-reference")] = None,
+) -> None:
+    """Download a UPO by session reference without saved session state."""
+
+    def validate() -> None:
+        selector_count = sum(
+            value is not None
+            for value in (ksef_number, invoice_reference, upo_reference)
+        )
+        if selector_count != 1:
+            raise ValueError(
+                "Provide exactly one of --ksef-number, --invoice-reference, "
+                "or --upo-reference."
+            )
+
+    def get_upo(auth: AuthenticatedClient) -> SavedFile:
+        content = auth.invoice_sessions.download_upo(
+            session_reference,
+            ksef_number=ksef_number,
+            invoice_reference_number=invoice_reference,
+            upo_reference_number=upo_reference,
+        )
+        return SavedFile(path=write_bytes_file(output_file, content), size=len(content))
+
+    run_authenticated_command(ctx, get_upo, validate=validate)
 
 
 @app.command("auth-list")
