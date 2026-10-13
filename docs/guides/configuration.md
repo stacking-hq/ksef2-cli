@@ -72,6 +72,24 @@ uv run ksef2 profile create prod-p12 \
   --p12-password-env KSEF2_P12_PASSWORD
 ```
 
+Store a longer authentication wait with the profile itself when the default one is
+too short. `--poll-interval` is the delay between status checks and
+`--max-poll-attempts` the number of checks, so the profile below waits
+`2.0 * 90 = 180` seconds:
+
+```bash
+uv run ksef2 profile create slow-prod \
+  --env production \
+  --nip 5261040828 \
+  --token-env KSEF2_PROD_TOKEN \
+  --poll-interval 2.0 \
+  --max-poll-attempts 90
+```
+
+Both settings stay unset when you omit them, and the SDK reads them the same way,
+so `client.authentication.with_profile()` polls to the same deadline. The two
+fields appear in `profile show` once the profile carries them.
+
 ## Select a profile
 
 ```bash
@@ -102,6 +120,19 @@ Selection order is:
 
 `KSEF2_PROFILE` affects runtime settings only. Use `profile use NAME` when you
 want to change the saved active profile.
+
+## Delete a profile
+
+```bash
+uv run ksef2 profile delete demo-client
+```
+
+The command asks for confirmation, and removing the selected profile leaves no
+profile active. JSON output has no prompt to answer, so it needs `--yes`:
+
+```bash
+uv run ksef2 --json profile delete demo-client --yes
+```
 
 ## Inspect local config
 
