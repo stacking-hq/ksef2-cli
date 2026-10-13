@@ -24,6 +24,7 @@ def register() -> None:
             (
                 ("reference_number", value.reference_number),
                 ("token", value.token),
+                ("status", value.status),
             )
         )
 

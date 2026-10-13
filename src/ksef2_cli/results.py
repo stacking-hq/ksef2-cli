@@ -11,6 +11,7 @@ from ksef2.models import (
     SendInvoiceResponse,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
+    TokenStatus,
 )
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -142,10 +143,13 @@ class GeneratedToken(CliResult):
     The SDK response marks its token as excluded from serialization, so a generic dump
     of it drops the credential. The CLI copies it into this model on purpose: the value
     is secret material and ``--json`` output of this command must be protected.
+
+    ``status`` is filled only when ``--wait`` polled the activation.
     """
 
     reference_number: str
     token: str
+    status: TokenStatus | None = None
 
 
 class OnlineSessionOpened(CliResult):

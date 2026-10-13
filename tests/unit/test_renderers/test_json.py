@@ -34,11 +34,13 @@ def test_json_renderer_dumps_pydantic_models_and_lists() -> None:
     assert json.loads(json_renderer.render(result)) == {
         "reference_number": "token-ref",
         "token": "secret",
+        "status": None,
     }
     assert json.loads(json_renderer.render([result])) == [
         {
             "reference_number": "token-ref",
             "token": "secret",
+            "status": None,
         }
     ]
 

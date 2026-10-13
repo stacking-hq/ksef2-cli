@@ -8,7 +8,11 @@ from typing import Any
 
 import pytest
 from ksef2 import Environment, FormSchema
-from ksef2.models import BatchSessionResumeState, OnlineSessionResumeState
+from ksef2.models import (
+    BatchSessionResumeState,
+    OnlineSessionResumeState,
+    TokenStatusResponse,
+)
 from typer.testing import CliRunner
 
 from ksef2_cli.config import OutputMode, RuntimeOverrides, Settings
@@ -112,6 +116,28 @@ class FakePager:
 
     def __iter__(self) -> Iterator[Any]:
         return (item for page in self._pages for item in page)
+
+
+class FakeTokenHandle:
+    """Stand-in for ``ksef2.clients.GeneratedToken``, the handle ``generate()`` returns.
+
+    The handle carries the one-time token and polls for activation, so tests can
+    assert on the arguments passed to ``wait()`` and on the status it returns.
+    """
+
+    def __init__(
+        self, *, reference_number: str, token: str, status: str = "active"
+    ) -> None:
+        self.reference_number = reference_number
+        self.token = token
+        self.status = TokenStatusResponse(
+            reference_number=reference_number, status=status
+        )
+        self.wait_calls: list[dict[str, Any]] = []
+
+    def wait(self, **kwargs: Any) -> TokenStatusResponse:
+        self.wait_calls.append(kwargs)
+        return self.status
 
 
 class FakeClient:
