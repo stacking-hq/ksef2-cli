@@ -1,11 +1,28 @@
-from conftest import FakeService, cli_args, fake_runtime, payload
+from datetime import UTC, datetime
+
+from conftest import FakePager, FakeService, cli_args, fake_runtime, payload
 from ksef2.models import (
     Certificate,
+    CertificateInfo,
     CertificateLimitsResponse,
     RetrievedCertificatesList,
 )
 
 from ksef2_cli.app import app
+
+
+def _certificate_info(serial_number: str) -> CertificateInfo:
+    return CertificateInfo(
+        serial_number=serial_number,
+        name="Demo",
+        common_name="Demo CN",
+        type="authentication",
+        status="active",
+        subject_identifier={"type": "nip", "value": "5261040828"},
+        valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+        valid_to=datetime(2026, 12, 31, tzinfo=UTC),
+        request_date=datetime(2026, 1, 1, tzinfo=UTC),
+    )
 
 
 def test_certificate_read_and_enrollment_commands(runner, tmp_path) -> None:
@@ -87,23 +104,25 @@ def test_certificate_list_retrieve_and_revoke(runner, tmp_path) -> None:
         ]
     )
     service = FakeService(
-        query={"certificates": [{"serial_number": serial}]},
-        all=lambda **kwargs: [{"serial_number": serial}],
+        list=FakePager(
+            [{"serial_number": serial}], [{"serial_number": "FEDCBA0987654321"}]
+        ),
         retrieve=result,
         revoke=None,
     )
     runtime = fake_runtime(auth=type("Auth", (), {"certificates": service})())
 
+    # Without --all the command prints only the pager's first page.
     assert payload(
         runner.invoke(
             app, cli_args("certificates", "list", "--page-size", "10"), obj=runtime
         )
-    ) == {"certificates": [{"serial_number": serial}]}
-    assert service.called("query")["params"].page_size == 10
+    ) == [{"serial_number": serial}]
+    assert service.called("list")["params"].page_size == 10
 
     assert payload(
         runner.invoke(app, cli_args("certificates", "list", "--all"), obj=runtime)
-    ) == [{"serial_number": serial}]
+    ) == [{"serial_number": serial}, {"serial_number": "FEDCBA0987654321"}]
 
     output_dir = tmp_path / "certs"
     retrieved = payload(
@@ -136,3 +155,64 @@ def test_certificate_list_retrieve_and_revoke(runner, tmp_path) -> None:
         "revoked": True,
     }
     assert service.called("revoke")["reason"] == "superseded"
+
+
+def test_certificate_list_filters_reach_the_pager(runner) -> None:
+    service = FakeService(list=FakePager([]))
+    runtime = fake_runtime(auth=type("Auth", (), {"certificates": service})())
+
+    assert (
+        payload(
+            runner.invoke(
+                app,
+                cli_args(
+                    "certificates",
+                    "list",
+                    "--serial-number",
+                    "ABCDEF1234567890",
+                    "--name",
+                    "Demo",
+                    "--type",
+                    "offline",
+                    "--status",
+                    "active",
+                    "--expires-after",
+                    "2026-01-01T00:00:00Z",
+                    "--page-offset",
+                    "10",
+                ),
+                obj=runtime,
+            )
+        )
+        == []
+    )
+    kwargs = service.called("list")
+    assert kwargs["certificate_serial_number"] == "ABCDEF1234567890"
+    assert kwargs["name"] == "Demo"
+    assert kwargs["certificate_type"] == "offline"
+    assert kwargs["status"] == "active"
+    assert kwargs["expires_after"] == "2026-01-01T00:00:00Z"
+    assert kwargs["params"].page_offset == 10
+
+
+def test_certificate_list_items_render_in_default_text_mode(runner) -> None:
+    # Both modes hand the renderer a plain list of CertificateInfo.
+    service = FakeService(
+        list=FakePager(
+            [_certificate_info("ABCDEF1234567890")],
+            [_certificate_info("FEDCBA0987654321")],
+        )
+    )
+    runtime = fake_runtime(auth=type("Auth", (), {"certificates": service})())
+
+    first_page = runner.invoke(
+        app, ["--no-config", "certificates", "list"], obj=runtime
+    )
+    assert first_page.exit_code == 0, first_page.output
+    assert "serial_number: ABCDEF1234567890" in first_page.output
+    assert "FEDCBA0987654321" not in first_page.output
+
+    all_pages = runner.invoke(
+        app, ["--no-config", "certificates", "list", "--all"], obj=runtime
+    )
+    assert "serial_number: FEDCBA0987654321" in all_pages.output
