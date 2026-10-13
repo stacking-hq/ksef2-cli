@@ -1,5 +1,6 @@
 import json
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import pytest
 from conftest import (
@@ -15,6 +16,8 @@ from ksef2.models import (
     OnlineSessionResumeState,
     SessionStatusResponse,
     StatusInfo,
+    Upo,
+    UpoPage,
 )
 
 from ksef2_cli.app import app
@@ -24,11 +27,31 @@ class FakeSession(FakeService):
     pass
 
 
-def _session_status(description: str) -> SessionStatusResponse:
+def _session_status(
+    description: str,
+    *,
+    code: int = 200,
+    upo_references: list[str] | None = None,
+) -> SessionStatusResponse:
+    upo = (
+        Upo(
+            pages=[
+                UpoPage(
+                    reference_number=reference,
+                    download_url="https://example.test/upo",
+                    download_url_expiration_date=datetime(2026, 1, 1, tzinfo=UTC),
+                )
+                for reference in upo_references
+            ]
+        )
+        if upo_references
+        else None
+    )
     return SessionStatusResponse(
-        status=StatusInfo(code=200, description=description),
+        status=StatusInfo(code=code, description=description),
         date_created=datetime(2026, 1, 1, tzinfo=UTC),
         date_updated=datetime(2026, 1, 1, tzinfo=UTC),
+        upo=upo,
     )
 
 
@@ -57,9 +80,12 @@ def test_online_open_and_send(runner, tmp_path) -> None:
     assert state_file.exists()
     # A state file that masks its key material cannot resume anything, so the saved JSON
     # has to validate back into the exact state the session reported.
-    assert OnlineSessionResumeState.model_validate_json(
-        state_file.read_text(encoding="utf-8")
-    ) == online_state()
+    assert (
+        OnlineSessionResumeState.model_validate_json(
+            state_file.read_text(encoding="utf-8")
+        )
+        == online_state()
+    )
     assert (state_file.stat().st_mode & 0o777) == 0o600
 
     invoice = tmp_path / "invoice.xml"
@@ -237,22 +263,31 @@ def test_online_status_reads_state_written_by_older_cli(runner, tmp_path) -> Non
 
 
 def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
-    service = FakeService(
-        prepare_batch_from_paths={"prepared": True},
-        submit_prepared_batch=batch_state(),
-        wait_for_completion=_session_status("completed"),
-        get_status={"status": "processing"},
+    """`submit` hands back a closed session client; the rest reopen one from state."""
+    submitted = FakeService(
+        resume_state=batch_state(),
+        wait=_session_status("completed"),
+    )
+    batch_service = FakeService(submit=submitted)
+    session = FakeService(
+        get_status=_session_status("completed", upo_references=["upo-ref"]),
+        wait=_session_status("completed"),
         list_invoices={"invoices": [{"reference_number": "invoice-ref"}]},
         list_failed_invoices={"invoices": [{"reference_number": "failed-ref"}]},
-        get_upo=b"batch-upo",
+        download_upo=[b"batch-upo"],
     )
-    runtime = fake_runtime(auth=type("Auth", (), {"batch": service})())
+    # ``auth.batch`` is a service object and ``auth.batch_session`` a factory, so
+    # neither can come from FakeService's catch-all attribute lookup.
+    auth_service = SimpleNamespace(
+        batch=batch_service, batch_session=lambda **kwargs: session
+    )
+    runtime = fake_runtime(auth=auth_service)
 
     invoice = tmp_path / "invoice.xml"
     invoice.write_text("<invoice/>", encoding="utf-8")
     state_file = tmp_path / "batch-state.json"
 
-    submitted = payload(
+    submitted_result = payload(
         runner.invoke(
             app,
             cli_args(
@@ -269,20 +304,43 @@ def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
             obj=runtime,
         )
     )
-    assert submitted["state_file"] == str(state_file)
-    assert submitted["status"]["status"]["description"] == "completed"
+    assert submitted_result["state_file"] == str(state_file)
+    assert submitted_result["status"]["status"]["description"] == "completed"
     assert state_file.exists()
-    assert BatchSessionResumeState.model_validate_json(
-        state_file.read_text(encoding="utf-8")
-    ) == batch_state()
-    assert (state_file.stat().st_mode & 0o777) == 0o600
-    assert service.called("prepare_batch_from_paths")["offline_mode"] is True
-
-    assert payload(
-        runner.invoke(
-            app, cli_args("batch", "status", "--reference", "batch-ref"), obj=runtime
+    assert (
+        BatchSessionResumeState.model_validate_json(
+            state_file.read_text(encoding="utf-8")
         )
-    ) == {"status": "processing"}
+        == batch_state()
+    )
+    assert (state_file.stat().st_mode & 0o777) == 0o600
+    assert batch_service.called("submit")["offline_mode"] is True
+    assert batch_service.called("submit")["max_part_size"] == 100
+    assert submitted.called("wait")["poll_interval"] == 2.0
+
+    # Without --max-part-size the SDK default applies and without --wait nothing polls.
+    unwaited = payload(
+        runner.invoke(app, cli_args("batch", "submit", str(invoice)), obj=runtime)
+    )
+    assert unwaited["state_file"] is None
+    assert unwaited["status"] is None
+    assert batch_service.calls[-1][2].get("max_part_size") is None
+    assert [name for name, _, _ in submitted.calls] == [
+        "resume_state",
+        "wait",
+        "resume_state",
+    ]
+
+    assert (
+        payload(
+            runner.invoke(
+                app,
+                cli_args("batch", "status", "--reference", "batch-ref"),
+                obj=runtime,
+            )
+        )["status"]["description"]
+        == "completed"
+    )
     waited_status = payload(
         runner.invoke(
             app,
@@ -291,6 +349,18 @@ def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
         )
     )
     assert waited_status["status"]["description"] == "completed"
+    assert session.called("wait")["timeout"] == 120.0
+    # The state file written by `submit` is the other way back into the session.
+    assert (
+        payload(
+            runner.invoke(
+                app,
+                cli_args("batch", "status", "--state-file", str(state_file)),
+                obj=runtime,
+            )
+        )["status"]["description"]
+        == "completed"
+    )
     assert payload(
         runner.invoke(
             app, cli_args("batch", "list", "--reference", "batch-ref"), obj=runtime
@@ -303,6 +373,7 @@ def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
             obj=runtime,
         )
     ) == {"invoices": [{"reference_number": "failed-ref"}]}
+    assert session.called("list_invoices")["page_size"] == 10
 
     out = tmp_path / "batch-upo.xml"
     assert payload(
@@ -322,3 +393,20 @@ def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
         )
     ) == {"path": str(out), "bytes": len(b"batch-upo")}
     assert out.read_bytes() == b"batch-upo"
+
+    unknown = runner.invoke(
+        app,
+        cli_args(
+            "batch",
+            "upo",
+            "--reference",
+            "batch-ref",
+            "--upo-reference",
+            "nope",
+            "--out",
+            str(out),
+        ),
+        obj=runtime,
+    )
+    assert unknown.exit_code == 1
+    assert "upo-ref" in unknown.output

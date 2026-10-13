@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated, Self
 
 import typer
-from ksef2.clients import AuthenticatedClient
+from ksef2.clients import AuthenticatedClient, BatchSessionClient
 from ksef2.models import (
     BatchSessionResumeState,
     SessionInvoicesResponse,
@@ -23,6 +23,24 @@ from ksef2_cli.io import (
 from ksef2_cli.results import BatchSubmitted, SavedFile
 
 app = typer.Typer(help="Submit and inspect batch invoice sessions.")
+
+
+def _upo_references(session: BatchSessionClient) -> list[str]:
+    """Return the UPO page references KSeF reported for this batch session."""
+
+    status = session.get_status()
+    return [page.reference_number for page in status.upo.pages] if status.upo else []
+
+
+def _upo_page(pages: list[bytes], references: list[str], upo_reference: str) -> bytes:
+    """Pick one page out of ``download_upo()``, which returns them in status order."""
+
+    if upo_reference not in references:
+        known = ", ".join(references) if references else "none reported"
+        raise ValueError(
+            f"Batch session reports {known} for UPO references, not {upo_reference!r}."
+        )
+    return pages[references.index(upo_reference)]
 
 
 @app.command("submit")
@@ -53,25 +71,21 @@ def batch_submit(
             auth: AuthenticatedClient,
         ) -> tuple[BatchSessionResumeState, SessionStatusResponse | None]:
             if max_part_size is None:
-                prepared = auth.batch.prepare_batch_from_paths(
-                    invoice_paths=invoice_paths,
+                session = auth.batch.submit(
+                    invoice_paths,
                     form_code=form.form_schema,
                     offline_mode=offline_mode,
                 )
             else:
-                prepared = auth.batch.prepare_batch_from_paths(
-                    invoice_paths=invoice_paths,
+                session = auth.batch.submit(
+                    invoice_paths,
                     form_code=form.form_schema,
                     offline_mode=offline_mode,
                     max_part_size=max_part_size,
                 )
-            state = auth.batch.submit_prepared_batch(prepared_batch=prepared)
+            state = session.resume_state()
             status = (
-                auth.batch.wait_for_completion(
-                    session=state,
-                    timeout=timeout,
-                    poll_interval=poll_interval,
-                )
+                session.wait(timeout=timeout, poll_interval=poll_interval)
                 if wait
                 else None
             )
@@ -129,13 +143,13 @@ def batch_status(
 
     def operation() -> SessionStatusResponse:
         def get_batch_status(auth: AuthenticatedClient) -> SessionStatusResponse:
-            if wait:
-                return auth.batch.wait_for_completion(
-                    session=inputs.session_reference,
-                    timeout=timeout,
-                    poll_interval=poll_interval,
-                )
-            return auth.batch.get_status(session=inputs.session_reference)
+            with auth.batch_session(state=inputs.session_reference) as session:
+                if wait:
+                    return session.wait(
+                        timeout=timeout,
+                        poll_interval=poll_interval,
+                    )
+                return session.get_status()
 
         return run_authenticated(ctx, get_batch_status)
 
@@ -163,17 +177,16 @@ def batch_list(
 
     def operation() -> SessionInvoicesResponse:
         def list_batch_invoices(auth: AuthenticatedClient) -> SessionInvoicesResponse:
-            if failed:
-                return auth.batch.list_failed_invoices(
-                    session=inputs.session_reference,
+            with auth.batch_session(state=inputs.session_reference) as session:
+                if failed:
+                    return session.list_failed_invoices(
+                        page_size=page_size,
+                        continuation_token=continuation_token,
+                    )
+                return session.list_invoices(
                     page_size=page_size,
                     continuation_token=continuation_token,
                 )
-            return auth.batch.list_invoices(
-                session=inputs.session_reference,
-                page_size=page_size,
-                continuation_token=continuation_token,
-            )
 
         return run_authenticated(ctx, list_batch_invoices)
 
@@ -195,10 +208,9 @@ def batch_upo(
     inputs = BatchSendInput(reference=reference, state_file=state_file)
 
     def get_upo(auth: AuthenticatedClient) -> SavedFile:
-        content = auth.batch.get_upo(
-            session=inputs.session_reference,
-            upo_reference_number=upo_reference,
-        )
+        with auth.batch_session(state=inputs.session_reference) as session:
+            pages = session.download_upo()
+            content = _upo_page(pages, _upo_references(session), upo_reference)
         return SavedFile(path=write_bytes_file(output_file, content), size=len(content))
 
     run_authenticated_command(ctx, get_upo)

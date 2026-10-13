@@ -92,13 +92,6 @@ DEPRECATED_SERVICE_METHODS = frozenset(
 
 # (path relative to src/ksef2_cli, "owner.method") -> number of call sites.
 PENDING_MIGRATION: dict[tuple[str, str], int] = {
-    ("commands/batch.py", "batch.get_status"): 1,
-    ("commands/batch.py", "batch.get_upo"): 1,
-    ("commands/batch.py", "batch.list_failed_invoices"): 1,
-    ("commands/batch.py", "batch.list_invoices"): 1,
-    ("commands/batch.py", "batch.prepare_batch_from_paths"): 2,
-    ("commands/batch.py", "batch.submit_prepared_batch"): 1,
-    ("commands/batch.py", "batch.wait_for_completion"): 2,
     ("commands/certificates.py", "certificates.all"): 1,
     ("commands/certificates.py", "certificates.query"): 1,
     ("commands/invoices/receipts.py", "auth.resume_online_session"): 2,
