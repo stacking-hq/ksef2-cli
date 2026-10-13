@@ -301,9 +301,7 @@ def register() -> None:
     def _(value: ExportHandleSaved, renderer: PlainTextRenderer) -> str:
         return format_fields(
             (
-                ("reference_number", value.reference_number),
-                ("aes_key", value.aes_key),
-                ("iv", value.iv),
+                ("state", value.state),
                 ("handle_file", value.handle_file),
             )
         )

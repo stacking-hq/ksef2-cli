@@ -5,7 +5,7 @@ from typing import Annotated
 
 import typer
 from ksef2.clients import AuthenticatedClient
-from ksef2.models import InvoiceExportStatusResponse
+from ksef2.models import ExportResumeState, InvoiceExportStatusResponse
 
 from ksef2_cli.commands.invoices.filters import (
     AmountMaxOption,
@@ -31,13 +31,12 @@ from ksef2_cli.commands.invoices.filters import (
 )
 from ksef2_cli.commands.invoices.models import (
     CompressionTypeChoice,
-    ExportHandleSaved,
     ExportPaths,
     InvoiceAmountTypeChoice,
     InvoiceDateTypeChoice,
     InvoiceRoleChoice,
 )
-from ksef2_cli.context import read_model, run_authenticated_command
+from ksef2_cli.context import run_authenticated_command
 from ksef2_cli.invoice_workflows import (
     InvoiceExportDownloadInput,
     InvoiceExportFetchInput,
@@ -88,7 +87,7 @@ def invoices_export(
         ),
     ] = None,
 ) -> None:
-    """Schedule an invoice export and print/save the decryption handle."""
+    """Schedule an invoice export and optionally save its resumable state."""
 
     def load_input() -> InvoiceExportInput:
         return InvoiceExportInput(
@@ -158,7 +157,7 @@ def invoices_export_fetch(
 
     def load_input() -> InvoiceExportFetchInput:
         return InvoiceExportFetchInput(
-            handle=read_model(ctx, handle_file, ExportHandleSaved),
+            handle=ExportResumeState.from_json(handle_file.read_text(encoding="utf-8")),
             output_dir=output_dir,
             wait=wait,
             timeout=timeout,

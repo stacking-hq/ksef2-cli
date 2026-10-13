@@ -4,7 +4,7 @@ import pytest
 from ksef2.models import (
     AuthTokens,
     CertificateLimitsResponse,
-    ExportHandle,
+    ExportResumeState,
     ListPeppolProvidersResponse,
     PeppolProvider,
     QueryTokensResponse,
@@ -183,15 +183,17 @@ def test_saved_file_text_uses_path_and_bytes(tmp_path) -> None:
     )
 
 
-def test_export_handle_text_includes_saved_handle_path(tmp_path) -> None:
-    handle = ExportHandle(reference_number="export-ref", aes_key=b"abc", iv=b"def")
-
+def test_export_handle_text_redacts_secrets_and_includes_saved_handle_path(tmp_path) -> None:
+    state = ExportResumeState(
+        reference_number="export-ref",
+        aes_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        iv="AAAAAAAAAAAAAAAAAAAAAA==",
+    )
     assert plain_renderer.render(
-        ExportHandleSaved.from_handle(handle, handle_file=tmp_path / "handle.json")
+        ExportHandleSaved(state=state, handle_file=tmp_path / "handle.json")
     ) == (
-        "reference_number: export-ref\n"
-        "aes_key: YWJj\n"
-        "iv: ZGVm\n"
+        'state: {"format_version":1,"reference_number":"export-ref",'
+        '"aes_key":"**********","iv":"**********"}\n'
         f"handle_file: {tmp_path / 'handle.json'}"
     )
 
