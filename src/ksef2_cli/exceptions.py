@@ -8,9 +8,31 @@ from urllib.parse import urlencode
 
 from ksef2 import (
     KSeFApiError,
+    KSeFArgumentError,
+    KSeFAuthError,
+    KSeFAuthPollingTimeoutError,
+    KSeFAuthTokenRedemptionError,
+    KSeFAuthenticationExpiredError,
+    KSeFBatchSessionTimeoutError,
+    KSeFBatchUploadError,
+    KSeFCertificateEnrollmentFailedError,
+    KSeFCertificateEnrollmentTimeoutError,
+    KSeFClientClosedError,
     KSeFException,
+    KSeFExportFailedError,
+    KSeFExportTimeoutError,
+    KSeFInvoiceDownloadTimeoutError,
+    KSeFInvoiceProcessingTimeoutError,
+    KSeFInvoiceQueryTimeoutError,
+    KSeFInvoiceRejectedError,
     KSeFInvoiceRenderingError,
+    KSeFNotReadyError,
+    KSeFOnlineSessionTimeoutError,
+    KSeFPermissionOperationFailedError,
+    KSeFPermissionOperationTimeoutError,
     KSeFRateLimitError,
+    KSeFTokenStatusTimeoutError,
+    KSeFUnsupportedEnvironmentError,
     KSeFValidationError,
 )
 from rich.console import Console
@@ -24,6 +46,37 @@ SECRET_OPTIONS = {
     "--refresh-token",
     "--token",
 }
+
+# SDK exceptions that mean the user can redo the call with different arguments.
+_USAGE_SDK_ERRORS = (KSeFArgumentError, KSeFUnsupportedEnvironmentError)
+
+# SDK exceptions for authentication that started but never reached a usable session.
+_AUTH_INCOMPLETE_SDK_ERRORS = (
+    KSeFAuthPollingTimeoutError,
+    KSeFAuthTokenRedemptionError,
+)
+
+# SDK exceptions raised when a KSeF job outlived the deadline set on the command.
+_POLLING_TIMEOUT_SDK_ERRORS = (
+    KSeFExportTimeoutError,
+    KSeFInvoiceProcessingTimeoutError,
+    KSeFOnlineSessionTimeoutError,
+    KSeFBatchSessionTimeoutError,
+    KSeFTokenStatusTimeoutError,
+    KSeFPermissionOperationTimeoutError,
+    KSeFCertificateEnrollmentTimeoutError,
+    KSeFInvoiceQueryTimeoutError,
+    KSeFInvoiceDownloadTimeoutError,
+)
+
+# SDK exceptions carrying KSeF's own account of a job that finished badly.
+_REPORTED_FAILURE_SDK_ERRORS = (
+    KSeFExportFailedError,
+    KSeFPermissionOperationFailedError,
+    KSeFCertificateEnrollmentFailedError,
+    KSeFInvoiceRejectedError,
+    KSeFBatchUploadError,
+)
 
 
 class CliError(Exception):
@@ -144,10 +197,35 @@ def error_from_exception(error: Exception) -> CliError:
 
     if isinstance(error, CliError):
         return error
+    if isinstance(error, KSeFClientClosedError):
+        # The CLI keeps one client open for the whole command, so this is our bug.
+        return UnexpectedCliError(error)
+    if isinstance(error, _USAGE_SDK_ERRORS):
+        return UsageError(str(error))
     if isinstance(error, KSeFInvoiceRenderingError):
         return UsageError(str(error))
     if isinstance(error, KSeFValidationError):
         return ConfigError(str(error))
+    if isinstance(error, KSeFAuthenticationExpiredError):
+        return AuthenticationConfigError(
+            str(error),
+            title="Authentication expired",
+            hints=("Authenticate again with: ksef2 auth login",),
+        )
+    if isinstance(error, KSeFAuthError):
+        return _from_api_error(
+            error,
+            cli_error=AuthenticationConfigError,
+            title="KSeF rejected the authentication",
+        )
+    if isinstance(error, KSeFNotReadyError):
+        return _from_api_error(
+            error,
+            cli_error=RemoteServiceError,
+            title="KSeF has not finished processing yet",
+            message=f"KSeF has not finished processing the request (HTTP {error.status_code}).",
+            hints=("Retry the same command later.",),
+        )
     if isinstance(error, KSeFRateLimitError):
         hints = (
             f"Wait at least {error.retry_after} seconds before retrying."
@@ -159,16 +237,28 @@ def error_from_exception(error: Exception) -> CliError:
             title="KSeF rate limit exceeded",
             hints=(hints,),
         )
-    if isinstance(error, KSeFApiError):
-        details = [*str(error).splitlines(), f"HTTP status: {error.status_code}"]
-        if error.ksef_code is not None:
-            details.append(f"KSeF code: {error.ksef_code}")
-        if error.trace_id:
-            details.append(f"Trace ID: {error.trace_id}")
+    if isinstance(error, _AUTH_INCOMPLETE_SDK_ERRORS):
+        return AuthenticationConfigError(
+            str(error),
+            title="Authentication did not complete",
+            hints=("Raise --auth-timeout, or check that the credentials are valid.",),
+        )
+    if isinstance(error, _POLLING_TIMEOUT_SDK_ERRORS):
         return RemoteServiceError(
-            f"KSeF request failed with HTTP {error.status_code}.",
+            str(error),
+            title="Timed out waiting for KSeF",
+            hints=(
+                "KSeF is still working, so check the status later or raise --timeout "
+                "where the command has one.",
+            ),
+        )
+    if isinstance(error, _REPORTED_FAILURE_SDK_ERRORS):
+        return RemoteServiceError(str(error), title="KSeF reported a failure")
+    if isinstance(error, KSeFApiError):
+        return _from_api_error(
+            error,
+            cli_error=RemoteServiceError,
             title="KSeF rejected the request",
-            details=tuple(details),
         )
     if isinstance(error, KSeFException):
         return RemoteServiceError(str(error), title="KSeF operation failed")
@@ -177,6 +267,29 @@ def error_from_exception(error: Exception) -> CliError:
     if isinstance(error, OSError):
         return FileCliError.from_os_error(error)
     return UnexpectedCliError(error)
+
+
+def _from_api_error(
+    error: KSeFApiError,
+    *,
+    cli_error: type[CliError],
+    title: str,
+    message: str | None = None,
+    hints: Iterable[str] = (),
+) -> CliError:
+    """Build a CLI error that keeps the HTTP status, KSeF code and trace ID of an API error."""
+
+    details = [*str(error).splitlines(), f"HTTP status: {error.status_code}"]
+    if error.ksef_code is not None:
+        details.append(f"KSeF code: {error.ksef_code}")
+    if error.trace_id:
+        details.append(f"Trace ID: {error.trace_id}")
+    return cli_error(
+        message or f"KSeF request failed with HTTP {error.status_code}.",
+        title=title,
+        details=tuple(details),
+        hints=tuple(hints),
+    )
 
 
 def render_cli_error(
