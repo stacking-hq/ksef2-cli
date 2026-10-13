@@ -1115,8 +1115,8 @@ Shorten the validity of a TEST-environment certificate.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--serial-number` | TEXT | required | - | - |
-| `--valid-to` | TEXT | required | - | ISO datetime. |
+| `--serial-number` | TEXT | required | - | 16 hexadecimal characters, e.g. ABCDEF1234567890. |
+| `--valid-to` | TEXT | required | - | ISO 8601 datetime with a UTC offset, e.g. 2026-03-01T12:00:00Z. |
 
 ## `tokens`
 
