@@ -21,6 +21,7 @@ from ksef2.profiles import (
     load_profile_config,
     write_profile_config,
 )
+from ksef2.renderers import PDFPageSize
 from ksef2.xades import XAdESPrivateKey
 from pydantic import BaseModel
 
@@ -64,6 +65,21 @@ class FormSchemaChoice(StrEnum):
 FORM_SCHEMA_NAMES = ", ".join(item for item in FormSchemaChoice.__members__)
 
 
+class PdfPageSizeChoice(StrEnum):
+    """Typer-facing PDF paper sizes; the SDK names hold spaces, which ``--help`` wraps badly."""
+
+    A4 = "a4"
+    A4_LANDSCAPE = "a4-landscape"
+    A3 = "a3"
+    A3_LANDSCAPE = "a3-landscape"
+    LETTER = "letter"
+    LETTER_LANDSCAPE = "letter-landscape"
+
+    @property
+    def pdf_page_size(self) -> PDFPageSize:
+        return PDFPageSize[self.name]
+
+
 class AuthenticatedRuntime(Protocol):
     client: "Client"
     auth: "AuthenticatedClient"
@@ -89,6 +105,12 @@ class PemCredentialsLoader(Protocol):
     ) -> tuple["Certificate", "XAdESPrivateKey"]: ...
 
 
+class InvoicePdfRenderer(Protocol):
+    def __call__(
+        self, invoice_xml_path: Path, *, page_size: PDFPageSize | None
+    ) -> bytes: ...
+
+
 @dataclass(frozen=True)
 class RuntimeOverrides:
     client_factory: Callable[[], "Client"] | None = None
@@ -96,6 +118,7 @@ class RuntimeOverrides:
     model_reader: ModelReader | None = None
     p12_credentials_loader: P12CredentialsLoader | None = None
     pem_credentials_loader: PemCredentialsLoader | None = None
+    invoice_pdf_renderer: InvoicePdfRenderer | None = None
 
 
 @dataclass(frozen=True)

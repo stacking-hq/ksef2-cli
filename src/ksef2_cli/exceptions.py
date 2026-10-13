@@ -39,6 +39,20 @@ from rich.console import Console
 from rich.markup import escape
 
 BUG_REPORT_URL = "https://github.com/stacking-hq/ksef2-cli/issues/new"
+
+# Both PDF commands (`invoices export-pdf` and `fa3 render --pdf`) render with
+# WeasyPrint, which arrives as an optional extra. One message for both, so the
+# install command a user sees matches the package they installed.
+PDF_INSTALL_HINT = (
+    'Install the extra with: uv tool install "ksef2-cli[pdf]" or '
+    'pip install "ksef2-cli[pdf]". In a project that depends on the SDK directly: '
+    "uv add 'ksef2[pdf]'."
+)
+PDF_SYSTEM_LIBS_HINT = (
+    "On Linux, WeasyPrint needs system libraries: libpango-1.0-0, libharfbuzz0b, "
+    "libpangoft2-1.0-0, and libharfbuzz-subset0."
+)
+
 SECRET_OPTIONS = {
     "--key-password",
     "--ksef-token",
@@ -135,6 +149,10 @@ class FileCliError(CliError):
 
 class AuthenticationConfigError(CliError):
     """Authentication settings are absent, incomplete, or mutually exclusive."""
+
+
+class MissingOptionalDependencyError(CliError):
+    """A command needs an install extra that is not present in this environment."""
 
 
 class RemoteServiceError(CliError):

@@ -108,6 +108,7 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 | `invoices export-status` | Fetch invoice export status. |
 | `invoices export-fetch` | Fetch and decrypt an export package using a saved handle. |
 | `invoices export-download` | Schedule, wait for, and download an export package. It always waits, bounded by `--timeout` and `--poll-interval`. |
+| `invoices export-pdf` | Download an export package and render each invoice to PDF. Needs the optional `pdf` extra. |
 
 Common high-level invoice options:
 
@@ -124,9 +125,9 @@ Common high-level invoice options:
 | `invoices upo --receipt FILE --out FILE` | Download one online invoice UPO. |
 | `invoices upo --receipt FILE --upo-dir DIR` | Download online or batch UPO files into a directory. |
 
-`invoices metadata`, `invoices export`, and `invoices export-download` send the
-same filter object, so they share these options. The three commands differ only
-in the extra options after this table.
+`invoices metadata`, `invoices export`, `invoices export-download`, and
+`invoices export-pdf` send the same filter object, so they share these options.
+These commands differ only in the extra options after this table.
 
 | Option | Purpose |
 | --- | --- |
@@ -148,9 +149,10 @@ in the extra options after this table.
 
 Export-only options: `--only-metadata`, `--compression-type zip\|tar_gz`, and
 `--handle-file FILE` to save the decryption handle for `export-fetch`.
-`export-download` and `export-fetch` add `--out-dir`, `--timeout`, and
-`--poll-interval`; only `export-fetch` has `--wait`. `metadata` pages with
-`--page-size`, `--page-offset`, `--sort-order`, and `--all`.
+`export-download`, `export-fetch`, and `export-pdf` add `--out-dir`, `--timeout`,
+and `--poll-interval`; only `export-fetch` has `--wait`. `export-pdf` adds
+`--pdf-dir DIR` (defaults to `--out-dir`) and `--paper-size a4\|a4-landscape\|a3\|a3-landscape\|letter\|letter-landscape`.
+`metadata` pages with `--page-size`, `--page-offset`, `--sort-order`, and `--all`.
 
 ### `collective`
 

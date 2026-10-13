@@ -22,9 +22,9 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
   --all
 ```
 
-`invoices metadata`, `invoices export`, and `invoices export-download` accept the
-same filters, so a query you tuned against metadata replays unchanged on an
-export:
+`invoices metadata`, `invoices export`, `invoices export-download`, and
+`invoices export-pdf` accept the same filters, so a query you tuned against
+metadata replays unchanged on an export:
 
 - Window: `--date-from` (required) and `--date-to` over the field named by
   `--date-type` (`issue_date`, `invoicing_date`, `permanent_storage`)
@@ -108,6 +108,35 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
 (default `120`) checked every `--poll-interval` seconds. Use the separate
 `export` and `export-fetch` commands when you need to walk away between
 scheduling and downloading.
+
+## Render an export to PDF
+
+`invoices export-pdf` is `export-download` plus a rendering step: it schedules the
+export, waits, decrypts the package into `--out-dir`, and renders each invoice XML
+to PDF.
+
+```bash
+uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
+  invoices export-pdf \
+  --role seller \
+  --date-from 2026-01-01T00:00:00Z \
+  --out-dir downloads \
+  --pdf-dir pdfs
+```
+
+| Option | Purpose |
+| --- | --- |
+| `--out-dir DIR` | Where the decrypted invoice XML goes. Default `downloads`. |
+| `--pdf-dir DIR` | Where the PDFs go. Defaults to `--out-dir`, so the PDFs sit beside their XML. |
+| `--paper-size` | `a4`, `a4-landscape`, `a3`, `a3-landscape`, `letter`, or `letter-landscape`. Omit to keep the stylesheet paper, normally A4 landscape. |
+
+PDF rendering uses WeasyPrint, which arrives through the optional `pdf` extra, so
+install the CLI as `ksef2-cli[pdf]` before running this command. Without the extra
+the command names the install command and stops; every other command keeps
+working. See [Installation](../getting-started/installation.md#pdf-rendering).
+
+To render a file you already have, without contacting KSeF, use
+[`fa3 render`](fa3.md) instead.
 
 ## Send invoices
 

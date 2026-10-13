@@ -1,6 +1,7 @@
 """Shared invoice workflows used by CLI and TUI adapters."""
 
 import base64
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Self, cast
@@ -28,6 +29,7 @@ from ksef2_cli.commands.invoices.models import (
     ExportPaths,
     InvoiceAmountTypeChoice,
     InvoiceDateTypeChoice,
+    InvoicePdfExport,
     InvoiceRoleChoice,
     InvoiceSendModeChoice,
     InvoicesSendResult,
@@ -198,6 +200,18 @@ class InvoiceExportDownloadInput(InvoiceFilterInput):
     timeout: float = Field(default=120.0, ge=1.0)
     poll_interval: float = Field(default=2.0, ge=0.1)
     handle_file: Path | None = None
+
+
+class InvoiceExportPdfInput(InvoiceExportDownloadInput):
+    """An export download that also renders each decrypted invoice to PDF."""
+
+    pdf_dir: Path | None = None
+
+    @property
+    def pdf_directory(self) -> Path:
+        """Where PDFs go: ``--pdf-dir`` when given, the downloaded XML's directory otherwise."""
+
+        return self.pdf_dir if self.pdf_dir is not None else self.output_dir
 
 
 class OnlineInvoiceHandler:
@@ -601,6 +615,40 @@ def download_invoice_export(
             paths=paths,
         ),
         items=[str(path) for path in paths],
+    )
+
+
+def export_invoices_to_pdf(
+    auth: AuthenticatedClient,
+    inputs: InvoiceExportPdfInput,
+    render_pdf: Callable[[Path], bytes],
+) -> FocusedResult[InvoicePdfExport, SavedFile]:
+    """Download an invoice export package and render every invoice in it to PDF.
+
+    ``render_pdf`` comes from the caller because WeasyPrint ships as an optional extra,
+    so this workflow must not import the exporter itself.
+    """
+
+    downloaded = download_invoice_export(auth, inputs)
+
+    pdfs: list[SavedFile] = []
+    for invoice_xml_path in downloaded.payload.paths:
+        content = render_pdf(invoice_xml_path)
+        target = inputs.pdf_directory / _safe_filename(
+            f"{invoice_xml_path.stem}.pdf", ".pdf"
+        )
+        pdfs.append(
+            SavedFile(path=write_bytes_file(target, content), size=len(content))
+        )
+
+    return FocusedResult(
+        payload=InvoicePdfExport(
+            reference_number=downloaded.payload.reference_number,
+            pdfs=pdfs,
+            invoice_xml_files=downloaded.payload.paths,
+            handle_file=downloaded.payload.handle_file,
+        ),
+        items=pdfs,
     )
 
 
