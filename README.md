@@ -95,6 +95,14 @@ Supported direct authentication methods:
 - `--test-cert` for the TEST environment
 - `--cert` and `--key` for PEM XAdES credentials
 - `--p12` for PKCS#12/PFX XAdES credentials
+- `--auth-state` to reuse state saved by `auth login --save-state`
+
+Saving auth state lets later commands skip a fresh KSeF login:
+
+```bash
+ksef2 --profile test-company --json auth login --save-state ksef2-auth.json
+ksef2 --auth-state ksef2-auth.json --json sessions auth-list
+```
 
 ## Send and download invoices
 

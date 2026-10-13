@@ -1,0 +1,74 @@
+"""Unit tests for rehydrating saved authentication state."""
+
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+
+import pytest
+from conftest import auth_state, expired_auth_state
+from ksef2.models import RefreshedToken, TokenCredentials
+
+from ksef2_cli.exceptions import AuthenticationConfigError
+from ksef2_cli.runtime import renew_resume_state
+
+
+class _Auth:
+    def __init__(self, returned: RefreshedToken) -> None:
+        self.returned = returned
+        self.calls: list[dict[str, object]] = []
+
+    def refresh(self, **kwargs: object) -> RefreshedToken:
+        self.calls.append(kwargs)
+        return self.returned
+
+
+def _client(refreshed: RefreshedToken) -> SimpleNamespace:
+    return SimpleNamespace(authentication=_Auth(refreshed))
+
+
+def test_renew_keeps_state_and_calls_nothing_while_access_is_valid() -> None:
+    state = auth_state()
+    client = _client(_refreshed())
+
+    assert renew_resume_state(client, state) is state
+    assert client.authentication.calls == []
+
+
+def test_renew_reads_naive_saved_timestamps_as_utc() -> None:
+    naive_past = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1)
+    state = auth_state(access_valid_until=naive_past)
+
+    renewed = renew_resume_state(_client(_refreshed()), state)
+
+    assert renewed.access_token.get_secret_value() == "fresh-access"
+
+
+def test_renew_exchanges_the_refresh_token_when_access_expired() -> None:
+    state = expired_auth_state()
+    renewed_at = datetime.now(UTC) + timedelta(hours=6)
+    client = _client(_refreshed(valid_until=renewed_at))
+
+    renewed = renew_resume_state(client, state)
+
+    assert client.authentication.calls == [{"refresh_token": "refresh-token"}]
+    assert renewed.access_token.get_secret_value() == "fresh-access"
+    assert renewed.access_token_valid_until == renewed_at
+    # The refresh token is reused as-is, so its own expiry still decides the end of life.
+    assert renewed.refresh_token.get_secret_value() == "refresh-token"
+    assert renewed.refresh_token_valid_until == state.refresh_token_valid_until
+
+
+def test_renew_stops_when_nothing_can_be_refreshed_anymore() -> None:
+    expired = datetime.now(UTC) - timedelta(hours=1)
+    state = auth_state(access_valid_until=expired, refresh_valid_until=expired)
+
+    with pytest.raises(AuthenticationConfigError, match="refresh token expired"):
+        renew_resume_state(_client(_refreshed()), state)
+
+
+def _refreshed(valid_until: datetime | None = None) -> RefreshedToken:
+    return RefreshedToken(
+        access_token=TokenCredentials(
+            token="fresh-access",
+            valid_until=valid_until or datetime.now(UTC) + timedelta(hours=2),
+        )
+    )

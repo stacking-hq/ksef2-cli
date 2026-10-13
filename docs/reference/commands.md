@@ -27,6 +27,7 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 | `--cert`, `--key` | PEM XAdES certificate and private key. |
 | `--key-password` | Password for encrypted PEM private key. |
 | `--p12`, `--p12-password` | PKCS#12/PFX XAdES archive and password. |
+| `--auth-state` | Reuse saved auth state instead of authenticating again. |
 | `--auth-poll-interval` | Authentication polling interval. |
 | `--auth-timeout` | Seconds to wait for authentication to complete. |
 
@@ -57,7 +58,14 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 | Command | Purpose |
 | --- | --- |
 | `auth login` | Authenticate with the configured method and print tokens. |
+| `auth resume` | Reuse saved auth state, refreshing the access token when needed. |
 | `auth refresh` | Exchange a refresh token for a new access token. |
+
+| Option | Purpose |
+| --- | --- |
+| `auth login --save-state FILE` | Write resumable auth state. The file holds bearer tokens in plain text and is created with mode `0600`. |
+| `auth resume --state-file FILE` | Auth state to reuse. Defaults to the global `--auth-state`. |
+| `auth resume --save-state FILE` | Write the resumed state, including any refreshed access token. |
 
 ### `config`
 

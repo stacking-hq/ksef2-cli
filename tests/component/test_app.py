@@ -51,7 +51,7 @@ def test_all_registered_commands_render_help(runner) -> None:
         if result.exit_code != 0:
             failures.append((args, result.output))
 
-    assert len(commands) == 84
+    assert len(commands) == 85
     assert not failures
 
 

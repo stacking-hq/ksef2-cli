@@ -115,6 +115,7 @@ class Settings:
     nip: str | None
     token: str | None
     context_type: ContextIdentifierTypeEnum | ContextIdentifierType | None
+    auth_state: Path | None
     test_certificate: bool
     cert: Path | None
     key: Path | None
@@ -175,6 +176,7 @@ def resolve_settings(
     nip: str | None = None,
     token: str | None = None,
     context_type: ContextIdentifierTypeEnum | ContextIdentifierType | None = None,
+    auth_state: Path | None = None,
     test_certificate: bool = False,
     cert: Path | None = None,
     key: Path | None = None,
@@ -228,6 +230,7 @@ def resolve_settings(
         nip=resolved_nip,
         token=token,
         context_type=context_type,
+        auth_state=auth_state.expanduser() if auth_state else auth_state,
         test_certificate=test_certificate,
         cert=cert,
         key=key,

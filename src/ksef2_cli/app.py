@@ -128,6 +128,16 @@ def root(
             help="Token-auth context type.",
         ),
     ] = None,
+    auth_state: Annotated[
+        Path | None,
+        typer.Option(
+            "--auth-state",
+            envvar="KSEF2_AUTH_STATE",
+            exists=True,
+            dir_okay=False,
+            help="Reuse saved auth state from --save-state instead of authenticating.",
+        ),
+    ] = None,
     test_certificate: Annotated[
         bool,
         typer.Option(
@@ -213,6 +223,7 @@ def root(
             nip=nip,
             token=token,
             context_type=context_type,
+            auth_state=auth_state,
             test_certificate=test_certificate,
             cert=cert,
             key=key,

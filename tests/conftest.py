@@ -1,7 +1,7 @@
 import base64
 import json
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -9,6 +9,8 @@ from typing import Any
 import pytest
 from ksef2 import Environment, FormSchema
 from ksef2.models import (
+    AuthenticationResumeState,
+    AuthTokens,
     BatchSessionResumeState,
     OnlineSessionResumeState,
     TokenStatusResponse,
@@ -61,6 +63,7 @@ def settings(**overrides: Any) -> Settings:
         "nip": "5261040828",
         "token": None,
         "context_type": None,
+        "auth_state": None,
         "test_certificate": False,
         "cert": None,
         "key": None,
@@ -84,6 +87,36 @@ def online_state(reference_number: str = "online-ref") -> OnlineSessionResumeSta
         iv=base64.b64decode(_SESSION_IV, validate=True),
         valid_until=datetime(2026, 1, 1, tzinfo=UTC),
         form_code=FormSchema.FA3,
+    )
+
+
+def auth_state(
+    *,
+    access_token: str = "access-token",
+    refresh_token: str = "refresh-token",
+    access_valid_until: datetime | None = None,
+    refresh_valid_until: datetime | None = None,
+) -> AuthenticationResumeState:
+    """Saved auth state whose access token is valid for a day and refresh token for two."""
+
+    now = datetime.now(UTC)
+    return AuthenticationResumeState(
+        access_token=access_token,
+        access_token_valid_until=access_valid_until or now + timedelta(days=1),
+        refresh_token=refresh_token,
+        refresh_token_valid_until=refresh_valid_until or now + timedelta(days=2),
+    )
+
+
+def expired_auth_state(
+    *,
+    refresh_valid_until: datetime | None = None,
+) -> AuthenticationResumeState:
+    """Saved auth state whose access token expired an hour ago."""
+
+    return auth_state(
+        access_valid_until=datetime.now(UTC) - timedelta(hours=1),
+        refresh_valid_until=refresh_valid_until,
     )
 
 
@@ -138,6 +171,27 @@ class FakeTokenHandle:
     def wait(self, **kwargs: Any) -> TokenStatusResponse:
         self.wait_calls.append(kwargs)
         return self.status
+
+
+class FakeAuthenticated:
+    """Stand-in for ``ksef2.clients.AuthenticatedClient``, the branch auth calls return.
+
+    Carries the resume state an authenticated branch reports, so commands can save it.
+    """
+
+    def __init__(
+        self, state: AuthenticationResumeState | None = None, **services: Any
+    ) -> None:
+        self._state = state or auth_state()
+        for name, service in services.items():
+            setattr(self, name, service)
+
+    @property
+    def auth_tokens(self) -> AuthTokens:
+        return self._state.to_tokens()
+
+    def resume_state(self) -> AuthenticationResumeState:
+        return self._state
 
 
 class FakeClient:

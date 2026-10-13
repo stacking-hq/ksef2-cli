@@ -4,17 +4,23 @@ import os
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, NoReturn, Protocol, TypeVar
 
 from ksef2 import Client
 from ksef2.clients import AuthenticatedClient
+from ksef2.models import AuthenticationResumeState
 from ksef2.profiles import ProfileAuthType
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr, ValidationError
 
 from ksef2_cli.config import AuthenticatedRuntime, Settings
 from ksef2_cli.exceptions import AuthenticationConfigError
-from ksef2_cli.io import read_model_file
+from ksef2_cli.io import (
+    SECRET_MODEL_FILE_MODE,
+    read_model_file,
+    write_text_file,
+)
 
 T = TypeVar("T")
 ModelT = TypeVar("ModelT", bound=BaseModel)
@@ -99,6 +105,7 @@ def authenticate_client(settings: Settings, client: Client) -> AuthenticatedClie
             or settings.environment is not profile.sdk_environment
             or settings.token is not None
             or settings.context_type is not None
+            or settings.auth_state is not None
             or settings.test_certificate
             or settings.cert is not None
             or settings.key is not None
@@ -116,6 +123,17 @@ def authenticate_client(settings: Settings, client: Client) -> AuthenticatedClie
 
     auth_config = profile.auth if profile is not None else None
     method = select_auth_method(settings)
+
+    if settings.auth_state is not None:
+        if method is not None:
+            fail(
+                "Provide only one auth method: --auth-state, --token, --test-cert, "
+                "--cert/--key, or --p12."
+            )
+        # Saved state needs no NIP and no credentials: the bearer tokens inside it
+        # already carry the context they were authenticated for.
+        return resume_authentication(client, read_resume_state(settings.auth_state))
+
     if method is None:
         if auth_config is None:
             fail(
@@ -276,6 +294,87 @@ def select_auth_method(settings: Settings) -> ProfileAuthType | None:
         )
 
     return selected[0] if selected else None
+
+
+def read_resume_state(path: Path) -> AuthenticationResumeState:
+    """Load saved authentication state, rejecting a redacted or malformed dump.
+
+    ``AuthenticationResumeState`` masks its tokens in ordinary Pydantic dumps and refuses
+    to load them back, so only state written through ``to_json()`` resumes a client.
+    """
+
+    try:
+        return read_model_file(path, AuthenticationResumeState)
+    except ValidationError as error:
+        raise AuthenticationConfigError(
+            f"{path} does not hold resumable auth state.",
+            title="Auth state cannot be resumed",
+            details=(str(error),),
+            hints=(f"Re-create the file with: ksef2 auth login --save-state {path}",),
+        ) from error
+
+
+def save_resume_state(path: Path, state: AuthenticationResumeState) -> Path:
+    """Write resumable authentication state as credential material readable by ``auth``.
+
+    ``to_json()`` is the only export that keeps the bearer tokens, and the file holds
+    them in plain text, so it is written with the secret file mode used for other
+    credential files.
+    """
+
+    return write_text_file(
+        path, state.to_json(indent=2), file_mode=SECRET_MODEL_FILE_MODE
+    )
+
+
+def resume_authentication(
+    client: Client, state: AuthenticationResumeState
+) -> AuthenticatedClient:
+    """Rehydrate an authenticated SDK branch from saved authentication state.
+
+    The resumed branch exchanges its access token for a fresh one on the first request
+    that needs it, as long as the refresh token is still valid.
+    """
+
+    return client.authentication.resume(state)
+
+
+def renew_resume_state(
+    client: Client,
+    state: AuthenticationResumeState,
+    *,
+    now: datetime | None = None,
+) -> AuthenticationResumeState:
+    """Return state with a usable access token, refreshing through the SDK when expired.
+
+    Raises:
+        AuthenticationConfigError: If both tokens expired, which only a new login can fix.
+    """
+
+    moment = _as_utc(now) if now is not None else datetime.now(UTC)
+    if _as_utc(state.access_token_valid_until) > moment:
+        return state
+    if _as_utc(state.refresh_token_valid_until) <= moment:
+        fail(
+            "Saved auth state can no longer refresh: its refresh token expired on "
+            f"{state.refresh_token_valid_until}. Run ksef2 auth login to sign in again."
+        )
+
+    refreshed = client.authentication.refresh(
+        refresh_token=state.refresh_token.get_secret_value()
+    )
+    return AuthenticationResumeState(
+        access_token=SecretStr(refreshed.access_token.token),
+        access_token_valid_until=refreshed.access_token.valid_until,
+        refresh_token=state.refresh_token,
+        refresh_token_valid_until=state.refresh_token_valid_until,
+    )
+
+
+def _as_utc(moment: datetime) -> datetime:
+    """Read a saved timestamp without a timezone as UTC, the way the SDK does."""
+
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
 
 
 def resolve_secret(

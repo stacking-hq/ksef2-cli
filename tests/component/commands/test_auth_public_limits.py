@@ -1,10 +1,12 @@
 from datetime import UTC, datetime
 
 from conftest import (
+    FakeAuthenticated,
     FakeClient,
     FakePager,
     FakeService,
     FakeTokenHandle,
+    auth_state,
     cli_args,
     fake_runtime,
     payload,
@@ -22,10 +24,12 @@ from ksef2_cli.app import app
 
 
 def test_auth_login_uses_configured_auth_method(runner) -> None:
+    state = auth_state(
+        access_valid_until=datetime(2026, 2, 1, tzinfo=UTC),
+        refresh_valid_until=datetime(2026, 2, 2, tzinfo=UTC),
+    )
     fake_client = FakeClient(
-        authentication=FakeService(
-            with_token=type("Auth", (), {"auth_tokens": {"access_token": "access"}})()
-        )
+        authentication=FakeService(with_token=FakeAuthenticated(state))
     )
 
     result = runner.invoke(
@@ -34,7 +38,11 @@ def test_auth_login_uses_configured_auth_method(runner) -> None:
         obj=fake_runtime(client=fake_client),
     )
 
-    assert payload(result) == {"access_token": "access"}
+    # The SDK keeps bearer values out of serialized token models, so JSON reports expiries.
+    assert payload(result) == {
+        "access_token": {"valid_until": "2026-02-01T00:00:00Z"},
+        "refresh_token": {"valid_until": "2026-02-02T00:00:00Z"},
+    }
     assert fake_client.entered == 1
 
 
@@ -59,9 +67,7 @@ def test_auth_login_uses_active_profile(runner, tmp_path) -> None:
         ),
         encoding="utf-8",
     )
-    auth = FakeService(
-        with_profile=type("Auth", (), {"auth_tokens": {"access_token": "access"}})()
-    )
+    auth = FakeService(with_profile=FakeAuthenticated(auth_state()))
     fake_client = FakeClient(authentication=auth)
 
     result = runner.invoke(
@@ -71,7 +77,7 @@ def test_auth_login_uses_active_profile(runner, tmp_path) -> None:
         obj=fake_runtime(client=fake_client),
     )
 
-    assert payload(result) == {"access_token": "access"}
+    assert set(payload(result)) == {"access_token", "refresh_token"}
     method, args, kwargs = auth.calls[-1]
     assert method == "with_profile"
     assert args == ("demo",)
