@@ -210,7 +210,7 @@ def error_from_exception(error: Exception) -> CliError:
         return AuthenticationConfigError(
             _sdk_message(error),
             title="Authentication expired",
-            hints=("Authenticate again with: ksef2 auth login",),
+            hints=("Authenticate again with: ksef2 auth login --save-state PATH",),
         )
     if isinstance(error, KSeFAuthError):
         return _from_api_error(

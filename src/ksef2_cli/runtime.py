@@ -262,7 +262,12 @@ def run_authenticated(
 
     authenticated = get_authenticated_client(settings)
     with authenticated.client:
-        return operation(authenticated.auth)
+        result = operation(authenticated.auth)
+
+    # Only reached after success: a command that failed mid-way may have refreshed
+    # the access token, and the file it resumed from has to end up current.
+    _ = write_back_resume_state(settings, authenticated.auth)
+    return result
 
 
 def read_model(settings: Settings, path: Path, model_type: type[ModelT]) -> ModelT:
@@ -325,6 +330,25 @@ def save_resume_state(path: Path, state: AuthenticationResumeState) -> Path:
     return write_text_file(
         path, state.to_json(indent=2), file_mode=SECRET_MODEL_FILE_MODE
     )
+
+
+def write_back_resume_state(
+    settings: Settings, auth: AuthenticatedClient
+) -> Path | None:
+    """Write the state a resumed command ended up with back to the file it came from.
+
+    The SDK refreshes the access token on its own during the command, and the new token
+    lives only inside this client, so ``--auth-state`` would keep reusing an out of date
+    file until its refresh token died. Commands that authenticated any other way have no
+    state file and are left alone.
+    """
+
+    if settings.auth_state is None or not settings.auth_state.exists():
+        # A command that deleted its own state file, `auth logout`, must not have it
+        # written back from the client it just ended.
+        return None
+
+    return save_resume_state(settings.auth_state, auth.resume_state())
 
 
 def resume_authentication(

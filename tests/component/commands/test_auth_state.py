@@ -4,7 +4,6 @@ import json
 import stat
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 from conftest import (
@@ -16,8 +15,14 @@ from conftest import (
     expired_auth_state,
     fake_runtime,
     payload,
+    plain,
 )
-from ksef2.models import AuthenticationResumeState, RefreshedToken, TokenCredentials
+from ksef2 import KSeFAuthenticationExpiredError, KSeFRateLimitError
+from ksef2.models import (
+    AuthenticationResumeState,
+    RefreshedToken,
+    TokenCredentials,
+)
 
 from ksef2_cli.app import app
 
@@ -214,10 +219,8 @@ def test_auth_resume_reports_a_redacted_state_file(runner, tmp_path) -> None:
 def test_global_auth_state_resumes_other_commands(runner, tmp_path) -> None:
     state_file = _state_file(tmp_path / "auth.json", auth_state())
     certificates = FakeService(get_limits={"limits": "ok"})
-    auth = FakeService(
-        resume=SimpleNamespace(certificates=certificates),
-        with_token=SimpleNamespace(certificates=certificates),
-    )
+    branch = FakeAuthenticated(auth_state(), certificates=certificates)
+    auth = FakeService(resume=branch)
 
     result = runner.invoke(
         app,
@@ -227,6 +230,64 @@ def test_global_auth_state_resumes_other_commands(runner, tmp_path) -> None:
 
     assert payload(result) == {"limits": "ok"}
     assert _methods(auth) == ["resume"]
+
+
+def test_global_auth_state_is_written_back_after_a_refresh(runner, tmp_path) -> None:
+    # The SDK refreshes the access token during the command, and the new token only
+    # lives in that client, so the file has to take it back or it goes stale.
+    state_file = _state_file(tmp_path / "auth.json", auth_state())
+    branch = FakeAuthenticated(
+        auth_state(access_token="refreshed-access"),
+        certificates=FakeService(get_limits={"limits": "ok"}),
+    )
+
+    result = runner.invoke(
+        app,
+        cli_args("--auth-state", str(state_file), "certificates", "limits"),
+        obj=fake_runtime(client=FakeClient(authentication=FakeService(resume=branch))),
+    )
+
+    assert payload(result) == {"limits": "ok"}
+    assert _saved(state_file)["access_token"] == "refreshed-access"
+    assert stat.S_IMODE(state_file.stat().st_mode) == 0o600
+
+
+def test_failed_command_leaves_the_saved_state_alone(runner, tmp_path) -> None:
+    state_file = _state_file(tmp_path / "auth.json", auth_state())
+    branch = FakeAuthenticated(
+        auth_state(access_token="refreshed-access"),
+        certificates=FakeService(
+            get_limits=KSeFRateLimitError(30, "KSeF is throttling this subject")
+        ),
+    )
+
+    result = runner.invoke(
+        app,
+        cli_args("--auth-state", str(state_file), "certificates", "limits"),
+        obj=fake_runtime(client=FakeClient(authentication=FakeService(resume=branch))),
+    )
+
+    assert result.exit_code == 1
+    assert _saved(state_file)["access_token"] == "access-token"
+
+
+def test_expired_auth_state_is_reported_with_a_login_hint(runner, tmp_path) -> None:
+    state_file = _state_file(tmp_path / "auth.json", expired_auth_state())
+    branch = FakeAuthenticated(
+        expired_auth_state(),
+        certificates=FakeService(get_limits=KSeFAuthenticationExpiredError()),
+    )
+
+    result = runner.invoke(
+        app,
+        cli_args("--auth-state", str(state_file), "certificates", "limits"),
+        obj=fake_runtime(client=FakeClient(authentication=FakeService(resume=branch))),
+    )
+
+    assert result.exit_code == 1
+    assert "refresh token is expired" in plain(result.output)
+    assert "ksef2 auth login --save-state PATH" in plain(result.output)
+    assert "access-token" not in result.output
 
 
 def test_global_auth_state_conflicts_with_other_auth_methods(runner, tmp_path) -> None:
@@ -251,3 +312,93 @@ def test_global_auth_state_conflicts_with_other_auth_methods(runner, tmp_path) -
     assert result.exit_code == 1
     assert "only one auth method" in result.output
     assert _methods(auth) == []
+
+
+def _logout_setup() -> tuple[FakeClient, FakeService, FakeService]:
+    """Client, authentication service, and sessions service for one logout run.
+
+    The client has no auth method other than the saved state, so ``resume`` is the only
+    way ``logout`` can reach KSeF.
+    """
+
+    sessions = FakeService(terminate_current=None)
+    auth = FakeService(resume=FakeAuthenticated(sessions=sessions))
+    return FakeClient(authentication=auth), auth, sessions
+
+
+def test_auth_logout_ends_the_session_and_deletes_the_state(runner, tmp_path) -> None:
+    state_file = _state_file(tmp_path / "auth.json", auth_state())
+    client, auth, sessions = _logout_setup()
+
+    result = runner.invoke(
+        app,
+        cli_args("auth", "logout", "--state-file", str(state_file)),
+        obj=fake_runtime(client=client),
+    )
+
+    assert payload(result) == {
+        "path": str(state_file),
+        "terminated_current": True,
+    }
+    assert not state_file.exists()
+    assert [call[0] for call in sessions.calls] == ["terminate_current"]
+    assert _methods(auth) == ["resume"]
+    # The state is resumed on a client of its own, which `logout` has to close.
+    assert client.exited == 1
+
+
+def test_auth_logout_reads_the_state_from_the_global_option(runner, tmp_path) -> None:
+    state_file = _state_file(tmp_path / "auth.json", auth_state())
+    client, _auth, sessions = _logout_setup()
+
+    result = runner.invoke(
+        app,
+        cli_args("--auth-state", str(state_file), "auth", "logout"),
+        obj=fake_runtime(client=client),
+    )
+
+    assert payload(result)["path"] == str(state_file)
+    assert not state_file.exists()
+    assert sessions.called("terminate_current") == {}
+
+
+def test_auth_logout_never_prints_the_saved_tokens(runner, tmp_path) -> None:
+    state_file = _state_file(tmp_path / "auth.json", auth_state())
+    client, _auth, _sessions = _logout_setup()
+
+    result = runner.invoke(
+        app,
+        ["--no-config", "auth", "logout", "--state-file", str(state_file)],
+        obj=fake_runtime(client=client),
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "access-token" not in result.output
+    assert "refresh-token" not in result.output
+
+
+def test_auth_logout_keeps_the_state_when_ksef_rejects_termination(
+    runner, tmp_path
+) -> None:
+    state_file = _state_file(tmp_path / "auth.json", auth_state())
+    sessions = FakeService(terminate_current=KSeFAuthenticationExpiredError())
+    auth = FakeService(resume=FakeAuthenticated(sessions=sessions))
+
+    result = runner.invoke(
+        app,
+        cli_args("auth", "logout", "--state-file", str(state_file)),
+        obj=fake_runtime(client=FakeClient(authentication=auth)),
+    )
+
+    # KSeF never confirmed the session ended, so the credential that still works stays.
+    assert result.exit_code == 1
+    assert state_file.exists()
+
+
+def test_auth_logout_without_a_state_file_is_usage_error(runner) -> None:
+    result = runner.invoke(
+        app, cli_args("auth", "logout"), obj=fake_runtime(client=FakeClient())
+    )
+
+    assert result.exit_code == 1
+    assert "--state-file" in result.output

@@ -11,7 +11,10 @@ from ksef2_cli.context import (
     authenticate_client,
     get_settings,
     run_client_command,
+    run_command,
+    use_client,
 )
+from ksef2_cli.results import AuthStateRemoved
 from ksef2_cli.runtime import (
     fail,
     read_resume_state,
@@ -27,6 +30,7 @@ app = typer.Typer(
 _SAVE_STATE_HELP = (
     "Write resumable auth state to this file. It holds bearer tokens in plain text."
 )
+_STATE_FILE_HELP = "Saved auth state to reuse. Defaults to the global --auth-state."
 
 
 @app.command("login")
@@ -55,9 +59,10 @@ def auth_resume(
         Path | None,
         typer.Option(
             "--state-file",
+            "--auth-state",
             exists=True,
             dir_okay=False,
-            help="Saved auth state to reuse. Defaults to the global --auth-state.",
+            help=_STATE_FILE_HELP,
         ),
     ] = None,
     save_state: Annotated[
@@ -85,6 +90,43 @@ def auth_resume(
         return state.to_tokens()
 
     run_client_command(ctx, command)
+
+
+@app.command("logout")
+def auth_logout(
+    ctx: typer.Context,
+    state_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--state-file",
+            "--auth-state",
+            exists=True,
+            dir_okay=False,
+            help=_STATE_FILE_HELP,
+        ),
+    ] = None,
+) -> None:
+    """End the saved session and remove its auth state file."""
+
+    def operation() -> AuthStateRemoved:
+        source = state_file or get_settings(ctx).auth_state
+        if source is None:
+            fail("Provide --state-file, --auth-state, or KSEF2_AUTH_STATE.")
+
+        # The state file names whose session to end, so it is resumed on its own instead
+        # of going through the auth method in settings: that method may be a profile or a
+        # token, and it would leave `logout` terminating some other subject's session.
+        # Nothing is written back here, because these tokens are the ones being retired.
+        with use_client(ctx) as client:
+            auth = resume_authentication(client, read_resume_state(source))
+            auth.sessions.terminate_current()
+
+        # Only after KSeF confirmed the session ended: a failed call leaves a credential
+        # that still works, and deleting it would strand that session.
+        source.unlink(missing_ok=True)
+        return AuthStateRemoved(path=source)
+
+    run_command(ctx, operation)
 
 
 @app.command("refresh")

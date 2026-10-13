@@ -104,6 +104,10 @@ ksef2 --profile test-company --json auth login --save-state ksef2-auth.json
 ksef2 --auth-state ksef2-auth.json --json sessions auth-list
 ```
 
+Each command that reuses the state writes any refreshed token back to that file.
+End the session and remove the file with `ksef2 --auth-state ksef2-auth.json
+--json auth logout`.
+
 ## Send and download invoices
 
 Send one XML invoice, wait for processing, save a UPO, and keep a receipt for

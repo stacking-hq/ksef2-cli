@@ -20,6 +20,7 @@ from ksef2_cli.commands.invoices.models import (
 )
 from ksef2_cli.results import (
     ActionResult,
+    AuthStateRemoved,
     BatchPrepared,
     BatchSubmitted,
     CertificateRevoked,
@@ -81,6 +82,15 @@ def register() -> None:
     @register_text(CurrentSessionTerminated)
     def _(value: CurrentSessionTerminated, renderer: PlainTextRenderer) -> str:
         return format_fields((("terminated_current", value.terminated_current),))
+
+    @register_text(AuthStateRemoved)
+    def _(value: AuthStateRemoved, renderer: PlainTextRenderer) -> str:
+        return format_fields(
+            (
+                ("path", value.path),
+                ("terminated_current", value.terminated_current),
+            )
+        )
 
     @register_text(CertificateRevoked)
     def _(value: CertificateRevoked, renderer: PlainTextRenderer) -> str:
