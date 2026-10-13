@@ -66,17 +66,19 @@ uv run ksef2 --json fa3 inspect --in invoice.xml | jq '.body.rows[0]'
 uv run ksef2 fa3 render --in invoice.xml --out invoice.html
 ```
 
-PDF needs the SDK's optional dependencies:
+PDF needs the optional extra:
 
 ```bash
-uv add 'ksef2[pdf]'          # project checkout
-pip install 'ksef2[pdf]'     # installed CLI
+uv sync --extra pdf              # project checkout
+uv tool install "ksef2-cli[pdf]"  # installed CLI
 
 uv run ksef2 fa3 render --in invoice.xml --out invoice.html --pdf invoice.pdf
 ```
 
 Without those dependencies the command checks for them first and exits non-zero
-naming the extra, so neither the HTML nor a half-written PDF appears.
+naming the extra, so neither the HTML nor a half-written PDF appears. See
+[PDF rendering](../getting-started/installation.md#pdf-rendering) for the system
+libraries WeasyPrint needs.
 
 `--code-lookups` lets the bundled stylesheet read local files and URLs so coded
 values, such as VAT codes, print as names instead of codes. That means the
