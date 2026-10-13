@@ -6,6 +6,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
+from ksef2 import KSeFInvoiceRejectedError, KSeFSessionError
+
 from conftest import (
     FakeService,
     batch_state,
@@ -34,7 +38,8 @@ from ksef2_cli.commands.invoices.models import ExportHandleSaved, InvoiceWorkflo
 
 
 class FakeSession(FakeService):
-    pass
+    def __exit__(self, *args: object) -> None:
+        _ = self.close()
 
 
 class FakeSubmission(FakeService):
@@ -483,31 +488,44 @@ def test_invoices_send_online_continues_after_invoice_failure(runner, tmp_path) 
     assert data["items"][1]["error"] == "rejected"
 
 
+@pytest.mark.parametrize("raises", [False, True])
+@pytest.mark.parametrize("receipt_option", ["--receipt", "--receipt-dir"])
 def test_invoices_send_online_wait_marks_failed_status_from_session(
-    runner, tmp_path
+    runner, tmp_path, raises, receipt_option
 ) -> None:
     invoice = tmp_path / "invoice.xml"
-    invoice.write_text("<invoice/>", encoding="utf-8")
+    _ = invoice.write_text("<invoice/>", encoding="utf-8")
+    rejected = SessionInvoiceStatusResponse(
+        ordinal_number=1,
+        reference_number="invoice-ref",
+        invoice_hash="hash",
+        invoicing_date=datetime(2026, 1, 1, tzinfo=UTC),
+        status=InvoiceStatusInfo(code=400, description="rejected"),
+    )
+    submission = FakeSubmission(
+        "invoice-ref",
+        wait=KSeFInvoiceRejectedError("invoice-ref", rejected) if raises else rejected,
+    )
     session = FakeSession(
         resume_state=online_state(),
-        send_invoice=lambda **kwargs: FakeSubmission(
-            "invoice-ref",
-            wait=SessionInvoiceStatusResponse(
-                ordinal_number=1,
-                ksef_number=None,
-                reference_number="invoice-ref",
-                invoice_hash="hash",
-                invoicing_date=datetime(2026, 1, 1, tzinfo=UTC),
-                status=InvoiceStatusInfo(code=400, description="rejected"),
-            ),
-        ),
+        send_invoice=lambda **kwargs: submission,
         close=None,
     )
+    if receipt_option == "--receipt":
+        receipt_target = tmp_path / "receipt.json"
+        receipt_file = receipt_target
+    else:
+        receipt_target = tmp_path
+        receipt_file = tmp_path / "invoice-receipt.json"
     runtime = fake_runtime(auth=FakeService(online_session=session))
 
     result = runner.invoke(
         app,
-        cli_args("invoices", "send", str(invoice), "--wait"),
+        cli_args(
+            "invoices", "send", str(invoice), "--wait",
+            receipt_option, str(receipt_target),
+            "--upo-dir", str(tmp_path / "upos"),
+        ),
         obj=runtime,
     )
 
@@ -517,8 +535,20 @@ def test_invoices_send_online_wait_marks_failed_status_from_session(
     assert data["items"][0]["status"] == "failed"
     assert data["items"][0]["error"] == "rejected"
 
+    assert data["receipt_files"] == [str(receipt_file)]
+    receipt = InvoiceWorkflowReceipt.model_validate_json(receipt_file.read_text())
+    assert receipt.online is not None
+    assert receipt.online.invoice_reference == "invoice-ref"
+    assert receipt.online.status == rejected
+    assert receipt_file.stat().st_mode & 0o777 == 0o600
+    assert [name for name, _, _ in submission.calls] == ["wait"]
 
-def test_invoices_status_and_upo_from_online_receipt(runner, tmp_path) -> None:
+
+@pytest.mark.parametrize("wait_for_upo", [False, True])
+@pytest.mark.parametrize("wait_for_status", [False, True])
+def test_invoices_status_and_upo_from_online_receipt(
+    runner, tmp_path, wait_for_upo, wait_for_status
+) -> None:
     invoice = tmp_path / "invoice.xml"
     invoice.write_text("<invoice/>", encoding="utf-8")
     receipt_file = tmp_path / "receipt.json"
@@ -543,43 +573,97 @@ def test_invoices_status_and_upo_from_online_receipt(runner, tmp_path) -> None:
         == 0
     )
 
-    # The receipt carries only the invoice reference, so both commands rebuild the
-    # submission handle from the resumed session and work through it.
     resume_submission = FakeSubmission(
         "invoice-ref",
         wait=_invoice_processing_status(),
         get_status=_invoice_processing_status(),
         download_upo=b"<upo/>",
     )
-    resume_session = FakeSession(submission=lambda **kwargs: resume_submission)
-    resume_runtime = fake_runtime(auth=FakeService(online_session=resume_session))
-    status = payload(
-        runner.invoke(
-            app,
-            cli_args("invoices", "status", "--receipt", str(receipt_file), "--wait"),
-            obj=resume_runtime,
+    resume_session = FakeSession(
+        submission=lambda **kwargs: resume_submission,
+        close=KSeFSessionError("resumed session must not be closed"),
+    )
+    invoice_sessions = FakeService(download_upo=b"<upo/>")
+    resume_runtime = fake_runtime(
+        auth=SimpleNamespace(
+            online_session=lambda **kwargs: resume_session,
+            invoice_sessions=invoice_sessions,
         )
     )
+    status_args = cli_args("invoices", "status", "--receipt", str(receipt_file))
+    if wait_for_status:
+        status_args.append("--wait")
+    status = payload(runner.invoke(app, status_args, obj=resume_runtime))
     assert status["status"] == "accepted"
     assert status["ksef_number"] == "ksef-1"
 
     out = tmp_path / "upo.xml"
-    upo = payload(
-        runner.invoke(
-            app,
-            cli_args(
-                "invoices",
-                "upo",
-                "--receipt",
-                str(receipt_file),
-                "--out",
-                str(out),
-            ),
-            obj=resume_runtime,
-        )
+    upo_args = cli_args(
+        "invoices", "upo", "--receipt", str(receipt_file), "--out", str(out)
     )
+    if wait_for_upo:
+        upo_args.append("--wait")
+    upo = payload(runner.invoke(app, upo_args, obj=resume_runtime))
     assert upo["upo_files"] == [{"path": str(out), "bytes": len(b"<upo/>")}]
     assert out.read_bytes() == b"<upo/>"
+
+    assert invoice_sessions.called("download_upo") == {
+        "session_reference_number": "online-ref",
+        "invoice_reference_number": "invoice-ref",
+    }
+    assert all(name != "close" for name, _, _ in resume_session.calls)
+    assert all(name != "download_upo" for name, _, _ in resume_submission.calls)
+    assert [name for name, _, _ in resume_session.calls] == (
+        ["submission", "submission"] if wait_for_upo else ["submission"]
+    )
+
+
+@pytest.mark.parametrize("raises", [False, True])
+@pytest.mark.parametrize("with_upo", [False, True])
+def test_invoices_send_batch_rejection_writes_receipt(
+    runner, tmp_path, raises, with_upo
+) -> None:
+    invoice = tmp_path / "invoice.xml"
+    _ = invoice.write_text("<invoice/>")
+    rejected = SessionStatusResponse(
+        status=StatusInfo(code=400, description="batch rejected"),
+        date_created=datetime(2026, 1, 1, tzinfo=UTC),
+        date_updated=datetime(2026, 1, 1, tzinfo=UTC),
+        invoice_count=1,
+        successful_invoice_count=0,
+        failed_invoice_count=1,
+    )
+    session = FakeService(
+        resume_state=batch_state(),
+        wait=KSeFSessionError("batch rejected") if raises else rejected,
+        get_status=rejected,
+    )
+    runtime = fake_runtime(auth=SimpleNamespace(batch=FakeService(submit=session)))
+    receipt_file = tmp_path / "receipt.json"
+    args = cli_args(
+        "invoices", "send", str(invoice), "--mode", "batch", "--wait",
+        "--receipt", str(receipt_file),
+    )
+    if with_upo:
+        args.extend(["--upo-dir", str(tmp_path / "upos")])
+    result = runner.invoke(app, args, obj=runtime)
+    assert result.exit_code == 1
+    data = json.loads(result.output)
+    assert data["batch"]["status"] == "failed"
+    assert data["failed"] == 1
+    assert data["succeeded"] == 0
+    assert data["receipt_files"] == [str(receipt_file)]
+    assert data["upo_files"] == []
+    receipt = InvoiceWorkflowReceipt.model_validate_json(receipt_file.read_text())
+    assert receipt.batch is not None
+    assert receipt.batch.session_reference == "batch-ref"
+    assert receipt.batch.status is not None
+    assert receipt.batch.status.code == 400
+    assert receipt.batch.status.description == "batch rejected"
+    assert receipt_file.stat().st_mode & 0o777 == 0o600
+    assert [name for name, _, _ in session.calls] == (
+        ["resume_state", "wait", "get_status"] if raises else ["resume_state", "wait"]
+    )
 
 
 def test_invoices_send_batch_wait_downloads_upo_and_writes_receipt(

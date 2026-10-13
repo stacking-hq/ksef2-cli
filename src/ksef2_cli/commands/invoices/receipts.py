@@ -47,15 +47,15 @@ def invoices_status(
                 online = receipt.online
                 if online is None:
                     raise ValueError("Receipt does not contain online invoice data.")
-                with auth.online_session(state=online.session_state) as session:
-                    submission = session.submission(
-                        reference_number=online.invoice_reference,
-                    )
-                    status = (
-                        submission.wait(timeout=timeout, poll_interval=poll_interval)
-                        if wait
-                        else submission.get_status()
-                    )
+                session = auth.online_session(state=online.session_state)
+                submission = session.submission(
+                    reference_number=online.invoice_reference,
+                )
+                status = (
+                    submission.wait(timeout=timeout, poll_interval=poll_interval)
+                    if wait
+                    else submission.get_status()
+                )
                 updated = receipt.model_copy(
                     update={"online": online.model_copy(update={"status": status})}
                 )
@@ -156,11 +156,12 @@ def invoices_upo(
                 online = receipt.online
                 if online is None:
                     raise ValueError("Receipt does not contain online invoice data.")
-                with auth.online_session(state=online.session_state) as session:
+                status = online.status
+                if wait or status is None:
+                    session = auth.online_session(state=online.session_state)
                     submission = session.submission(
                         reference_number=online.invoice_reference,
                     )
-                    status = online.status
                     if wait:
                         status = submission.wait(
                             timeout=timeout, poll_interval=poll_interval
@@ -168,20 +169,23 @@ def invoices_upo(
                     elif status is None:
                         status = submission.get_status()
 
-                    if status.status.code >= 400:
-                        raise ValueError(
-                            "Invoice processing failed: "
-                            f"{online.invoice_reference} ({status.status.code}: {status.status.description})"
-                        )
-                    if not status.ksef_number:
-                        raise ValueError("UPO is not ready. Re-run with --wait.")
+                if status.status.code >= 400:
+                    raise ValueError(
+                        "Invoice processing failed: "
+                        f"{online.invoice_reference} ({status.status.code}: {status.status.description})"
+                    )
+                if not status.ksef_number:
+                    raise ValueError("UPO is not ready. Re-run with --wait.")
 
-                    if output_file is not None:
-                        target = output_file
-                    else:
-                        assert upo_dir is not None
-                        target = _invoice_upo_path(upo_dir, online.file)
-                    content = submission.download_upo()
+                if output_file is not None:
+                    target = output_file
+                else:
+                    assert upo_dir is not None
+                    target = _invoice_upo_path(upo_dir, online.file)
+                content = auth.invoice_sessions.download_upo(
+                    session_reference_number=online.session_state.reference_number,
+                    invoice_reference_number=online.invoice_reference,
+                )
                 saved = SavedFile(
                     path=write_bytes_file(target, content), size=len(content)
                 )
