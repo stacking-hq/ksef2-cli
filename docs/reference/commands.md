@@ -257,11 +257,17 @@ stands. Keep the directory as protected as a credential file.
 | --- | --- |
 | `certificates limits` | Show certificate limits. |
 | `certificates enrollment-data` | Fetch certificate enrollment data. |
-| `certificates enroll` | Submit a certificate enrollment request. |
+| `certificates enroll` | Submit a certificate enrollment request, or wait for final status with `--wait`. |
 | `certificates enrollment-status` | Check enrollment status. |
 | `certificates list` | List certificates. |
 | `certificates retrieve` | Retrieve a certificate. |
 | `certificates revoke` | Revoke a certificate. |
+
+`certificates enroll` returns the enrollment reference and acceptance timestamp.
+With `--wait`, it returns the final enrollment status instead. Enrollment polling
+uses the global `--auth-poll-interval`, the profile's `poll_interval`, or 1 second by
+default. The wait timeout is the profile's `max_poll_attempts` multiplied by that
+interval, or 60 seconds when no attempt limit is configured.
 
 ### `permissions`
 
