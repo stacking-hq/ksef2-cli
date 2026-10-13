@@ -143,6 +143,13 @@ class Settings:
             return self.profile.max_poll_attempts * self.effective_poll_interval
         return DEFAULT_AUTH_TIMEOUT
 
+    @property
+    def certificate_wait_timeout(self) -> float:
+        """Bound enrollment polling using the profile or the SDK's 60-second default."""
+        if self.profile is not None and self.profile.max_poll_attempts is not None:
+            return self.profile.max_poll_attempts * self.effective_poll_interval
+        return 60.0
+
 
 def resolve_config_path(path: Path | None) -> Path:
     return path.expanduser() if path else default_profile_config_path()

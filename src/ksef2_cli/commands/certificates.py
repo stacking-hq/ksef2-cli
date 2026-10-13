@@ -18,7 +18,7 @@ from ksef2.models import (
     RevocationReasonEnum,
 )
 
-from ksef2_cli.context import run_authenticated, run_command
+from ksef2_cli.context import get_settings, run_authenticated, run_command
 from ksef2_cli.results import CertificateRevoked
 
 app = typer.Typer(help="Manage MCU certificates.")
@@ -57,20 +57,35 @@ def certificates_enroll(
     valid_from: Annotated[
         str | None, typer.Option("--valid-from", help="ISO datetime.")
     ] = None,
+    wait: Annotated[
+        bool, typer.Option("--wait", help="Wait for certificate enrollment to finish.")
+    ] = False,
 ) -> None:
     """Request certificate enrollment with a base64-encoded CSR file."""
 
-    def operation() -> CertificateEnrollmentResponse:
+    def operation() -> CertificateEnrollmentResponse | CertificateEnrollmentStatusResponse:
         csr = csr_file.read_text(encoding="utf-8").strip()
-        return run_authenticated(
-            ctx,
-            lambda auth: auth.certificates.enroll(
+
+        def enroll(
+            auth: AuthenticatedClient,
+        ) -> CertificateEnrollmentResponse | CertificateEnrollmentStatusResponse:
+            handle = auth.certificates.enroll(
                 certificate_name=name,
                 certificate_type=certificate_type.value,
                 csr=csr,
                 valid_from=valid_from,
-            ),
-        )
+            )
+            settings = get_settings(ctx)
+            return (
+                handle.wait(
+                    timeout=settings.certificate_wait_timeout,
+                    poll_interval=settings.effective_poll_interval,
+                )
+                if wait
+                else handle.response
+            )
+
+        return run_authenticated(ctx, enroll)
 
     run_command(ctx, operation)
 
