@@ -36,6 +36,7 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 | --- | --- |
 | `auth` | Authenticate and refresh access tokens. |
 | `invoices` | Send, confirm, query, download, export, and fetch invoices. |
+| `fa3` | Build, inspect, and render FA(3) invoices locally, without KSeF access. |
 | `online` | Open, resume, inspect, and close online invoice sessions. |
 | `batch` | Submit and inspect batch invoice sessions. |
 | `tokens` | Generate, list, inspect, and revoke KSeF tokens. |
@@ -104,6 +105,26 @@ Common high-level invoice options:
 | `invoices status --receipt FILE` | Check or wait for the workflow represented by a receipt. |
 | `invoices upo --receipt FILE --out FILE` | Download one online invoice UPO. |
 | `invoices upo --receipt FILE --upo-dir DIR` | Download online or batch UPO files into a directory. |
+
+### `fa3`
+
+These commands use the SDK's public builder and renderer APIs and never call the KSeF API, so they need no credentials.
+
+| Command | Purpose |
+| --- | --- |
+| `fa3 draft-example` | Print a minimal invoice draft in JSON. |
+| `fa3 build` | Build FA(3) XML from a JSON invoice draft. |
+| `fa3 inspect` | Read invoice XML and print the invoice it describes. |
+| `fa3 render` | Render invoice XML to HTML, and optionally to PDF. |
+
+| Option | Purpose |
+| --- | --- |
+| `fa3 build --in FILE` / `--in -` | Read the draft from a file, or from stdin with `-`. `fa3 render` and `fa3 inspect` take the invoice XML in `--in`. |
+| `--out FILE` | Where to write the output. Without it, XML, HTML, and drafts go to stdout. |
+| `--pretty` / `--no-pretty` | Indent the generated XML. Indented by default. |
+| `--validate` / `--no-validate` | Check the XML against the FA(3) schema. On by default. |
+| `fa3 render --pdf FILE` | Also write PDF. Needs the optional `ksef2[pdf]` dependencies. |
+| `--code-lookups` | Let the stylesheet read local files and URLs to print coded values as names. |
 
 ### `online`
 

@@ -14,6 +14,7 @@ from ksef2_cli.commands import (
     certificates,
     collective,
     encryption,
+    fa3,
     limits,
     online,
     peppol,
@@ -44,6 +45,7 @@ app = typer.Typer(
 
 app.add_typer(auth.app, name="auth")
 app.add_typer(invoices_app, name="invoices")
+app.add_typer(fa3.app, name="fa3")
 app.add_typer(online.app, name="online")
 app.add_typer(batch.app, name="batch")
 app.add_typer(tokens.app, name="tokens")

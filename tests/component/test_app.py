@@ -9,6 +9,7 @@ def test_top_level_help_registers_command_groups(runner) -> None:
 
     assert result.exit_code == 0
     assert "invoices" in result.output
+    assert "fa3" in result.output
     assert "online" in result.output
     assert "profile" in result.output
     assert "permissions" in result.output
@@ -50,7 +51,7 @@ def test_all_registered_commands_render_help(runner) -> None:
         if result.exit_code != 0:
             failures.append((args, result.output))
 
-    assert len(commands) == 80
+    assert len(commands) == 84
     assert not failures
 
 
