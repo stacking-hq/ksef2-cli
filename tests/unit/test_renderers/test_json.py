@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 from ksef2.models import ExportHandle, GenerateTokenResponse
 
 from ksef2_cli.commands.invoices.models import ExportHandleSaved, ExportPaths
-from ksef2_cli.config import (
-    CliConfig,
+from ksef2.profiles import (
+    CliProfileConfig,
     ProfileAuthConfig,
     ProfileAuthType,
     ProfileConfig,
@@ -120,14 +120,14 @@ def test_cli_action_models_json_use_booleans() -> None:
 
 
 def test_config_result_models_json(tmp_path) -> None:
-    config = CliConfig(
+    config = CliProfileConfig(
         active_profile="demo",
         profiles={
             "demo": ProfileConfig(
                 environment="test",
                 nip="5261040828",
                 auth=ProfileAuthConfig(
-                    type=ProfileAuthType.token,
+                    type=ProfileAuthType.TOKEN,
                     token_env="KSEF2_DEMO_TOKEN",
                     context_type="nip",
                 ),
@@ -155,15 +155,12 @@ def test_config_result_models_json(tmp_path) -> None:
     assert shown["config"]["active_profile"] == "demo"
     assert shown["config"]["profiles"]["demo"]["nip"] == "5261040828"
     assert (
-        shown["config"]["profiles"]["demo"]["auth"]["token_env"]
-        == "KSEF2_DEMO_TOKEN"
+        shown["config"]["profiles"]["demo"]["auth"]["token_env"] == "KSEF2_DEMO_TOKEN"
     )
 
     initialized = json.loads(
         json_renderer.render(
-            ConfigInitialized(
-                path=tmp_path / "config.toml", mode="0600", config=config
-            )
+            ConfigInitialized(path=tmp_path / "config.toml", mode="0600", config=config)
         )
     )
     assert initialized["path"] == str(tmp_path / "config.toml")
