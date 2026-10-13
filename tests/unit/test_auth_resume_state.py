@@ -1,14 +1,16 @@
 """Unit tests for rehydrating saved authentication state."""
 
+import json
+import stat
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from conftest import auth_state, expired_auth_state
+from conftest import FakeAuthenticated, auth_state, expired_auth_state, settings
 from ksef2.models import RefreshedToken, TokenCredentials
 
 from ksef2_cli.exceptions import AuthenticationConfigError
-from ksef2_cli.runtime import renew_resume_state
+from ksef2_cli.runtime import renew_resume_state, write_back_resume_state
 
 
 class _Auth:
@@ -63,6 +65,41 @@ def test_renew_stops_when_nothing_can_be_refreshed_anymore() -> None:
 
     with pytest.raises(AuthenticationConfigError, match="refresh token expired"):
         renew_resume_state(_client(_refreshed()), state)
+
+
+def test_write_back_ignores_commands_that_did_not_resume_state(tmp_path) -> None:
+    path = tmp_path / "auth.json"
+
+    assert write_back_resume_state(settings(auth_state=None), _branch()) is None
+    assert not path.exists()
+
+
+def test_write_back_returns_the_current_state_at_secret_mode(tmp_path) -> None:
+    path = tmp_path / "auth.json"
+    path.write_text("stale", encoding="utf-8")
+
+    saved = write_back_resume_state(
+        settings(auth_state=path), _branch(access_token="refreshed-access")
+    )
+
+    assert saved == path
+    assert json.loads(path.read_text(encoding="utf-8"))["access_token"] == (
+        "refreshed-access"
+    )
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+def test_write_back_does_not_resurrect_a_state_file_the_command_removed(
+    tmp_path,
+) -> None:
+    path = tmp_path / "nested" / "auth.json"
+
+    assert write_back_resume_state(settings(auth_state=path), _branch()) is None
+    assert not path.exists()
+
+
+def _branch(**state_overrides: object) -> FakeAuthenticated:
+    return FakeAuthenticated(auth_state(**state_overrides))  # type: ignore[arg-type]
 
 
 def _refreshed(valid_until: datetime | None = None) -> RefreshedToken:

@@ -67,6 +67,16 @@ class CurrentSessionTerminated(CliResult):
     terminated_current: bool = True
 
 
+class AuthStateRemoved(CliResult):
+    """Result for ending the session behind a saved auth state file and deleting it.
+
+    Only the path is reported: the file itself held bearer tokens.
+    """
+
+    path: Path
+    terminated_current: bool = True
+
+
 class CertificateRevoked(CliResult):
     """Result for certificate revocation."""
 

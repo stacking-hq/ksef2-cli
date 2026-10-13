@@ -179,10 +179,20 @@ uv run ksef2 --auth-state "$XDG_RUNTIME_DIR/ksef2-auth.json" --json \
 ```
 
 `--auth-state` is one authentication method among the others, so combining it
-with `--token`, `--test-cert`, `--cert`/`--key`, or `--p12` fails. When the saved
-refresh token has also expired, the command stops and asks for a new
-`auth login`; pass `--save-state` to `auth resume` to write refreshed tokens to a
-state file.
+with `--token`, `--test-cert`, `--cert`/`--key`, or `--p12` fails. A command that
+reuses the state refreshes its own access token and writes the state it ends with
+back to the same file, so the file stays current and keeps mode `0600`; a command
+that fails leaves the file as it was. When the saved refresh token has also
+expired, the command stops and asks for a new `auth login --save-state`.
+
+`auth logout` ends the KSeF session behind a state file and deletes the file:
+
+```bash
+uv run ksef2 --auth-state "$XDG_RUNTIME_DIR/ksef2-auth.json" --json auth logout
+```
+
+KSeF has to accept the termination first, so a state it rejects or reports as
+expired keeps its file on disk for you to remove yourself.
 
 ## Polling options
 
