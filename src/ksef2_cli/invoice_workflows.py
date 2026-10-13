@@ -1,19 +1,20 @@
 """Shared invoice workflows used by CLI and TUI adapters."""
 
+import base64
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Self, cast
 
-from ksef2.clients import AuthenticatedClient, OnlineSessionClient
+from ksef2.clients import AuthenticatedClient, ExportJob, OnlineSessionClient
 from ksef2.models import (
     CurrencyCodes,
+    ExportResumeState,
     FormSchema,
     InvoiceExportStatusResponse,
     InvoiceMetadata,
     InvoiceMetadataParams,
     InvoicesFilter,
     QueryInvoicesMetadataResponse,
-    SendInvoiceResponse,
     SessionInvoiceStatusResponse,
 )
 from pydantic import BaseModel, Field, model_validator
@@ -250,33 +251,25 @@ class OnlineInvoiceHandler:
         error: str | None = None
 
         try:
-            result: SendInvoiceResponse | SessionInvoiceStatusResponse
+            submission = session.send_invoice(invoice_xml=invoice_path.read_bytes())
+            invoice_reference = submission.reference_number
+
             if self.inputs.wait:
-                status = session.send_invoice_and_wait(
-                    invoice_xml=invoice_path.read_bytes(),
+                status = submission.wait(
                     timeout=self.inputs.timeout,
                     poll_interval=self.inputs.poll_interval,
                 )
-                result = status
                 ksef_number = status.ksef_number
                 if status.status.code >= 400:
                     item_status = "failed"
                     error = status.status.description
                 else:
                     item_status = "accepted"
-            else:
-                result = session.send_invoice(invoice_xml=invoice_path.read_bytes())
-
-            invoice_reference = result.reference_number
-
-            if self.inputs.wait and self.inputs.upo_dir is not None and error is None:
-                content = session.get_invoice_upo_by_reference(
-                    invoice_reference_number=invoice_reference
-                )
-                upo_file = write_bytes_file(
-                    _invoice_upo_path(self.inputs.upo_dir, invoice_path),
-                    content,
-                )
+                    if self.inputs.upo_dir is not None:
+                        upo_file = write_bytes_file(
+                            _invoice_upo_path(self.inputs.upo_dir, invoice_path),
+                            submission.download_upo(),
+                        )
 
             online_receipt_file = _online_receipt_path(
                 invoice_path=invoice_path,
@@ -289,7 +282,7 @@ class OnlineInvoiceHandler:
                     submitted_files=[invoice_path],
                     online=OnlineInvoiceReceipt(
                         file=invoice_path,
-                        session_state=session.get_state(),
+                        session_state=session.resume_state(),
                         invoice_reference=invoice_reference,
                         status=status,
                         upo_file=upo_file,
@@ -326,30 +319,26 @@ class BatchInvoiceHandler:
         self.inputs = inputs
 
     def send(self) -> InvoicesSendResult:
-        batch_client = self.auth.batch
+        batch_service = self.auth.batch
         inputs = self.inputs
 
         if inputs.max_part_size is None:
-            prepared = batch_client.prepare_batch_from_paths(
-                invoice_paths=inputs.invoice_files,
+            session = batch_service.submit(
+                inputs.invoice_files,
                 form_code=inputs.form_schema,
                 offline_mode=inputs.offline_mode,
             )
         else:
-            prepared = batch_client.prepare_batch_from_paths(
-                invoice_paths=inputs.invoice_files,
+            session = batch_service.submit(
+                inputs.invoice_files,
                 form_code=inputs.form_schema,
                 offline_mode=inputs.offline_mode,
                 max_part_size=inputs.max_part_size,
             )
 
-        state = batch_client.submit_prepared_batch(prepared_batch=prepared)
+        state = session.resume_state()
         sdk_status = (
-            batch_client.wait_for_completion(
-                session=state,
-                timeout=inputs.timeout,
-                poll_interval=inputs.poll_interval,
-            )
+            session.wait(timeout=inputs.timeout, poll_interval=inputs.poll_interval)
             if inputs.wait
             else None
         )
@@ -472,9 +461,10 @@ def query_invoice_metadata(
         sort_order=inputs.sort_order.value,
     )
 
+    search = auth.invoices.search(filters=filters, params=params)
     if inputs.all_pages:
-        return list(auth.invoices.all_metadata(filters=filters, params=params))
-    return auth.invoices.query_metadata(filters=filters, params=params)
+        return list(search)
+    return search.first_response()
 
 
 def download_invoice(
@@ -486,14 +476,11 @@ def download_invoice(
     timeout: float = 120.0,
     poll_interval: float = 2.0,
 ) -> SavedFile:
-    if wait:
-        content = auth.invoices.wait_for_invoice_download(
-            ksef_number=ksef_number,
-            timeout=timeout,
-            poll_interval=poll_interval,
-        )
-    else:
-        content = auth.invoices.download_invoice(ksef_number=ksef_number)
+    content = auth.invoices.download(
+        ksef_number=ksef_number,
+        timeout=timeout if wait else None,
+        poll_interval=poll_interval,
+    )
     target = output_file or Path(_safe_filename(ksef_number, ".xml"))
     return SavedFile(path=write_bytes_file(target, content), size=len(content))
 
@@ -521,13 +508,14 @@ def schedule_invoice_export(
         date_to=effective_date_to,
         amount_type=inputs.amount_type.value,
     )
-    handle = auth.invoices.schedule_export(
+    job = auth.invoices.export(
         filters=filters,
         only_metadata=inputs.only_metadata,
         compression_type=inputs.compression_type.value
         if inputs.compression_type
         else None,
     )
+    handle = job.resume_state().to_handle()
     saved = ExportHandleSaved.from_handle(handle)
     if inputs.handle_file:
         _ = write_model_file(
@@ -536,38 +524,48 @@ def schedule_invoice_export(
     return ExportHandleSaved.from_handle(handle, handle_file=inputs.handle_file)
 
 
+# An export's AES material only decrypts its package, which `wait()` does. Reading the
+# status asks KSeF about the reference number alone, so `invoices export-status` resumes
+# the job with throwaway material of the length the state requires. Commands that must
+# download the package load the handle written by `invoices export --handle-file`.
+_STATUS_ONLY_AES_KEY = base64.b64encode(bytes(32)).decode("ascii")
+_STATUS_ONLY_IV = base64.b64encode(bytes(16)).decode("ascii")
+
+
 def get_invoice_export_status(
     auth: AuthenticatedClient, reference_number: str
 ) -> InvoiceExportStatusResponse:
-    return auth.invoices.get_export_status(reference_number=reference_number)
+    return auth.invoices.export(
+        state=ExportResumeState(
+            reference_number=reference_number,
+            aes_key=_STATUS_ONLY_AES_KEY,
+            iv=_STATUS_ONLY_IV,
+        )
+    ).get_status()
+
+
+def _export_job(auth: AuthenticatedClient, handle: ExportHandleSaved) -> ExportJob:
+    """Get back the export a saved handle file refers to."""
+    return auth.invoices.export(state=ExportResumeState.from_handle(handle.to_handle()))
 
 
 def fetch_invoice_export(
     auth: AuthenticatedClient, inputs: InvoiceExportFetchInput
 ) -> FocusedResult[ExportPaths, str]:
-    handle = inputs.handle.to_handle()
-
-    if inputs.wait:
-        package = auth.invoices.wait_for_export_package(
-            reference_number=handle.reference_number,
-            timeout=inputs.timeout,
-            poll_interval=inputs.poll_interval,
+    job = _export_job(auth, inputs.handle)
+    # The package is only reachable through wait(); this check keeps the answer for an
+    # export that is still building a clear "not ready" instead of a polling timeout.
+    if not inputs.wait and job.get_status().package is None:
+        raise ValueError(
+            "Export package is not ready. Re-run with --wait or check export-status."
         )
-    else:
-        status = auth.invoices.get_export_status(reference_number=handle.reference_number)
-        if status.package is None:
-            raise ValueError(
-                "Export package is not ready. Re-run with --wait or check export-status."
-            )
-        package = status.package
-    paths = auth.invoices.fetch_package(
-        package=package,
-        export=handle,
-        target_directory=inputs.output_dir,
-    )
+    paths = job.wait(
+        timeout=inputs.timeout,
+        poll_interval=inputs.poll_interval,
+    ).save(inputs.output_dir)
     return FocusedResult(
         payload=ExportPaths(
-            reference_number=handle.reference_number,
+            reference_number=job.reference_number,
             paths=paths,
         ),
         items=[str(path) for path in paths],
@@ -589,31 +587,25 @@ def download_invoice_export(
         date_to=effective_date_to,
         amount_type=inputs.amount_type.value,
     )
-    handle = auth.invoices.schedule_export(
+    job = auth.invoices.export(
         filters=filters,
         only_metadata=inputs.only_metadata,
         compression_type=inputs.compression_type.value
         if inputs.compression_type
         else None,
     )
-    saved = ExportHandleSaved.from_handle(handle)
+    saved = ExportHandleSaved.from_handle(job.resume_state().to_handle())
     if inputs.handle_file:
         _ = write_model_file(
             inputs.handle_file, saved, file_mode=SECRET_MODEL_FILE_MODE
         )
-    package = auth.invoices.wait_for_export_package(
-        reference_number=handle.reference_number,
+    paths = job.wait(
         timeout=inputs.timeout,
         poll_interval=inputs.poll_interval,
-    )
-    paths = auth.invoices.fetch_package(
-        package=package,
-        export=handle,
-        target_directory=inputs.output_dir,
-    )
+    ).save(inputs.output_dir)
     return FocusedResult(
         payload=ExportPaths(
-            reference_number=handle.reference_number,
+            reference_number=job.reference_number,
             handle_file=inputs.handle_file,
             paths=paths,
         ),
@@ -638,12 +630,17 @@ def download_batch_upos(
     if not status.upo_references:
         raise ValueError("Batch UPO is not ready. Re-run with --wait.")
 
-    saved: list[SavedFile] = []
-    for index, reference_number in enumerate(status.upo_references, start=1):
-        content = auth.batch.get_upo(
-            session=session_reference,
-            upo_reference_number=reference_number,
+    with auth.batch_session(state=session_reference) as session:
+        # KSeF hands back one page per UPO reference, in the order the status reported.
+        pages = session.download_upo()
+    if len(pages) != len(status.upo_references):
+        raise ValueError(
+            f"Batch session {session_reference} reported UPO references "
+            f"{', '.join(status.upo_references)} but returned {len(pages)} pages."
         )
+
+    saved: list[SavedFile] = []
+    for index, content in enumerate(pages, start=1):
         target = _batch_upo_path(
             upo_dir=upo_dir, session_reference=session_reference, index=index
         )

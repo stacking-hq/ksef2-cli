@@ -1,6 +1,10 @@
+import base64
 import json
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 from conftest import (
     FakeService,
@@ -11,13 +15,12 @@ from conftest import (
     payload,
 )
 from ksef2.models import (
-    ExportHandle,
+    ExportResumeState,
     ExportStatusInfo,
     InvoiceExportStatusResponse,
     InvoicePackage,
     InvoiceStatusInfo,
     PackagePart,
-    SendInvoiceResponse,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
     StatusInfo,
@@ -31,6 +34,72 @@ from ksef2_cli.commands.invoices.models import ExportHandleSaved, InvoiceWorkflo
 
 class FakeSession(FakeService):
     pass
+
+
+class FakeSubmission(FakeService):
+    """Stand-in for ``InvoiceSubmission``, the handle ``send_invoice()`` returns."""
+
+    def __init__(self, reference_number: str, **returns: Any) -> None:
+        super().__init__(**returns)
+        self.reference_number = reference_number
+
+
+class FakeSearch:
+    """Stand-in for ``InvoiceSearchPager``, what ``invoices.search()`` returns.
+
+    Built with the pages a search would walk: ``first_response()`` reports the
+    first page as a metadata response, iterating yields every item.
+    """
+
+    def __init__(self, *pages: list[Any]) -> None:
+        self._pages = [list(page) for page in pages] or [[]]
+
+    def first_response(self) -> dict[str, Any]:
+        return {"invoices": list(self._pages[0])}
+
+    def __iter__(self) -> Iterator[Any]:
+        return (item for page in self._pages for item in page)
+
+
+class FakeExportJob(FakeService):
+    """Stand-in for ``ExportJob``, the handle ``invoices.export()`` returns."""
+
+    def __init__(self, state: ExportResumeState, **returns: Any) -> None:
+        super().__init__(resume_state=state, **returns)
+        self.reference_number = state.reference_number
+
+
+class FakeExported:
+    """Stand-in for ``ExportedInvoices``, the result of ``ExportJob.wait()``.
+
+    ``save()`` reports what extracting into ``directory`` would write, without
+    unpacking an archive.
+    """
+
+    def __init__(self, *names: str) -> None:
+        self._names = list(names)
+
+    def save(self, directory: Path) -> list[Path]:
+        return [Path(directory) / name for name in self._names]
+
+
+# The resume state validates that its key is Base64 of 32 raw bytes and the IV of 16.
+_EXPORT_AES_KEY = base64.b64encode(b"aes-key-32-bytes" * 2).decode("ascii")
+_EXPORT_IV = base64.b64encode(b"iv-16-bytes!!!!!").decode("ascii")
+
+
+def _export_state(reference_number: str = "export-ref") -> ExportResumeState:
+    return ExportResumeState(
+        reference_number=reference_number, aes_key=_EXPORT_AES_KEY, iv=_EXPORT_IV
+    )
+
+
+def _last_called(service: FakeService, name: str) -> dict[str, Any]:
+    """Return the keyword arguments of the most recent call to ``name``."""
+    for call_name, _args, kwargs in reversed(service.calls):
+        if call_name == name:
+            return kwargs
+    raise AssertionError(f"{name!r} was not called; calls={service.calls!r}")
 
 
 def _export_status(
@@ -102,11 +171,9 @@ def _batch_processing_status() -> SessionStatusResponse:
 
 def test_invoices_metadata_query_and_all(runner) -> None:
     service = FakeService(
-        query_metadata={"invoices": [{"ksef_number": "ksef-1"}]},
-        all_metadata=lambda **kwargs: [
-            {"ksef_number": "ksef-1"},
-            {"ksef_number": "ksef-2"},
-        ],
+        search=lambda **kwargs: FakeSearch(
+            [{"ksef_number": "ksef-1"}], [{"ksef_number": "ksef-2"}]
+        )
     )
     runtime = fake_runtime(auth=type("Auth", (), {"invoices": service})())
 
@@ -132,7 +199,8 @@ def test_invoices_metadata_query_and_all(runner) -> None:
     )
 
     assert payload(result) == {"invoices": [{"ksef_number": "ksef-1"}]}
-    assert service.called("query_metadata")["filters"].has_attachment is True
+    assert service.called("search")["filters"].has_attachment is True
+    assert service.called("search")["params"].page_size == 10
 
     result = runner.invoke(
         app,
@@ -145,7 +213,7 @@ def test_invoices_metadata_query_and_all(runner) -> None:
 
 
 def test_invoices_metadata_parses_date_options(runner) -> None:
-    service = FakeService(query_metadata={"invoices": []})
+    service = FakeService(search=lambda **kwargs: FakeSearch([]))
     runtime = fake_runtime(auth=type("Auth", (), {"invoices": service})())
 
     result = runner.invoke(
@@ -162,7 +230,7 @@ def test_invoices_metadata_parses_date_options(runner) -> None:
     )
 
     assert payload(result) == {"invoices": []}
-    filters = service.called("query_metadata")["filters"]
+    filters = service.called("search")["filters"]
     assert filters.date_from == datetime(2026, 1, 1, tzinfo=UTC)
     assert filters.date_to == datetime(2026, 1, 2, tzinfo=UTC)
 
@@ -191,10 +259,15 @@ def test_invoices_metadata_parses_date_options(runner) -> None:
 
 
 def test_invoice_download_writes_xml(runner, tmp_path) -> None:
-    service = FakeService(
-        download_invoice=b"<invoice/>",
-        wait_for_invoice_download=b"<waited/>",
-    )
+    def download(
+        *,
+        ksef_number: str,
+        timeout: float | None = None,
+        poll_interval: float = 2.0,
+    ) -> bytes:
+        return b"<waited/>" if timeout is not None else b"<invoice/>"
+
+    service = FakeService(download=download)
     runtime = fake_runtime(auth=type("Auth", (), {"invoices": service})())
 
     target = tmp_path / "invoice.xml"
@@ -223,16 +296,29 @@ def test_invoice_download_writes_xml(runner, tmp_path) -> None:
         obj=runtime,
     )
     assert payload(result)["bytes"] == len(b"<waited/>")
-    assert service.called("wait_for_invoice_download")["ksef_number"] == "ksef/2"
+    # One call serves both modes: `download()` polls when it is given a timeout.
+    downloads = [kwargs for name, _, kwargs in service.calls if name == "download"]
+    assert downloads[0] == {
+        "ksef_number": "ksef/1",
+        "timeout": None,
+        "poll_interval": 2.0,
+    }
+    assert downloads[1] == {
+        "ksef_number": "ksef/2",
+        "timeout": 120.0,
+        "poll_interval": 2.0,
+    }
 
 
 def test_invoices_send_online_wait_downloads_upo_and_writes_receipt(
     runner, tmp_path
 ) -> None:
+    submission = FakeSubmission(
+        "invoice-ref", wait=_invoice_processing_status(), download_upo=b"<upo/>"
+    )
     session = FakeSession(
-        get_state=online_state(),
-        send_invoice_and_wait=_invoice_processing_status(),
-        get_invoice_upo_by_reference=b"<upo/>",
+        resume_state=online_state(),
+        send_invoice=lambda **kwargs: submission,
         close=None,
     )
     runtime = fake_runtime(auth=FakeService(online_session=session))
@@ -261,6 +347,11 @@ def test_invoices_send_online_wait_downloads_upo_and_writes_receipt(
     assert f"accepted  {invoice}  ksef=ksef-1  invoice_ref=invoice-ref" in result.output
     upo_file = upo_dir / "invoice-upo.xml"
     assert upo_file.read_bytes() == b"<upo/>"
+    # The submission handle, not the session, waits for the invoice and fetches its UPO.
+    assert submission.called("wait")["timeout"] == 120.0
+    assert [name for name, _, _ in submission.calls] == ["wait", "download_upo"]
+    session_calls = [name for name, _, _ in session.calls]
+    assert session_calls[:2] == ["send_invoice", "resume_state"]
     receipt = InvoiceWorkflowReceipt.model_validate_json(
         receipt_file.read_text(encoding="utf-8")
     )
@@ -281,8 +372,8 @@ def test_invoices_send_online_directory_expansion(runner, tmp_path) -> None:
     nested_invoice.write_text("<b/>", encoding="utf-8")
 
     first_session = FakeSession(
-        get_state=online_state(),
-        send_invoice=SendInvoiceResponse(reference_number="invoice-ref"),
+        resume_state=online_state(),
+        send_invoice=lambda **kwargs: FakeSubmission("invoice-ref"),
         close=None,
     )
     first_runtime = fake_runtime(auth=FakeService(online_session=first_session))
@@ -297,8 +388,8 @@ def test_invoices_send_online_directory_expansion(runner, tmp_path) -> None:
     assert first_session.called("send_invoice")["invoice_xml"] == b"<a/>"
 
     second_session = FakeSession(
-        get_state=online_state(),
-        send_invoice=SendInvoiceResponse(reference_number="invoice-ref"),
+        resume_state=online_state(),
+        send_invoice=lambda **kwargs: FakeSubmission("invoice-ref"),
         close=None,
     )
     second_runtime = fake_runtime(auth=FakeService(online_session=second_session))
@@ -364,13 +455,13 @@ def test_invoices_send_online_continues_after_invoice_failure(runner, tmp_path) 
     first.write_text("<a/>", encoding="utf-8")
     second.write_text("<b/>", encoding="utf-8")
 
-    def send_invoice(*, invoice_xml: bytes) -> SendInvoiceResponse:
+    def send_invoice(*, invoice_xml: bytes) -> FakeSubmission:
         if invoice_xml == b"<b/>":
             raise ValueError("rejected")
-        return SendInvoiceResponse(reference_number="invoice-ref")
+        return FakeSubmission("invoice-ref")
 
     session = FakeSession(
-        get_state=online_state(),
+        resume_state=online_state(),
         send_invoice=send_invoice,
         close=None,
     )
@@ -397,14 +488,17 @@ def test_invoices_send_online_wait_marks_failed_status_from_session(
     invoice = tmp_path / "invoice.xml"
     invoice.write_text("<invoice/>", encoding="utf-8")
     session = FakeSession(
-        get_state=online_state(),
-        send_invoice_and_wait=SessionInvoiceStatusResponse(
-            ordinal_number=1,
-            ksef_number=None,
-            reference_number="invoice-ref",
-            invoice_hash="hash",
-            invoicing_date=datetime(2026, 1, 1, tzinfo=UTC),
-            status=InvoiceStatusInfo(code=400, description="rejected"),
+        resume_state=online_state(),
+        send_invoice=lambda **kwargs: FakeSubmission(
+            "invoice-ref",
+            wait=SessionInvoiceStatusResponse(
+                ordinal_number=1,
+                ksef_number=None,
+                reference_number="invoice-ref",
+                invoice_hash="hash",
+                invoicing_date=datetime(2026, 1, 1, tzinfo=UTC),
+                status=InvoiceStatusInfo(code=400, description="rejected"),
+            ),
         ),
         close=None,
     )
@@ -428,8 +522,8 @@ def test_invoices_status_and_upo_from_online_receipt(runner, tmp_path) -> None:
     invoice.write_text("<invoice/>", encoding="utf-8")
     receipt_file = tmp_path / "receipt.json"
     send_session = FakeSession(
-        get_state=online_state(),
-        send_invoice=SendInvoiceResponse(reference_number="invoice-ref"),
+        resume_state=online_state(),
+        send_invoice=lambda **kwargs: FakeSubmission("invoice-ref"),
         close=None,
     )
     send_runtime = fake_runtime(auth=FakeService(online_session=send_session))
@@ -491,13 +585,17 @@ def test_invoices_send_batch_wait_downloads_upo_and_writes_receipt(
     second = tmp_path / "b.xml"
     first.write_text("<a/>", encoding="utf-8")
     second.write_text("<b/>", encoding="utf-8")
-    service = FakeService(
-        prepare_batch_from_paths={"prepared": True},
-        submit_prepared_batch=batch_state(),
-        wait_for_completion=_batch_processing_status(),
-        get_upo=b"<batch-upo/>",
+    submitted = FakeService(
+        resume_state=batch_state(), wait=_batch_processing_status()
     )
-    runtime = fake_runtime(auth=type("Auth", (), {"batch": service})())
+    # `submit()` hands back the closed session; UPO pages come from a reopened one.
+    upo_session = FakeService(download_upo=[b"<batch-upo/>"])
+    runtime = fake_runtime(
+        auth=SimpleNamespace(
+            batch=FakeService(submit=submitted),
+            batch_session=lambda **kwargs: upo_session,
+        )
+    )
     receipt_file = tmp_path / "batch-receipt.json"
     upo_dir = tmp_path / "upos"
 
@@ -526,22 +624,56 @@ def test_invoices_send_batch_wait_downloads_upo_and_writes_receipt(
     assert sent["batch"]["session_reference"] == "batch-ref"
     assert sent["batch"]["upo_files"] == [str(upo_file)]
     assert upo_file.read_bytes() == b"<batch-upo/>"
+    assert submitted.called("wait")["poll_interval"] == 2.0
+    # One download pass covers every UPO page the session status reported.
+    assert [name for name, _, _ in upo_session.calls] == ["download_upo"]
     receipt = InvoiceWorkflowReceipt.model_validate_json(
         receipt_file.read_text(encoding="utf-8")
     )
     assert receipt.batch is not None
     assert receipt.batch.session_reference == "batch-ref"
 
+    # Pages pair with the status' UPO references by position, so a session that
+    # returns a different number of pages fails instead of writing a wrong UPO.
+    mismatched = FakeService(download_upo=[b"<a/>", b"<b/>"])
+    mismatch_runtime = fake_runtime(
+        auth=SimpleNamespace(
+            batch=FakeService(
+                submit=FakeService(
+                    resume_state=batch_state(), wait=_batch_processing_status()
+                )
+            ),
+            batch_session=lambda **kwargs: mismatched,
+        )
+    )
+    failed = runner.invoke(
+        app,
+        cli_args(
+            "invoices",
+            "send",
+            str(first),
+            str(second),
+            "--mode",
+            "batch",
+            "--wait",
+            "--upo-dir",
+            str(tmp_path / "mismatch"),
+        ),
+        obj=mismatch_runtime,
+    )
+    assert failed.exit_code == 1
+    assert "upo-page-1" in failed.output
+
 
 def test_invoices_status_and_upo_from_batch_receipt(runner, tmp_path) -> None:
     invoice = tmp_path / "invoice.xml"
     invoice.write_text("<invoice/>", encoding="utf-8")
     receipt_file = tmp_path / "batch-receipt.json"
-    submit_service = FakeService(
-        prepare_batch_from_paths={"prepared": True},
-        submit_prepared_batch=batch_state(),
+    submit_runtime = fake_runtime(
+        auth=SimpleNamespace(
+            batch=FakeService(submit=FakeService(resume_state=batch_state()))
+        )
     )
-    submit_runtime = fake_runtime(auth=type("Auth", (), {"batch": submit_service})())
     assert (
         runner.invoke(
             app,
@@ -561,9 +693,16 @@ def test_invoices_status_and_upo_from_batch_receipt(runner, tmp_path) -> None:
 
     service = FakeService(
         wait_for_completion=_batch_processing_status(),
-        get_upo=b"<batch-upo/>",
     )
-    runtime = fake_runtime(auth=type("Auth", (), {"batch": service})())
+    # `invoices upo` still polls through the batch service, and reads the pages
+    # from a session client opened from the receipt's reference number.
+    upo_session = FakeService(download_upo=[b"<batch-upo/>"])
+    runtime = fake_runtime(
+        auth=SimpleNamespace(
+            batch=service,
+            batch_session=lambda **kwargs: upo_session,
+        )
+    )
     status = payload(
         runner.invoke(
             app,
@@ -593,14 +732,21 @@ def test_invoices_status_and_upo_from_batch_receipt(runner, tmp_path) -> None:
 
 
 def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
-    handle = ExportHandle(reference_number="export-ref", aes_key=b"abc", iv=b"def")
+    state = _export_state()
     package = _invoice_package()
-    service = FakeService(
-        schedule_export=handle,
-        get_export_status=_export_status(package),
-        wait_for_export_package=package,
-        fetch_package=lambda **kwargs: [Path(kwargs["target_directory"]) / "out.xml"],
-    )
+    # One job handle per command run, so each command's use of it stays visible.
+    jobs: list[FakeExportJob] = []
+
+    def export(**_kwargs: Any) -> FakeExportJob:
+        job = FakeExportJob(
+            state,
+            get_status=_export_status(package),
+            wait=FakeExported("out.xml"),
+        )
+        jobs.append(job)
+        return job
+
+    service = FakeService(export=export)
     runtime = fake_runtime(auth=type("Auth", (), {"invoices": service})())
 
     handle_file = tmp_path / "handle.json"
@@ -621,11 +767,13 @@ def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
     assert data["handle_file"] == str(handle_file)
     assert json.loads(handle_file.read_text(encoding="utf-8")) == {
         "reference_number": "export-ref",
-        "aes_key": "YWJj",
-        "iv": "ZGVm",
+        "aes_key": _EXPORT_AES_KEY,
+        "iv": _EXPORT_IV,
     }
     # The handle file holds the decryption key, so it must not be world-readable.
     assert (handle_file.stat().st_mode & 0o777) == 0o600
+    assert _last_called(service, "export")["filters"].date_from is not None
+    assert [name for name, _, _ in jobs[0].calls] == ["resume_state"]
 
     status_body = payload(
         runner.invoke(
@@ -659,6 +807,9 @@ def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
     # Presigned part URLs are capability material and stay out of command output;
     # ``invoices export-fetch``/``invoices export-download`` download them instead.
     assert "url" not in status_body["parts"][0]
+    # Status needs only the reference number, so this resumes the job without keys.
+    assert _last_called(service, "export")["state"].reference_number == "export-ref"
+    assert [name for name, _, _ in jobs[1].calls] == ["get_status"]
 
     fetch_dir = tmp_path / "fetch"
     result = runner.invoke(
@@ -677,7 +828,9 @@ def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
         "reference_number": "export-ref",
         "paths": [str(fetch_dir / "out.xml")],
     }
-    assert service.called("fetch_package")["package"] == package
+    # The saved handle carries the real key material back into the job.
+    assert _last_called(service, "export")["state"] == state
+    assert [name for name, _, _ in jobs[2].calls] == ["get_status", "wait"]
 
     wait_dir = tmp_path / "wait"
     result = runner.invoke(
@@ -694,7 +847,9 @@ def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
         obj=runtime,
     )
     assert payload(result)["paths"] == [str(wait_dir / "out.xml")]
-    assert service.called("wait_for_export_package")["reference_number"] == "export-ref"
+    assert jobs[3].called("wait")["timeout"] == 120.0
+    # With --wait the job polls on its own; no separate status check comes first.
+    assert [name for name, _, _ in jobs[3].calls] == ["wait"]
 
     download_dir = tmp_path / "download"
     download_handle = tmp_path / "download-handle.json"
@@ -717,14 +872,15 @@ def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
         "handle_file": str(download_handle),
         "paths": [str(download_dir / "out.xml")],
     }
+    assert _last_called(service, "export")["filters"] is not None
+    assert jobs[4].called("wait")["poll_interval"] == 2.0
 
 
 def test_invoice_export_fetch_requires_ready_package(runner, tmp_path) -> None:
-    handle = ExportHandle(reference_number="export-ref", aes_key=b"abc", iv=b"def")
     handle_file = tmp_path / "handle.json"
     handle_file.write_text(
         json.dumps(
-            ExportHandleSaved.from_handle(handle).model_dump(
+            ExportHandleSaved.from_handle(_export_state().to_handle()).model_dump(
                 mode="json",
                 by_alias=True,
                 exclude_none=True,
@@ -732,8 +888,9 @@ def test_invoice_export_fetch_requires_ready_package(runner, tmp_path) -> None:
         ),
         encoding="utf-8",
     )
-    service = FakeService(get_export_status=_export_status())
-    runtime = fake_runtime(auth=type("Auth", (), {"invoices": service})())
+    job = FakeExportJob(_export_state(), get_status=_export_status())
+    invoices = FakeService(export=job)
+    runtime = fake_runtime(auth=type("Auth", (), {"invoices": invoices})())
 
     result = runner.invoke(
         app,
@@ -743,3 +900,4 @@ def test_invoice_export_fetch_requires_ready_package(runner, tmp_path) -> None:
 
     assert result.exit_code == 1
     assert "Export package is not ready" in result.output
+    assert [name for name, _, _ in job.calls] == ["get_status"]

@@ -112,20 +112,6 @@ PENDING_MIGRATION: dict[tuple[str, str], int] = {
     ("commands/sessions.py", "sessions.all"): 1,
     ("commands/sessions.py", "sessions.close"): 1,
     ("commands/sessions.py", "sessions.query"): 1,
-    ("invoice_workflows.py", "batch.get_upo"): 1,
-    ("invoice_workflows.py", "batch_client.prepare_batch_from_paths"): 2,
-    ("invoice_workflows.py", "batch_client.submit_prepared_batch"): 1,
-    ("invoice_workflows.py", "invoices.all_metadata"): 1,
-    ("invoice_workflows.py", "invoices.download_invoice"): 1,
-    ("invoice_workflows.py", "invoices.fetch_package"): 2,
-    ("invoice_workflows.py", "invoices.get_export_status"): 2,
-    ("invoice_workflows.py", "invoices.query_metadata"): 1,
-    ("invoice_workflows.py", "invoices.schedule_export"): 2,
-    ("invoice_workflows.py", "invoices.wait_for_export_package"): 2,
-    ("invoice_workflows.py", "invoices.wait_for_invoice_download"): 1,
-    ("invoice_workflows.py", "session.get_invoice_upo_by_reference"): 1,
-    ("invoice_workflows.py", "session.get_state"): 1,
-    ("invoice_workflows.py", "session.send_invoice_and_wait"): 1,
 }
 
 
