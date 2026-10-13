@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 from conftest import (
@@ -8,6 +8,7 @@ from conftest import (
     cli_args,
     fake_runtime,
     payload,
+    plain,
 )
 
 from ksef2_cli.app import app
@@ -404,3 +405,79 @@ def test_testdata_update_certificate_valid_to(runner) -> None:
 
     assert invalid.exit_code == 1
     assert "--valid-to must be an ISO 8601 date or datetime" in invalid.output
+
+
+def test_testdata_update_certificate_valid_to_keeps_a_non_utc_offset(runner) -> None:
+    service = FakeService(update_certificate_valid_to=None)
+    runtime = fake_runtime(client=FakeClient(testdata=service))
+
+    assert payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "testdata",
+                "update-certificate-valid-to",
+                "--serial-number",
+                "ABCDEF1234567890",
+                "--valid-to",
+                "2026-03-01T12:00:00+02:00",
+            ),
+            obj=runtime,
+        )
+    ) == {
+        "serial_number": "ABCDEF1234567890",
+        "valid_to": "2026-03-01T12:00:00+02:00",
+        "updated": True,
+    }
+    assert service.called("update_certificate_valid_to")["valid_to"] == datetime(
+        2026, 3, 1, 12, tzinfo=timezone(timedelta(hours=2))
+    )
+
+
+def test_testdata_update_certificate_valid_to_rejects_naive_valid_to(runner) -> None:
+    service = FakeService(update_certificate_valid_to=None)
+    runtime = fake_runtime(client=FakeClient(testdata=service))
+
+    result = runner.invoke(
+        app,
+        cli_args(
+            "testdata",
+            "update-certificate-valid-to",
+            "--serial-number",
+            "ABCDEF1234567890",
+            "--valid-to",
+            "2026-03-01T12:00:00",
+        ),
+        obj=runtime,
+    )
+
+    assert result.exit_code == 1
+    assert "--valid-to must include a UTC offset" in plain(result.output)
+    assert service.calls == []
+
+
+def test_testdata_update_certificate_valid_to_rejects_bad_serial_number(
+    runner,
+) -> None:
+    service = FakeService(update_certificate_valid_to=None)
+    runtime = fake_runtime(client=FakeClient(testdata=service))
+
+    for serial_number in ("ABCDEF123456789", "ABCDEFGHIJKLMNOP", "abcdef1234567890"):
+        result = runner.invoke(
+            app,
+            cli_args(
+                "testdata",
+                "update-certificate-valid-to",
+                "--serial-number",
+                serial_number,
+                "--valid-to",
+                "2026-03-01T12:00:00Z",
+            ),
+            obj=runtime,
+        )
+
+        assert result.exit_code == 1, serial_number
+        assert "--serial-number must be 16 hexadecimal characters" in plain(
+            result.output
+        )
+    assert service.calls == []

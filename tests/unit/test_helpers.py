@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta
 
 import pytest
 from pydantic import BaseModel
@@ -9,7 +10,7 @@ from ksef2_cli.io import (
     write_bytes_file,
     write_model_file,
 )
-from ksef2_cli.parsing import parse_optional_bool
+from ksef2_cli.parsing import parse_iso_datetime, parse_optional_bool
 
 
 class DemoModel(BaseModel):
@@ -27,6 +28,26 @@ def test_optional_bool_parser_accepts_common_values() -> None:
 def test_optional_bool_parser_rejects_unknown_value() -> None:
     with pytest.raises(ValueError, match="--x must be yes or no"):
         parse_optional_bool("maybe", option_name="--x")
+
+
+def test_iso_datetime_parser_allows_naive_values_by_default() -> None:
+    assert parse_iso_datetime("2026-03-01T12:00:00", option_name="--x") == datetime(
+        2026, 3, 1, 12
+    )
+
+
+def test_iso_datetime_parser_requires_an_offset_when_asked() -> None:
+    parsed = parse_iso_datetime(
+        "2026-03-01T12:00:00+02:00", option_name="--x", require_offset=True
+    )
+    assert parsed.utcoffset() == timedelta(hours=2)
+
+    for value in ("2026-03-01T12:00:00", "2026-03-01"):
+        with pytest.raises(ValueError, match="--x must include a UTC offset"):
+            parse_iso_datetime(value, option_name="--x", require_offset=True)
+
+    with pytest.raises(ValueError, match="--x must be an ISO 8601 date or datetime"):
+        parse_iso_datetime("next-month", option_name="--x", require_offset=True)
 
 
 def test_model_file_helpers_read_and_write_json(tmp_path) -> None:

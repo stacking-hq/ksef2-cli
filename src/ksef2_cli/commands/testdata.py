@@ -19,9 +19,11 @@ from ksef2.models import (
     SubUnit,
     TokenPermission,
     TokenPermissionEnum,
+    validate_certificate_serial_number,
 )
 from ksef2.testdata import generate_nip
 from ksef2.xades import generate_test_certificate
+from pydantic import ValidationError
 
 from ksef2_cli.context import get_settings, run_client, run_command, use_client
 from ksef2_cli.io import SECRET_MODEL_FILE_MODE, write_bytes_file
@@ -490,23 +492,48 @@ def testdata_revoke_permissions(
 @app.command("update-certificate-valid-to")
 def testdata_update_certificate_valid_to(
     ctx: typer.Context,
-    serial_number: Annotated[str, typer.Option("--serial-number")],
-    valid_to: Annotated[str, typer.Option("--valid-to", help="ISO datetime.")],
+    serial_number: Annotated[
+        str,
+        typer.Option(
+            "--serial-number",
+            help="16 hexadecimal characters, e.g. ABCDEF1234567890.",
+        ),
+    ],
+    valid_to: Annotated[
+        str,
+        typer.Option(
+            "--valid-to",
+            help="ISO 8601 datetime with a UTC offset, e.g. 2026-03-01T12:00:00Z.",
+        ),
+    ],
 ) -> None:
     """Shorten the validity of a TEST-environment certificate."""
 
     def operation() -> TestCertificateValidityUpdated:
-        parsed_valid_to = parse_iso_datetime(valid_to, option_name="--valid-to")
+        serial = _validated_serial_number(serial_number)
+        parsed_valid_to = parse_iso_datetime(
+            valid_to, option_name="--valid-to", require_offset=True
+        )
 
         def update_certificate(client: Client) -> None:
             client.testdata.update_certificate_valid_to(
-                serial_number=serial_number, valid_to=parsed_valid_to
+                serial_number=serial, valid_to=parsed_valid_to
             )
 
         run_client(ctx, update_certificate)
         return TestCertificateValidityUpdated(
-            serial_number=serial_number,
+            serial_number=serial,
             valid_to=parsed_valid_to.isoformat(),
         )
 
     run_command(ctx, operation)
+
+
+def _validated_serial_number(value: str) -> str:
+    """Return the serial number, rejecting one KSeF could never accept."""
+    try:
+        return validate_certificate_serial_number(value)
+    except ValidationError:
+        raise ValueError(
+            "--serial-number must be 16 hexadecimal characters, e.g. ABCDEF1234567890."
+        ) from None
