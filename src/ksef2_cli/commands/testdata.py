@@ -25,12 +25,14 @@ from ksef2.xades import generate_test_certificate
 
 from ksef2_cli.context import get_settings, run_client, run_command, use_client
 from ksef2_cli.io import SECRET_MODEL_FILE_MODE, write_bytes_file
+from ksef2_cli.parsing import parse_iso_datetime
 from ksef2_cli.renderers import console, render
 from ksef2_cli.results import (
     FocusedResult,
     TestAttachmentsEnabled,
     TestAttachmentsRevoked,
     TestContextAccessChanged,
+    TestCertificateValidityUpdated,
     TestPermissionsGranted,
     TestPermissionsRevoked,
     TestPersonCreated,
@@ -480,6 +482,31 @@ def testdata_revoke_permissions(
         run_client(ctx, revoke_permissions)
         return TestPermissionsRevoked(
             revoke_from=revoke_from, in_context_of=in_context_of
+        )
+
+    run_command(ctx, operation)
+
+
+@app.command("update-certificate-valid-to")
+def testdata_update_certificate_valid_to(
+    ctx: typer.Context,
+    serial_number: Annotated[str, typer.Option("--serial-number")],
+    valid_to: Annotated[str, typer.Option("--valid-to", help="ISO datetime.")],
+) -> None:
+    """Shorten the validity of a TEST-environment certificate."""
+
+    def operation() -> TestCertificateValidityUpdated:
+        parsed_valid_to = parse_iso_datetime(valid_to, option_name="--valid-to")
+
+        def update_certificate(client: Client) -> None:
+            client.testdata.update_certificate_valid_to(
+                serial_number=serial_number, valid_to=parsed_valid_to
+            )
+
+        run_client(ctx, update_certificate)
+        return TestCertificateValidityUpdated(
+            serial_number=serial_number,
+            valid_to=parsed_valid_to.isoformat(),
         )
 
     run_command(ctx, operation)

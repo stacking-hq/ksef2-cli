@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Any
 
 from conftest import (
@@ -360,3 +361,46 @@ def test_testdata_permission_commands(runner) -> None:
     )
     assert revoked["revoke_from"]["value"] == "5261040828"
     assert revoked["revoked"] is True
+
+
+def test_testdata_update_certificate_valid_to(runner) -> None:
+    service = FakeService(update_certificate_valid_to=None)
+    runtime = fake_runtime(client=FakeClient(testdata=service))
+
+    assert payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "testdata",
+                "update-certificate-valid-to",
+                "--serial-number",
+                "ABCDEF1234567890",
+                "--valid-to",
+                "2026-03-01T12:00:00Z",
+            ),
+            obj=runtime,
+        )
+    ) == {
+        "serial_number": "ABCDEF1234567890",
+        "valid_to": "2026-03-01T12:00:00+00:00",
+        "updated": True,
+    }
+    call = service.called("update_certificate_valid_to")
+    assert call["serial_number"] == "ABCDEF1234567890"
+    assert call["valid_to"] == datetime(2026, 3, 1, 12, tzinfo=UTC)
+
+    invalid = runner.invoke(
+        app,
+        cli_args(
+            "testdata",
+            "update-certificate-valid-to",
+            "--serial-number",
+            "ABCDEF1234567890",
+            "--valid-to",
+            "next-month",
+        ),
+        obj=runtime,
+    )
+
+    assert invalid.exit_code == 1
+    assert "--valid-to must be an ISO 8601 date or datetime" in invalid.output

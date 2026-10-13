@@ -12,6 +12,7 @@ from ksef2_cli.commands import (
     auth,
     batch,
     certificates,
+    collective,
     encryption,
     limits,
     online,
@@ -48,6 +49,7 @@ app.add_typer(batch.app, name="batch")
 app.add_typer(tokens.app, name="tokens")
 app.add_typer(sessions.app, name="sessions")
 app.add_typer(certificates.app, name="certificates")
+app.add_typer(collective.app, name="collective")
 app.add_typer(config_commands.app, name="config")
 app.add_typer(profile_commands.app, name="profile")
 app.add_typer(permissions.app, name="permissions")

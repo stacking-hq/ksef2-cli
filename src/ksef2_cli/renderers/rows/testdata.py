@@ -11,6 +11,7 @@ from ksef2_cli.renderers.text import (
 from ksef2_cli.results import (
     TestAttachmentsEnabled,
     TestAttachmentsRevoked,
+    TestCertificateValidityUpdated,
     TestContextAccessChanged,
     TestPermissionsGranted,
     TestPermissionsRevoked,
@@ -51,6 +52,16 @@ def register() -> None:
                 ("nip", value.nip),
                 ("expected_end_date", value.expected_end_date),
                 ("attachments", value.attachments),
+            )
+        )
+
+    @register_text(TestCertificateValidityUpdated)
+    def _(value: TestCertificateValidityUpdated, renderer: PlainTextRenderer) -> str:
+        return format_fields(
+            (
+                ("serial_number", value.serial_number),
+                ("valid_to", value.valid_to),
+                ("updated", value.updated),
             )
         )
 

@@ -226,6 +226,14 @@ class TestAttachmentsRevoked(CliResult):
     attachments: str = "revoked"
 
 
+class TestCertificateValidityUpdated(CliResult):
+    """Result for shortening the validity of a TEST certificate."""
+
+    serial_number: str
+    valid_to: str
+    updated: bool = True
+
+
 class TestContextAccessChanged(CliResult):
     """Result for blocking or unblocking a TEST auth context."""
 
