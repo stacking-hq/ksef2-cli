@@ -94,12 +94,6 @@ DEPRECATED_SERVICE_METHODS = frozenset(
 PENDING_MIGRATION: dict[tuple[str, str], int] = {
     ("commands/certificates.py", "certificates.all"): 1,
     ("commands/certificates.py", "certificates.query"): 1,
-    ("commands/online.py", "auth.resume_online_session"): 6,
-    ("commands/online.py", "session.get_invoice_upo_by_ksef_number"): 1,
-    ("commands/online.py", "session.get_invoice_upo_by_reference"): 1,
-    ("commands/online.py", "session.get_state"): 2,
-    ("commands/online.py", "session.send_invoice_and_wait"): 1,
-    ("commands/online.py", "session.wait_for_invoice_ready"): 1,
     ("commands/peppol.py", "peppol.all"): 1,
     ("commands/peppol.py", "peppol.query"): 1,
     ("commands/sessions.py", "invoice_sessions.all"): 1,

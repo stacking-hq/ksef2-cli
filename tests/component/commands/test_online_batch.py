@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from conftest import (
@@ -14,6 +15,7 @@ from conftest import (
 from ksef2.models import (
     BatchSessionResumeState,
     OnlineSessionResumeState,
+    SendInvoiceResponse,
     SessionStatusResponse,
     StatusInfo,
     Upo,
@@ -25,6 +27,23 @@ from ksef2_cli.app import app
 
 class FakeSession(FakeService):
     pass
+
+
+class FakeSubmission(FakeService):
+    """Stand-in for ``InvoiceSubmission``, the handle ``send_invoice()`` returns."""
+
+    def __init__(self, reference_number: str, **returns: Any) -> None:
+        super().__init__(**returns)
+        self.reference_number = reference_number
+        self.response = SendInvoiceResponse(reference_number=reference_number)
+
+
+def _last_called(service: FakeService, name: str) -> dict[str, Any]:
+    """Return the keyword arguments of the most recent call to ``name``."""
+    for call_name, _args, kwargs in reversed(service.calls):
+        if call_name == name:
+            return kwargs
+    raise AssertionError(f"{name!r} was not called; calls={service.calls!r}")
 
 
 def _session_status(
@@ -56,13 +75,17 @@ def _session_status(
 
 
 def test_online_open_and_send(runner, tmp_path) -> None:
+    sent_handle = FakeSubmission("invoice-ref")
+    waited_handle = FakeSubmission(
+        "invoice-ref", wait={"reference_number": "invoice-ready"}
+    )
+    submissions = iter([sent_handle, waited_handle])
     session = FakeSession(
-        get_state=online_state(),
-        send_invoice={"reference_number": "invoice-ref"},
-        send_invoice_and_wait={"reference_number": "invoice-ready"},
+        resume_state=online_state(),
+        send_invoice=lambda **kwargs: next(submissions),
         close=None,
     )
-    auth_service = FakeService(online_session=session, resume_online_session=session)
+    auth_service = FakeService(online_session=session)
     runtime = fake_runtime(auth=auth_service)
 
     state_file = tmp_path / "online-state.json"
@@ -102,16 +125,22 @@ def test_online_open_and_send(runner, tmp_path) -> None:
     assert sent["results"][0]["result"] == {"reference_number": "invoice-ref"}
     assert save_state.exists()
     assert session.called("send_invoice")["invoice_xml"] == b"<invoice/>"
+    # Without --wait the submission response is reported as sent; nothing polls.
+    assert [name for name, _, _ in sent_handle.calls] == []
 
-    waited = payload(
+    waited_result = payload(
         runner.invoke(
             app,
             cli_args("online", "send", str(invoice), "--wait", "--keep-open"),
             obj=runtime,
         )
     )
-    assert waited["closed"] is False
-    assert waited["results"][0]["result"] == {"reference_number": "invoice-ready"}
+    assert waited_result["closed"] is False
+    assert waited_result["results"][0]["result"] == {
+        "reference_number": "invoice-ready"
+    }
+    # The submission handle, not the session, does the waiting.
+    assert waited_handle.called("wait")["timeout"] == 60.0
 
 
 def test_online_resume_commands(runner, tmp_path) -> None:
@@ -121,17 +150,21 @@ def test_online_resume_commands(runner, tmp_path) -> None:
         encoding="utf-8",
     )
 
+    submission = FakeSubmission("i1", wait={"status": "ready"})
+
+    def download_invoice_upo(**kwargs: Any) -> bytes:
+        return b"upo-ksef" if kwargs.get("ksef_number") else b"upo-reference"
+
     session = FakeSession(
         get_status={"status": "open"},
         list_invoices={"invoices": [{"reference_number": "invoice-ref"}]},
         list_failed_invoices={"invoices": [{"reference_number": "failed-ref"}]},
         get_invoice_status={"status": "processing"},
-        wait_for_invoice_ready={"status": "ready"},
-        get_invoice_upo_by_reference=b"upo-reference",
-        get_invoice_upo_by_ksef_number=b"upo-ksef",
+        submission=lambda **kwargs: submission,
+        download_invoice_upo=download_invoice_upo,
         close=None,
     )
-    auth_service = FakeService(resume_online_session=session)
+    auth_service = FakeService(online_session=session)
     runtime = fake_runtime(auth=auth_service)
 
     assert payload(
@@ -184,6 +217,8 @@ def test_online_resume_commands(runner, tmp_path) -> None:
             obj=runtime,
         )
     ) == {"status": "ready"}
+    # --wait goes through the invoice's submission handle.
+    assert submission.called("wait")["poll_interval"] == 2.0
 
     out = tmp_path / "upo.xml"
     assert payload(
@@ -203,6 +238,7 @@ def test_online_resume_commands(runner, tmp_path) -> None:
         )
     ) == {"path": str(out), "bytes": len(b"upo-reference")}
     assert out.read_bytes() == b"upo-reference"
+    assert session.called("download_invoice_upo")["reference_number"] == "i1"
 
     out = tmp_path / "upo-ksef.xml"
     assert payload(
@@ -221,6 +257,7 @@ def test_online_resume_commands(runner, tmp_path) -> None:
             obj=runtime,
         )
     ) == {"path": str(out), "bytes": len(b"upo-ksef")}
+    assert _last_called(session, "download_invoice_upo")["ksef_number"] == "ksef-1"
 
     invalid = runner.invoke(
         app,
@@ -250,7 +287,7 @@ def test_online_status_reads_state_written_by_older_cli(runner, tmp_path) -> Non
     _ = state_file.write_text(json.dumps(legacy_state), encoding="utf-8")
 
     session = FakeSession(get_status={"status": "open"})
-    auth_service = FakeService(resume_online_session=session)
+    auth_service = FakeService(online_session=session)
 
     with pytest.warns(DeprecationWarning, match="access_token.*deprecated"):
         assert payload(
