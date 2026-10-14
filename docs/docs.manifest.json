@@ -83,6 +83,41 @@
               "pl": "Identyfikatory zbiorcze"
             },
             "path": "guides/collective.md"
+          },
+          {
+            "label": "Tokens",
+            "translations": {
+              "pl": "Tokeny"
+            },
+            "path": "guides/tokens.md"
+          },
+          {
+            "label": "Certificates",
+            "translations": {
+              "pl": "Certyfikaty"
+            },
+            "path": "guides/certificates.md"
+          },
+          {
+            "label": "Permissions",
+            "translations": {
+              "pl": "Uprawnienia"
+            },
+            "path": "guides/permissions.md"
+          },
+          {
+            "label": "Limits",
+            "translations": {
+              "pl": "Limity"
+            },
+            "path": "guides/limits.md"
+          },
+          {
+            "label": "PEPPOL providers",
+            "translations": {
+              "pl": "Dostawcy PEPPOL"
+            },
+            "path": "guides/peppol.md"
           }
         ]
       },
