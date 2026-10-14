@@ -71,6 +71,27 @@
             "path": "guides/invoices.md"
           },
           {
+            "label": "Online sessions",
+            "translations": {
+              "pl": "Sesje online"
+            },
+            "path": "guides/online-sessions.md"
+          },
+          {
+            "label": "Batch sessions",
+            "translations": {
+              "pl": "Sesje wsadowe"
+            },
+            "path": "guides/batch-sessions.md"
+          },
+          {
+            "label": "Sessions and UPO",
+            "translations": {
+              "pl": "Sesje i potwierdzenia UPO"
+            },
+            "path": "guides/sessions-and-upo.md"
+          },
+          {
             "label": "FA(3) invoices locally",
             "translations": {
               "pl": "Faktury FA(3) lokalnie"
@@ -83,6 +104,13 @@
               "pl": "Identyfikatory zbiorcze"
             },
             "path": "guides/collective.md"
+          },
+          {
+            "label": "Test data",
+            "translations": {
+              "pl": "Dane testowe"
+            },
+            "path": "guides/test-data.md"
           },
           {
             "label": "Tokens",

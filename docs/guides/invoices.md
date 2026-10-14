@@ -4,7 +4,8 @@ description: Query, download, export, send, and batch invoices with KSeF2 CLI.
 ---
 
 Invoice workflows usually start with the `invoices` command group. Use the
-lower-level `online` and `batch` groups only when you need explicit session
+lower-level [Online sessions](online-sessions.md) and
+[Batch sessions](batch-sessions.md) guides only when you need explicit session
 control. Use `--json` when commands are part of a script or CI job.
 
 See [FA(3) invoices locally](fa3.md) to build invoice XML without contacting
@@ -182,6 +183,14 @@ Add `--recursive` to include nested directories. If any file fails in online
 mode, the command still attempts the remaining files and exits non-zero after
 printing the per-file results.
 
+Two combinations stop before anything is sent: `--upo-dir` requires `--wait`,
+because there is no UPO to download until processing finished, and `--receipt` names
+one file, so several invoices need `--receipt-dir`.
+
+When one command should not own the session, because you keep it open or another
+process finishes the sends, work in the session itself with
+[Online sessions](online-sessions.md).
+
 ## Send invoices as a batch
 
 Use `--mode batch` when the input files should be prepared and submitted as one
@@ -206,99 +215,30 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   invoices upo --receipt batch-receipt.json --upo-dir upos
 ```
 
+`invoices upo` needs `--upo-dir` for a batch receipt: KSeF returns its confirmation
+as pages, and `--out` holds one file. `--offline` and `--max-part-size` belong to
+this mode and fail with `--mode online`.
+
+To hold the session state yourself, prepare the package once and upload it more than
+once, or recover an upload KSeF rejected, use [Batch sessions](batch-sessions.md).
+
 ## Advanced session commands
 
-Session state files (`--state-file`, `--save-state`) and invoice workflow
-receipt files (`--receipt`, `--receipt-dir`) carry the session AES key and IV,
-so the CLI writes them with owner-only permissions (`0600`). Treat them like
-credentials: do not commit them or paste them into issues.
+Everything above wraps a session that `invoices send` opens and closes for you.
+When you need the session itself, two lower-level groups operate on it directly and
+a third decides which UPO command fits:
 
-Use the `online` group when you need to keep an online session open:
+- [Online sessions](online-sessions.md): `online open`, `send`, `status`, `list`,
+  `invoice-status`, `upo`, and `close`, with `--state-file` and `--keep-open` for a
+  session that has to outlive one command.
+- [Batch sessions](batch-sessions.md): `batch submit`, `prepare`, `upload`,
+  `status`, `list`, and `upo`, including offline invoicing mode and recovering an
+  upload KSeF rejected.
+- [Sessions and UPO](sessions-and-upo.md): the UPO of any past session from its
+  reference alone, invoice session history, and authentication sessions.
 
-```bash
-uv run ksef2 --env test --nip "$KSEF2_NIP" --test-cert \
-  online send invoice-1.xml invoice-2.xml \
-  --keep-open \
-  --save-state online-state.json
-
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  online status --state-file online-state.json
-
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  online close --state-file online-state.json
-```
-
-Use `sessions upo` instead of `online upo` when you have the session reference
-but no saved session state or workflow receipt. It works for online and batch
-sessions and still requires authentication:
-
-```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  sessions upo --session "$SESSION_REFERENCE" \
-  --ksef-number "$KSEF_NUMBER" --out invoice-upo.xml
-```
-
-Provide exactly one of `--ksef-number`, `--invoice-reference`, or
-`--upo-reference`. Use `--upo-reference` for a session UPO page.
-`--out` is required, just as for `online upo`. If KSeF has not issued the UPO
-yet, the command reports that processing is unfinished and asks you to retry later.
-
-Use the `batch` group when you need direct access to batch session state:
-
-```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  batch submit invoice-1.xml invoice-2.xml \
-  --wait \
-  --state-file batch-state.json
-```
-
-Check status or list invoices:
-
-```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  batch status --state-file batch-state.json
-
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  batch list --state-file batch-state.json --failed
-```
-
-Download a batch UPO page:
-
-```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  batch upo \
-  --state-file batch-state.json \
-  --upo-reference "$UPO_REFERENCE" \
-  --out batch-upo.xml
-```
-
-### Prepare once, upload more than once
-
-Packing and encrypting the parts costs more than posting them, and none of it depends on
-a session. `batch prepare` writes the finished package to a directory, so a rejected
-upload retries against the parts that already exist:
-
-```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  batch prepare invoice-1.xml invoice-2.xml \
-  --out batch-parts
-
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  batch submit --prepared batch-parts \
-  --wait \
-  --state-file batch-state.json
-```
-
-When KSeF's storage rejects an upload, the same two files carry the recovery: the failed
-`submit` leaves the interrupted session state in `--state-file`, and `batch upload` sends
-the stored parts to that session instead of opening a new one:
-
-```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  batch upload --prepared batch-parts \
-  --state-file batch-state.json \
-  --wait
-```
-
-The artifact holds a session key and the invoice payloads, so treat `batch-parts` the way
-you treat a credential file and remove it when the batch is done.
+Session state files (`--state-file`, `--save-state`) and invoice workflow receipt
+files (`--receipt`, `--receipt-dir`) carry the session AES key and IV, so the CLI
+writes them with owner-only permissions (`0600`). A directory written by
+`batch prepare` holds that key together with the invoice payloads. Treat all of them
+like credentials: do not commit them or paste them into issues.
