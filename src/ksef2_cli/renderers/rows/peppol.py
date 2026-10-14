@@ -1,6 +1,6 @@
 """Plain-text handlers for PEPPOL provider responses."""
 
-from ksef2.domain.models.peppol import ListPeppolProvidersResponse, PeppolProvider
+from ksef2.models import ListPeppolProvidersResponse, PeppolProvider
 
 from ksef2_cli.renderers.text import PlainTextRenderer, format_row, register_text
 

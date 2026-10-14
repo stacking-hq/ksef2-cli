@@ -12,7 +12,7 @@
 
 <div align="center">
   <br>
-  <a href="https://docs.stacking.me/ksef2/cli/intro/" title="ksef2 CLI documentation">
+  <a href="https://docs.stacking.me/cli/intro/" title="ksef2 CLI documentation">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/stacking-hq/ksef2-cli/main/docs/assets/ksef2-cli-light-logo.png">
       <img src="https://raw.githubusercontent.com/stacking-hq/ksef2-cli/main/docs/assets/ksef2-cli-dark-logo.png" alt="ksef2 CLI" width="420">
@@ -95,6 +95,18 @@ Supported direct authentication methods:
 - `--test-cert` for the TEST environment
 - `--cert` and `--key` for PEM XAdES credentials
 - `--p12` for PKCS#12/PFX XAdES credentials
+- `--auth-state` to reuse state saved by `auth login --save-state`
+
+Saving auth state lets later commands skip a fresh KSeF login:
+
+```bash
+ksef2 --profile test-company --json auth login --save-state ksef2-auth.json
+ksef2 --auth-state ksef2-auth.json --json sessions auth-list
+```
+
+Each command that reuses the state writes any refreshed token back to that file.
+End the session and remove the file with `ksef2 --auth-state ksef2-auth.json
+--json auth logout`.
 
 ## Send and download invoices
 
@@ -128,14 +140,24 @@ ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   --upo-dir upos
 ```
 
+Prepare a batch separately when its parts should survive a failed upload:
+
+```bash
+ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+  batch prepare invoice-1.xml invoice-2.xml --out batch-parts
+
+ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+  batch submit --prepared batch-parts --state-file batch-state.json
+```
+
 Use `--json` before the command group when output is consumed by scripts.
 
 ## Documentation
 
-- Online docs: <https://docs.stacking.me/ksef2/cli/intro/>
-- Installation: <https://docs.stacking.me/ksef2/cli/getting-started/installation/>
-- Quickstart: <https://docs.stacking.me/ksef2/cli/getting-started/quickstart/>
-- Command reference: <https://docs.stacking.me/ksef2/cli/reference/commands/>
+- Online docs: <https://docs.stacking.me/cli/intro/>
+- Installation: <https://docs.stacking.me/cli/getting-started/installation/>
+- Quickstart: <https://docs.stacking.me/cli/getting-started/quickstart/>
+- Command reference: <https://docs.stacking.me/cli/reference/commands/>
 - Source docs: [`docs`](https://github.com/stacking-hq/ksef2-cli/tree/main/docs)
 - SDK repository: [`stacking-hq/ksef2`](https://github.com/stacking-hq/ksef2)
 

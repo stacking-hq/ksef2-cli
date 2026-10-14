@@ -60,6 +60,26 @@ Supported values are:
 - `demo`
 - `test`
 
+## PDF rendering
+
+Two commands turn invoice XML into PDF: `invoices export-pdf` and
+`fa3 render --pdf`. They render with WeasyPrint, which is an optional extra and is
+not installed with the CLI by default:
+
+```bash
+uv tool install "ksef2-cli[pdf]"   # installed CLI
+uv sync --extra pdf                # project checkout
+```
+
+On Linux, WeasyPrint also needs system libraries:
+
+```bash
+sudo apt-get install libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 libharfbuzz-subset0
+```
+
+Without the extra the CLI still installs and every other command runs; the two PDF
+commands report the install command above instead of rendering.
+
 ## Next steps
 
 - [Run the quickstart](quickstart.md)

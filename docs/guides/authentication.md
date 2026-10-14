@@ -87,6 +87,7 @@ variables:
 | TEST certificate | `--test-cert` | `KSEF2_TEST_CERT` |
 | PEM XAdES credentials | `--cert`, `--key`, optional `--key-password` | `KSEF2_CERT`, `KSEF2_KEY`, `KSEF2_KEY_PASSWORD` |
 | PKCS#12/PFX archive | `--p12`, optional `--p12-password` | `KSEF2_P12`, `KSEF2_P12_PASSWORD` |
+| Saved auth state | `--auth-state` | `KSEF2_AUTH_STATE` |
 
 Most authenticated methods also need a taxpayer or context NIP:
 
@@ -144,6 +145,55 @@ uv run ksef2 --json auth refresh --refresh-token "$KSEF2_REFRESH_TOKEN"
 
 `auth refresh` does not require the other root authentication method options.
 
+## Reuse a saved authentication
+
+`auth login --save-state` writes the SDK authentication resume state, which holds
+the access and refresh tokens plus their expiry times. The CLI writes it with
+mode `0600` and treats it as credential material, so protect it like a token:
+
+```bash
+uv run ksef2 --profile prod-token --json \
+  auth login --save-state "$XDG_RUNTIME_DIR/ksef2-auth.json"
+```
+
+`auth resume` reads that file back. It exchanges the access token for a new one
+through the refresh endpoint when the saved access token expired while the
+refresh token is still valid:
+
+```bash
+uv run ksef2 --json auth resume --state-file "$XDG_RUNTIME_DIR/ksef2-auth.json"
+```
+
+Like `auth login`, its JSON output reports token expiry times and leaves out the
+token values, so use `--save-state` when a script needs the refreshed state.
+
+Any other command can reuse the same state by pointing the global `--auth-state`
+option, or `KSEF2_AUTH_STATE`, at it instead of naming an authentication method:
+
+```bash
+uv run ksef2 --auth-state "$XDG_RUNTIME_DIR/ksef2-auth.json" --json \
+  invoices metadata \
+  --role seller \
+  --date-from 2026-01-01T00:00:00Z \
+  --all
+```
+
+`--auth-state` is one authentication method among the others, so combining it
+with `--token`, `--test-cert`, `--cert`/`--key`, or `--p12` fails. A command that
+reuses the state refreshes its own access token and writes the state it ends with
+back to the same file, so the file stays current and keeps mode `0600`; a command
+that fails leaves the file as it was. When the saved refresh token has also
+expired, the command stops and asks for a new `auth login --save-state`.
+
+`auth logout` ends the KSeF session behind a state file and deletes the file:
+
+```bash
+uv run ksef2 --auth-state "$XDG_RUNTIME_DIR/ksef2-auth.json" --json auth logout
+```
+
+KSeF has to accept the termination first, so a state it rejects or reports as
+expired keeps its file on disk for you to remove yourself.
+
 ## Polling options
 
 Authentication commands poll while KSeF processes authentication. Use root
@@ -157,7 +207,9 @@ uv run ksef2 --profile prod-token \
 ```
 
 `--auth-timeout` is the total number of seconds to wait for authentication to
-finish; `--auth-poll-interval` is the delay between checks.
+finish; `--auth-poll-interval` is the delay between checks. Without them, a
+profile's own `poll_interval` and `max_poll_attempts` decide both values, and a
+profile without either waits the default `60` seconds in `1`-second checks.
 
 ## Precedence
 

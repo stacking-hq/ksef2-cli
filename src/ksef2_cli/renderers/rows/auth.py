@@ -1,6 +1,6 @@
 """Plain-text handlers for authentication responses."""
 
-from ksef2.domain.models.auth import AuthTokens, RefreshedToken, TokenCredentials
+from ksef2.models import AuthTokens, RefreshedToken, TokenCredentials
 
 from ksef2_cli.renderers.text import PlainTextRenderer, format_fields, register_text
 

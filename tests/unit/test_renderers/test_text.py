@@ -1,22 +1,25 @@
 from datetime import UTC, datetime
 
 import pytest
-from ksef2.domain.models.auth import AuthTokens, RefreshedToken, TokenCredentials
-from ksef2.domain.models.certificates import CertificateLimitsResponse
-from ksef2.domain.models.invoices import ExportHandle
-from ksef2.domain.models.peppol import ListPeppolProvidersResponse, PeppolProvider
-from ksef2.domain.models.tokens import (
+from ksef2.models import (
+    AuthTokens,
+    CertificateLimitsResponse,
+    ExportResumeState,
+    ListPeppolProvidersResponse,
+    PeppolProvider,
     QueryTokensResponse,
+    RefreshedToken,
     TokenAuthorIdentifier,
     TokenContextIdentifier,
+    TokenCredentials,
     TokenInfo,
     TokenStatusResponse,
 )
 from pydantic import BaseModel
 
 from ksef2_cli.commands.invoices.models import ExportHandleSaved, ExportPaths
-from ksef2_cli.config import (
-    CliConfig,
+from ksef2.profiles import (
+    CliProfileConfig,
     ProfileAuthConfig,
     ProfileAuthType,
     ProfileConfig,
@@ -50,6 +53,14 @@ def test_token_response_text_handlers() -> None:
             TokenStatusResponse(reference_number="token-ref", status="active")
         )
         == "reference_number: token-ref\nstatus: active"
+    )
+    assert (
+        plain_renderer.render(
+            GeneratedToken(
+                reference_number="token-ref", token="secret", status="active"
+            )
+        )
+        == "reference_number: token-ref\ntoken: secret\nstatus: active"
     )
 
 
@@ -144,13 +155,13 @@ def test_cli_action_models_text_use_yes_no() -> None:
 
 
 def test_config_result_models_text(tmp_path) -> None:
-    config = CliConfig(
+    config = CliProfileConfig(
         active_profile="demo",
         profiles={
             "demo": ProfileConfig(
                 environment="test",
                 nip="5261040828",
-                auth=ProfileAuthConfig(type=ProfileAuthType.test_certificate),
+                auth=ProfileAuthConfig(type=ProfileAuthType.TEST_CERTIFICATE),
             )
         },
     )
@@ -172,15 +183,17 @@ def test_saved_file_text_uses_path_and_bytes(tmp_path) -> None:
     )
 
 
-def test_export_handle_text_includes_saved_handle_path(tmp_path) -> None:
-    handle = ExportHandle(reference_number="export-ref", aes_key=b"abc", iv=b"def")
-
+def test_export_handle_text_redacts_secrets_and_includes_saved_handle_path(tmp_path) -> None:
+    state = ExportResumeState(
+        reference_number="export-ref",
+        aes_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        iv="AAAAAAAAAAAAAAAAAAAAAA==",
+    )
     assert plain_renderer.render(
-        ExportHandleSaved.from_handle(handle, handle_file=tmp_path / "handle.json")
+        ExportHandleSaved(state=state, handle_file=tmp_path / "handle.json")
     ) == (
-        "reference_number: export-ref\n"
-        "aes_key: YWJj\n"
-        "iv: ZGVm\n"
+        'state: {"format_version":1,"reference_number":"export-ref",'
+        '"aes_key":"**********","iv":"**********"}\n'
         f"handle_file: {tmp_path / 'handle.json'}"
     )
 

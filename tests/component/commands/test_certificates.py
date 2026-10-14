@@ -1,17 +1,46 @@
-from conftest import FakeService, cli_args, fake_runtime, payload
-from ksef2.domain.models.certificates import (
+from datetime import UTC, datetime
+
+import pytest
+from conftest import FakePager, FakeService, cli_args, fake_runtime, payload
+from ksef2.models import (
     Certificate,
+    CertificateEnrollmentResponse,
+    CertificateEnrollmentStatusResponse,
     CertificateLimitsResponse,
     RetrievedCertificatesList,
 )
+
 from ksef2_cli.app import app
 
 
+class FakeCertificateEnrollment:
+    """Enrollment handle with SDK response models and recorded polling arguments."""
+
+    def __init__(self) -> None:
+        self.response = CertificateEnrollmentResponse(
+            reference_number="enroll-ref",
+            timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        self.wait_calls: list[tuple[float, float]] = []
+
+    def wait(
+        self, *, timeout: float, poll_interval: float
+    ) -> CertificateEnrollmentStatusResponse:
+        self.wait_calls.append((timeout, poll_interval))
+        return CertificateEnrollmentStatusResponse(
+            request_date=datetime(2026, 1, 1, tzinfo=UTC),
+            status_code=200,
+            status_description="Certificate issued",
+            certificate_serial_number="ABCDEF1234567890",
+        )
+
+
 def test_certificate_read_and_enrollment_commands(runner, tmp_path) -> None:
+    handle = FakeCertificateEnrollment()
     service = FakeService(
         get_limits={"limits": "ok"},
         get_enrollment_data={"subject": "data"},
-        enroll={"reference_number": "enroll-ref"},
+        enroll=handle,
         get_enrollment_status={"status": "ready"},
     )
     runtime = fake_runtime(auth=type("Auth", (), {"certificates": service})())
@@ -24,7 +53,7 @@ def test_certificate_read_and_enrollment_commands(runner, tmp_path) -> None:
     ) == {"subject": "data"}
 
     csr = tmp_path / "request.csr"
-    csr.write_text("base64-csr\n", encoding="utf-8")
+    _ = csr.write_text("base64-csr\n", encoding="utf-8")
     assert payload(
         runner.invoke(
             app,
@@ -42,8 +71,14 @@ def test_certificate_read_and_enrollment_commands(runner, tmp_path) -> None:
             ),
             obj=runtime,
         )
-    ) == {"reference_number": "enroll-ref"}
-    assert service.called("enroll")["csr"] == "base64-csr"
+    ) == {"reference_number": "enroll-ref", "timestamp": "2026-01-01T00:00:00Z"}
+    assert service.called("enroll") == {
+        "certificate_name": "demo",
+        "certificate_type": "offline",
+        "csr": "base64-csr",
+        "valid_from": "2026-01-01T00:00:00Z",
+    }
+    assert handle.wait_calls == []
 
     assert payload(
         runner.invoke(
@@ -52,6 +87,81 @@ def test_certificate_read_and_enrollment_commands(runner, tmp_path) -> None:
             obj=runtime,
         )
     ) == {"status": "ready"}
+
+
+@pytest.mark.parametrize("wait", [False, True])
+@pytest.mark.parametrize("json_output", [False, True])
+def test_certificate_enroll_renders_response_or_waited_status(
+    runner, tmp_path, wait, json_output
+) -> None:
+    handle = FakeCertificateEnrollment()
+    service = FakeService(enroll=handle)
+    runtime = fake_runtime(auth=type("Auth", (), {"certificates": service})())
+    csr = tmp_path / "request.csr"
+    _ = csr.write_text("base64-csr\n", encoding="utf-8")
+    args = ["--no-config"]
+    if json_output:
+        args.append("--json")
+    args.extend(["certificates", "enroll", "--name", "demo", "--csr-file", str(csr)])
+    if wait:
+        args.append("--wait")
+
+    result = runner.invoke(app, args, obj=runtime)
+
+    assert result.exit_code == 0, result.output
+    if json_output:
+        expected = (
+            {
+                "request_date": "2026-01-01T00:00:00Z",
+                "status_code": 200,
+                "status_description": "Certificate issued",
+                "status_details": None,
+                "certificate_serial_number": "ABCDEF1234567890",
+            }
+            if wait
+            else {"reference_number": "enroll-ref", "timestamp": "2026-01-01T00:00:00Z"}
+        )
+        assert payload(result) == expected
+    elif wait:
+        assert "status_code: 200" in result.output
+        assert "certificate_serial_number: ABCDEF1234567890" in result.output
+    else:
+        assert "reference_number: enroll-ref" in result.output
+        assert "timestamp: 2026-01-01T00:00:00Z" in result.output
+    assert handle.wait_calls == ([(60.0, 1.0)] if wait else [])
+
+
+@pytest.mark.parametrize(
+    "poll_override, expected", [(None, (12.0, 1.5)), (0.5, (4.0, 0.5))]
+)
+def test_certificate_enroll_wait_uses_profile_and_poll_override(
+    runner, tmp_path, poll_override, expected
+) -> None:
+    config = tmp_path / "config.toml"
+    _ = config.write_text(
+        'active_profile = "demo"\n'
+        '[profiles.demo]\nenvironment = "test"\nnip = "5261040828"\n'
+        'poll_interval = 1.5\nmax_poll_attempts = 8\n'
+        '[profiles.demo.auth]\ntype = "test_certificate"\n',
+        encoding="utf-8",
+    )
+    csr = tmp_path / "request.csr"
+    _ = csr.write_text("base64-csr\n", encoding="utf-8")
+    handle = FakeCertificateEnrollment()
+    runtime = fake_runtime(
+        auth=type("Auth", (), {"certificates": FakeService(enroll=handle)})()
+    )
+    args = ["--config", str(config), "--profile", "demo", "--json"]
+    if poll_override is not None:
+        args.extend(["--auth-poll-interval", str(poll_override)])
+    args.extend(
+        ["certificates", "enroll", "--name", "demo", "--csr-file", str(csr), "--wait"]
+    )
+
+    result = runner.invoke(app, args, obj=runtime)
+
+    assert payload(result)["status_code"] == 200
+    assert handle.wait_calls == [expected]
 
 
 def test_certificate_limits_render_in_default_text_mode(runner) -> None:
@@ -86,8 +196,7 @@ def test_certificate_list_retrieve_and_revoke(runner, tmp_path) -> None:
         ]
     )
     service = FakeService(
-        query={"certificates": [{"serial_number": serial}]},
-        all=lambda **kwargs: [{"serial_number": serial}],
+        list=FakePager([{"serial_number": serial}]),
         retrieve=result,
         revoke=None,
     )
@@ -97,8 +206,8 @@ def test_certificate_list_retrieve_and_revoke(runner, tmp_path) -> None:
         runner.invoke(
             app, cli_args("certificates", "list", "--page-size", "10"), obj=runtime
         )
-    ) == {"certificates": [{"serial_number": serial}]}
-    assert service.called("query")["params"].page_size == 10
+    ) == [{"serial_number": serial}]
+    assert service.called("list")["params"].page_size == 10
 
     assert payload(
         runner.invoke(app, cli_args("certificates", "list", "--all"), obj=runtime)

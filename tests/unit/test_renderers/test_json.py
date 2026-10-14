@@ -1,12 +1,11 @@
 import json
 from datetime import UTC, datetime
 
-from ksef2.domain.models.invoices import ExportHandle
-from ksef2.domain.models.tokens import GenerateTokenResponse
+from ksef2.models import ExportResumeState, GenerateTokenResponse
 
 from ksef2_cli.commands.invoices.models import ExportHandleSaved, ExportPaths
-from ksef2_cli.config import (
-    CliConfig,
+from ksef2.profiles import (
+    CliProfileConfig,
     ProfileAuthConfig,
     ProfileAuthType,
     ProfileConfig,
@@ -35,11 +34,13 @@ def test_json_renderer_dumps_pydantic_models_and_lists() -> None:
     assert json.loads(json_renderer.render(result)) == {
         "reference_number": "token-ref",
         "token": "secret",
+        "status": None,
     }
     assert json.loads(json_renderer.render([result])) == [
         {
             "reference_number": "token-ref",
             "token": "secret",
+            "status": None,
         }
     ]
 
@@ -121,14 +122,14 @@ def test_cli_action_models_json_use_booleans() -> None:
 
 
 def test_config_result_models_json(tmp_path) -> None:
-    config = CliConfig(
+    config = CliProfileConfig(
         active_profile="demo",
         profiles={
             "demo": ProfileConfig(
                 environment="test",
                 nip="5261040828",
                 auth=ProfileAuthConfig(
-                    type=ProfileAuthType.token,
+                    type=ProfileAuthType.TOKEN,
                     token_env="KSEF2_DEMO_TOKEN",
                     context_type="nip",
                 ),
@@ -156,15 +157,12 @@ def test_config_result_models_json(tmp_path) -> None:
     assert shown["config"]["active_profile"] == "demo"
     assert shown["config"]["profiles"]["demo"]["nip"] == "5261040828"
     assert (
-        shown["config"]["profiles"]["demo"]["auth"]["token_env"]
-        == "KSEF2_DEMO_TOKEN"
+        shown["config"]["profiles"]["demo"]["auth"]["token_env"] == "KSEF2_DEMO_TOKEN"
     )
 
     initialized = json.loads(
         json_renderer.render(
-            ConfigInitialized(
-                path=tmp_path / "config.toml", mode="0600", config=config
-            )
+            ConfigInitialized(path=tmp_path / "config.toml", mode="0600", config=config)
         )
     )
     assert initialized["path"] == str(tmp_path / "config.toml")
@@ -181,22 +179,27 @@ def test_saved_file_json_uses_bytes_alias(tmp_path) -> None:
     }
 
 
-def test_export_handle_json_uses_base64_and_omits_empty_handle_file(tmp_path) -> None:
-    handle = ExportHandle(reference_number="export-ref", aes_key=b"abc", iv=b"def")
-
-    assert json.loads(json_renderer.render(ExportHandleSaved.from_handle(handle))) == {
+def test_export_handle_json_redacts_secrets_and_omits_empty_handle_file(tmp_path) -> None:
+    state = ExportResumeState(
+        reference_number="export-ref",
+        aes_key="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        iv="AAAAAAAAAAAAAAAAAAAAAA==",
+    )
+    redacted_state = {
+        "format_version": 1,
         "reference_number": "export-ref",
-        "aes_key": "YWJj",
-        "iv": "ZGVm",
+        "aes_key": "**********",
+        "iv": "**********",
+    }
+    assert json.loads(json_renderer.render(ExportHandleSaved(state=state))) == {
+        "state": redacted_state,
     }
     assert json.loads(
         json_renderer.render(
-            ExportHandleSaved.from_handle(handle, handle_file=tmp_path / "handle.json")
+            ExportHandleSaved(state=state, handle_file=tmp_path / "handle.json")
         )
     ) == {
-        "reference_number": "export-ref",
-        "aes_key": "YWJj",
-        "iv": "ZGVm",
+        "state": redacted_state,
         "handle_file": str(tmp_path / "handle.json"),
     }
 

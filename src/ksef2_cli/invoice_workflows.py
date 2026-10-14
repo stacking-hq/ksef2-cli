@@ -1,24 +1,24 @@
 """Shared invoice workflows used by CLI and TUI adapters."""
 
+import base64
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Self, cast
 
-from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.clients.online import OnlineSessionClient
-from ksef2.domain.models.invoices import (
+from ksef2 import KSeFInvoiceRejectedError, KSeFSessionError
+from ksef2.clients import AuthenticatedClient, OnlineSessionClient
+from ksef2.models import (
+    CurrencyCodes,
+    ExportResumeState,
+    FormSchema,
     InvoiceExportStatusResponse,
     InvoiceMetadata,
+    InvoiceMetadataParams,
     InvoicesFilter,
     QueryInvoicesMetadataResponse,
-    SendInvoiceResponse,
-)
-from ksef2.domain.models.pagination import InvoiceMetadataParams
-from ksef2.domain.models.session import (
-    FormSchema,
     SessionInvoiceStatusResponse,
 )
-from ksef2.domain.types import CurrencyCodes
 from pydantic import BaseModel, Field, model_validator
 
 from ksef2_cli.commands.invoices.models import (
@@ -29,13 +29,14 @@ from ksef2_cli.commands.invoices.models import (
     ExportPaths,
     InvoiceAmountTypeChoice,
     InvoiceDateTypeChoice,
+    InvoicePdfExport,
     InvoiceRoleChoice,
     InvoiceSendModeChoice,
+    InvoicesSendResult,
     InvoiceTypeChoice,
     InvoiceWorkflowBatch,
     InvoiceWorkflowItem,
     InvoiceWorkflowReceipt,
-    InvoicesSendResult,
     InvoicingModeChoice,
     OnlineInvoiceReceipt,
     SortOrderChoice,
@@ -44,7 +45,6 @@ from ksef2_cli.config import FormSchemaChoice
 from ksef2_cli.io import (
     SECRET_MODEL_FILE_MODE,
     write_bytes_file,
-    write_model_file,
     write_text_file,
 )
 from ksef2_cli.parsing import parse_optional_bool
@@ -92,12 +92,15 @@ def _batch_upo_path(upo_dir: Path, session_reference: str, index: int) -> Path:
     return upo_dir / _safe_filename(f"batch-{session_reference}-upo-{index}", ".xml")
 
 
-class InvoiceMetadataInput(BaseModel):
+class InvoiceFilterInput(BaseModel):
+    """The ``InvoicesFilter`` fields that metadata and export commands both accept."""
+
     date_from: datetime
     date_to: datetime | None = None
     role: InvoiceRoleChoice = InvoiceRoleChoice.SELLER
     date_type: InvoiceDateTypeChoice = InvoiceDateTypeChoice.ISSUE_DATE
     amount_type: InvoiceAmountTypeChoice = InvoiceAmountTypeChoice.BRUTTO
+    restrict_to_permanent_storage_hwm_date: bool = False
     currency: list[str] = Field(default_factory=list)
     invoice_type: list[InvoiceTypeChoice] = Field(default_factory=list)
     seller_nip: str | None = None
@@ -112,6 +115,9 @@ class InvoiceMetadataInput(BaseModel):
     invoicing_mode: InvoicingModeChoice | None = None
     attachment: str | None = None
     self_invoicing: str | None = None
+
+
+class InvoiceMetadataInput(InvoiceFilterInput):
     page_size: int = Field(default=10, ge=10, le=250)
     page_offset: int = Field(default=0, ge=0)
     sort_order: SortOrderChoice = SortOrderChoice.ASC
@@ -173,37 +179,39 @@ class InvoiceSendInput(BaseModel):
         return self
 
 
-class InvoiceExportInput(BaseModel):
-    date_from: datetime
-    date_to: datetime | None = None
-    role: InvoiceRoleChoice = InvoiceRoleChoice.SELLER
-    date_type: InvoiceDateTypeChoice = InvoiceDateTypeChoice.ISSUE_DATE
-    amount_type: InvoiceAmountTypeChoice = InvoiceAmountTypeChoice.BRUTTO
+class InvoiceExportInput(InvoiceFilterInput):
     only_metadata: bool = False
     compression_type: CompressionTypeChoice | None = None
     handle_file: Path | None = None
 
 
 class InvoiceExportFetchInput(BaseModel):
-    handle: ExportHandleSaved
+    handle: ExportResumeState
     output_dir: Path = Path("downloads")
     wait: bool = False
     timeout: float = Field(default=120.0, ge=1.0)
     poll_interval: float = Field(default=2.0, ge=0.1)
 
 
-class InvoiceExportDownloadInput(BaseModel):
-    date_from: datetime
-    date_to: datetime | None = None
-    role: InvoiceRoleChoice = InvoiceRoleChoice.SELLER
-    date_type: InvoiceDateTypeChoice = InvoiceDateTypeChoice.ISSUE_DATE
-    amount_type: InvoiceAmountTypeChoice = InvoiceAmountTypeChoice.BRUTTO
+class InvoiceExportDownloadInput(InvoiceFilterInput):
     output_dir: Path = Path("downloads")
     only_metadata: bool = False
     compression_type: CompressionTypeChoice | None = None
     timeout: float = Field(default=120.0, ge=1.0)
     poll_interval: float = Field(default=2.0, ge=0.1)
     handle_file: Path | None = None
+
+
+class InvoiceExportPdfInput(InvoiceExportDownloadInput):
+    """An export download that also renders each decrypted invoice to PDF."""
+
+    pdf_dir: Path | None = None
+
+    @property
+    def pdf_directory(self) -> Path:
+        """Where PDFs go: ``--pdf-dir`` when given, the downloaded XML's directory otherwise."""
+
+        return self.pdf_dir if self.pdf_dir is not None else self.output_dir
 
 
 class OnlineInvoiceHandler:
@@ -253,33 +261,28 @@ class OnlineInvoiceHandler:
         error: str | None = None
 
         try:
-            result: SendInvoiceResponse | SessionInvoiceStatusResponse
+            submission = session.send_invoice(invoice_xml=invoice_path.read_bytes())
+            invoice_reference = submission.reference_number
+
             if self.inputs.wait:
-                status = session.send_invoice_and_wait(
-                    invoice_xml=invoice_path.read_bytes(),
-                    timeout=self.inputs.timeout,
-                    poll_interval=self.inputs.poll_interval,
-                )
-                result = status
+                try:
+                    status = submission.wait(
+                        timeout=self.inputs.timeout,
+                        poll_interval=self.inputs.poll_interval,
+                    )
+                except KSeFInvoiceRejectedError as exc:
+                    status = exc.status
                 ksef_number = status.ksef_number
                 if status.status.code >= 400:
                     item_status = "failed"
                     error = status.status.description
                 else:
                     item_status = "accepted"
-            else:
-                result = session.send_invoice(invoice_xml=invoice_path.read_bytes())
-
-            invoice_reference = result.reference_number
-
-            if self.inputs.wait and self.inputs.upo_dir is not None and error is None:
-                content = session.get_invoice_upo_by_reference(
-                    invoice_reference_number=invoice_reference
-                )
-                upo_file = write_bytes_file(
-                    _invoice_upo_path(self.inputs.upo_dir, invoice_path),
-                    content,
-                )
+                    if self.inputs.upo_dir is not None:
+                        upo_file = write_bytes_file(
+                            _invoice_upo_path(self.inputs.upo_dir, invoice_path),
+                            submission.download_upo(),
+                        )
 
             online_receipt_file = _online_receipt_path(
                 invoice_path=invoice_path,
@@ -292,7 +295,7 @@ class OnlineInvoiceHandler:
                     submitted_files=[invoice_path],
                     online=OnlineInvoiceReceipt(
                         file=invoice_path,
-                        session_state=session.get_state(),
+                        session_state=session.resume_state(),
                         invoice_reference=invoice_reference,
                         status=status,
                         upo_file=upo_file,
@@ -329,36 +332,38 @@ class BatchInvoiceHandler:
         self.inputs = inputs
 
     def send(self) -> InvoicesSendResult:
-        batch_client = self.auth.batch
+        batch_service = self.auth.batch
         inputs = self.inputs
 
         if inputs.max_part_size is None:
-            prepared = batch_client.prepare_batch_from_paths(
-                invoice_paths=inputs.invoice_files,
+            session = batch_service.submit(
+                inputs.invoice_files,
                 form_code=inputs.form_schema,
                 offline_mode=inputs.offline_mode,
             )
         else:
-            prepared = batch_client.prepare_batch_from_paths(
-                invoice_paths=inputs.invoice_files,
+            session = batch_service.submit(
+                inputs.invoice_files,
                 form_code=inputs.form_schema,
                 offline_mode=inputs.offline_mode,
                 max_part_size=inputs.max_part_size,
             )
 
-        state = batch_client.submit_prepared_batch(prepared_batch=prepared)
-        sdk_status = (
-            batch_client.wait_for_completion(
-                session=state,
-                timeout=inputs.timeout,
-                poll_interval=inputs.poll_interval,
-            )
-            if inputs.wait
-            else None
-        )
+        state = session.resume_state()
+        sdk_status = None
+        wait_failed = False
+        if inputs.wait:
+            try:
+                sdk_status = session.wait(
+                    timeout=inputs.timeout, poll_interval=inputs.poll_interval
+                )
+            except KSeFSessionError:
+                wait_failed = True
+                sdk_status = session.get_status()
         status = (
             None if sdk_status is None else BatchSessionStatus.from_status(sdk_status)
         )
+        batch_failed = wait_failed or (status is not None and (status.code or 0) >= 400)
         saved_upos = (
             download_batch_upos(
                 auth=self.auth,
@@ -366,7 +371,7 @@ class BatchInvoiceHandler:
                 status=status,
                 upo_dir=inputs.upo_dir,
             )
-            if inputs.upo_dir is not None
+            if inputs.upo_dir is not None and not batch_failed
             else []
         )
         upo_files = [saved.path for saved in saved_upos]
@@ -395,7 +400,7 @@ class BatchInvoiceHandler:
 
         batch_status = "submitted"
         if status is not None:
-            batch_status = "failed" if (status.code or 0) >= 400 else "completed"
+            batch_status = "failed" if batch_failed else "completed"
 
         invoice_count = len(inputs.invoice_files)
         successful_invoice_count: int | None = None
@@ -436,20 +441,24 @@ class BatchInvoiceHandler:
         )
 
 
-def query_invoice_metadata(
-    auth: AuthenticatedClient, inputs: InvoiceMetadataInput
-) -> QueryInvoicesMetadataResponse | list[InvoiceMetadata]:
+def build_invoices_filter(inputs: InvoiceFilterInput) -> InvoicesFilter:
+    """Turn the CLI filter fields into the filter metadata and export commands send."""
     effective_date_to = (
         inputs.date_to
         if inputs.date_to is not None
         else datetime.now(timezone.utc)
     )
-    filters = InvoicesFilter(
+    return InvoicesFilter(
         role=inputs.role.value,
         date_type=inputs.date_type.value,
         date_from=inputs.date_from,
         date_to=effective_date_to,
         amount_type=inputs.amount_type.value,
+        # KSeF does not restrict without this flag, and false asks it not to, so the
+        # field is left out unless the caller asked for the high-water mark.
+        restrict_to_permanent_storage_hwm_date=(
+            True if inputs.restrict_to_permanent_storage_hwm_date else None
+        ),
         currency_codes=cast(list[CurrencyCodes], inputs.currency)
         if inputs.currency
         else None,
@@ -469,15 +478,22 @@ def query_invoice_metadata(
             inputs.self_invoicing, option_name="--self-invoicing"
         ),
     )
+
+
+def query_invoice_metadata(
+    auth: AuthenticatedClient, inputs: InvoiceMetadataInput
+) -> QueryInvoicesMetadataResponse | list[InvoiceMetadata]:
+    filters = build_invoices_filter(inputs)
     params = InvoiceMetadataParams(
         page_size=inputs.page_size,
         page_offset=inputs.page_offset,
         sort_order=inputs.sort_order.value,
     )
 
+    search = auth.invoices.search(filters=filters, params=params)
     if inputs.all_pages:
-        return list(auth.invoices.all_metadata(filters=filters, params=params))
-    return auth.invoices.query_metadata(filters=filters, params=params)
+        return list(search)
+    return search.first_response()
 
 
 def download_invoice(
@@ -489,14 +505,11 @@ def download_invoice(
     timeout: float = 120.0,
     poll_interval: float = 2.0,
 ) -> SavedFile:
-    if wait:
-        content = auth.invoices.wait_for_invoice_download(
-            ksef_number=ksef_number,
-            timeout=timeout,
-            poll_interval=poll_interval,
-        )
-    else:
-        content = auth.invoices.download_invoice(ksef_number=ksef_number)
+    content = auth.invoices.download(
+        ksef_number=ksef_number,
+        timeout=timeout if wait else None,
+        poll_interval=poll_interval,
+    )
     target = output_file or Path(_safe_filename(ksef_number, ".xml"))
     return SavedFile(path=write_bytes_file(target, content), size=len(content))
 
@@ -512,65 +525,61 @@ def send_invoices(auth: AuthenticatedClient, inputs: InvoiceSendInput) -> Invoic
 def schedule_invoice_export(
     auth: AuthenticatedClient, inputs: InvoiceExportInput
 ) -> ExportHandleSaved:
-    effective_date_to = (
-        inputs.date_to
-        if inputs.date_to is not None
-        else datetime.now(timezone.utc)
-    )
-    filters = InvoicesFilter(
-        role=inputs.role.value,
-        date_type=inputs.date_type.value,
-        date_from=inputs.date_from,
-        date_to=effective_date_to,
-        amount_type=inputs.amount_type.value,
-    )
-    handle = auth.invoices.schedule_export(
+    filters = build_invoices_filter(inputs)
+    job = auth.invoices.export(
         filters=filters,
         only_metadata=inputs.only_metadata,
         compression_type=inputs.compression_type.value
         if inputs.compression_type
         else None,
     )
-    saved = ExportHandleSaved.from_handle(handle)
+    state = job.resume_state()
     if inputs.handle_file:
-        _ = write_model_file(
-            inputs.handle_file, saved, file_mode=SECRET_MODEL_FILE_MODE
+        _ = write_text_file(
+            inputs.handle_file,
+            state.to_json(indent=2),
+            file_mode=SECRET_MODEL_FILE_MODE,
         )
-    return ExportHandleSaved.from_handle(handle, handle_file=inputs.handle_file)
+    return ExportHandleSaved(state=state, handle_file=inputs.handle_file)
+
+
+# An export's AES material only decrypts its package, which `wait()` does. Reading the
+# status asks KSeF about the reference number alone, so `invoices export-status` resumes
+# the job with throwaway material of the length the state requires. Commands that must
+# download the package load the handle written by `invoices export --handle-file`.
+_STATUS_ONLY_AES_KEY = base64.b64encode(bytes(32)).decode("ascii")
+_STATUS_ONLY_IV = base64.b64encode(bytes(16)).decode("ascii")
 
 
 def get_invoice_export_status(
     auth: AuthenticatedClient, reference_number: str
 ) -> InvoiceExportStatusResponse:
-    return auth.invoices.get_export_status(reference_number=reference_number)
+    return auth.invoices.export(
+        state=ExportResumeState(
+            reference_number=reference_number,
+            aes_key=_STATUS_ONLY_AES_KEY,
+            iv=_STATUS_ONLY_IV,
+        )
+    ).get_status()
 
 
 def fetch_invoice_export(
     auth: AuthenticatedClient, inputs: InvoiceExportFetchInput
 ) -> FocusedResult[ExportPaths, str]:
-    handle = inputs.handle.to_handle()
-
-    if inputs.wait:
-        package = auth.invoices.wait_for_export_package(
-            reference_number=handle.reference_number,
-            timeout=inputs.timeout,
-            poll_interval=inputs.poll_interval,
+    job = auth.invoices.export(state=inputs.handle)
+    # The package is only reachable through wait(); this check keeps the answer for an
+    # export that is still building a clear "not ready" instead of a polling timeout.
+    if not inputs.wait and job.get_status().package is None:
+        raise ValueError(
+            "Export package is not ready. Re-run with --wait or check export-status."
         )
-    else:
-        status = auth.invoices.get_export_status(reference_number=handle.reference_number)
-        if status.package is None:
-            raise ValueError(
-                "Export package is not ready. Re-run with --wait or check export-status."
-            )
-        package = status.package
-    paths = auth.invoices.fetch_package(
-        package=package,
-        export=handle,
-        target_directory=inputs.output_dir,
-    )
+    paths = job.wait(
+        timeout=inputs.timeout,
+        poll_interval=inputs.poll_interval,
+    ).save(inputs.output_dir)
     return FocusedResult(
         payload=ExportPaths(
-            reference_number=handle.reference_number,
+            reference_number=job.reference_number,
             paths=paths,
         ),
         items=[str(path) for path in paths],
@@ -580,47 +589,66 @@ def fetch_invoice_export(
 def download_invoice_export(
     auth: AuthenticatedClient, inputs: InvoiceExportDownloadInput
 ) -> FocusedResult[ExportPaths, str]:
-    effective_date_to = (
-        inputs.date_to
-        if inputs.date_to is not None
-        else datetime.now(timezone.utc)
-    )
-    filters = InvoicesFilter(
-        role=inputs.role.value,
-        date_type=inputs.date_type.value,
-        date_from=inputs.date_from,
-        date_to=effective_date_to,
-        amount_type=inputs.amount_type.value,
-    )
-    handle = auth.invoices.schedule_export(
+    filters = build_invoices_filter(inputs)
+    job = auth.invoices.export(
         filters=filters,
         only_metadata=inputs.only_metadata,
         compression_type=inputs.compression_type.value
         if inputs.compression_type
         else None,
     )
-    saved = ExportHandleSaved.from_handle(handle)
+    state = job.resume_state()
     if inputs.handle_file:
-        _ = write_model_file(
-            inputs.handle_file, saved, file_mode=SECRET_MODEL_FILE_MODE
+        _ = write_text_file(
+            inputs.handle_file,
+            state.to_json(indent=2),
+            file_mode=SECRET_MODEL_FILE_MODE,
         )
-    package = auth.invoices.wait_for_export_package(
-        reference_number=handle.reference_number,
+    paths = job.wait(
         timeout=inputs.timeout,
         poll_interval=inputs.poll_interval,
-    )
-    paths = auth.invoices.fetch_package(
-        package=package,
-        export=handle,
-        target_directory=inputs.output_dir,
-    )
+    ).save(inputs.output_dir)
     return FocusedResult(
         payload=ExportPaths(
-            reference_number=handle.reference_number,
+            reference_number=job.reference_number,
             handle_file=inputs.handle_file,
             paths=paths,
         ),
         items=[str(path) for path in paths],
+    )
+
+
+def export_invoices_to_pdf(
+    auth: AuthenticatedClient,
+    inputs: InvoiceExportPdfInput,
+    render_pdf: Callable[[Path], bytes],
+) -> FocusedResult[InvoicePdfExport, SavedFile]:
+    """Download an invoice export package and render every invoice in it to PDF.
+
+    ``render_pdf`` comes from the caller because WeasyPrint ships as an optional extra,
+    so this workflow must not import the exporter itself.
+    """
+
+    downloaded = download_invoice_export(auth, inputs)
+
+    pdfs: list[SavedFile] = []
+    for invoice_xml_path in downloaded.payload.paths:
+        content = render_pdf(invoice_xml_path)
+        target = inputs.pdf_directory / _safe_filename(
+            f"{invoice_xml_path.stem}.pdf", ".pdf"
+        )
+        pdfs.append(
+            SavedFile(path=write_bytes_file(target, content), size=len(content))
+        )
+
+    return FocusedResult(
+        payload=InvoicePdfExport(
+            reference_number=downloaded.payload.reference_number,
+            pdfs=pdfs,
+            invoice_xml_files=downloaded.payload.paths,
+            handle_file=downloaded.payload.handle_file,
+        ),
+        items=pdfs,
     )
 
 
@@ -641,12 +669,17 @@ def download_batch_upos(
     if not status.upo_references:
         raise ValueError("Batch UPO is not ready. Re-run with --wait.")
 
-    saved: list[SavedFile] = []
-    for index, reference_number in enumerate(status.upo_references, start=1):
-        content = auth.batch.get_upo(
-            session=session_reference,
-            upo_reference_number=reference_number,
+    with auth.batch_session(state=session_reference) as session:
+        # KSeF hands back one page per UPO reference, in the order the status reported.
+        pages = session.download_upo()
+    if len(pages) != len(status.upo_references):
+        raise ValueError(
+            f"Batch session {session_reference} reported UPO references "
+            f"{', '.join(status.upo_references)} but returned {len(pages)} pages."
         )
+
+    saved: list[SavedFile] = []
+    for index, content in enumerate(pages, start=1):
         target = _batch_upo_path(
             upo_dir=upo_dir, session_reference=session_reference, index=index
         )

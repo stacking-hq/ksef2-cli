@@ -4,19 +4,18 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.clients.authenticated import AuthenticatedClient
-
-from ksef2_cli.context import read_model, run_authenticated, run_command
-from ksef2_cli.io import SECRET_MODEL_FILE_MODE, write_bytes_file, write_text_file
-from ksef2_cli.results import SavedFile
+from ksef2.clients import AuthenticatedClient
 
 from ksef2_cli.commands.invoices.models import (
     BatchSessionStatus,
-    InvoiceWorkflowReceipt,
     InvoicesStatusResult,
     InvoicesUpoResult,
+    InvoiceWorkflowReceipt,
 )
+from ksef2_cli.context import read_model, run_authenticated, run_command
 from ksef2_cli.invoice_workflows import download_batch_upos
+from ksef2_cli.io import SECRET_MODEL_FILE_MODE, write_bytes_file, write_text_file
+from ksef2_cli.results import SavedFile
 
 
 def _safe_filename(value: str, suffix: str) -> str:
@@ -48,17 +47,14 @@ def invoices_status(
                 online = receipt.online
                 if online is None:
                     raise ValueError("Receipt does not contain online invoice data.")
-                session = auth.resume_online_session(online.session_state)
+                session = auth.online_session(state=online.session_state)
+                submission = session.submission(
+                    reference_number=online.invoice_reference,
+                )
                 status = (
-                    session.wait_for_invoice_ready(
-                        invoice_reference_number=online.invoice_reference,
-                        timeout=timeout,
-                        poll_interval=poll_interval,
-                    )
+                    submission.wait(timeout=timeout, poll_interval=poll_interval)
                     if wait
-                    else session.get_invoice_status(
-                        invoice_reference_number=online.invoice_reference
-                    )
+                    else submission.get_status()
                 )
                 updated = receipt.model_copy(
                     update={"online": online.model_copy(update={"status": status})}
@@ -86,15 +82,12 @@ def invoices_status(
             batch = receipt.batch
             if batch is None:
                 raise ValueError("Receipt does not contain batch data.")
-            status = (
-                auth.batch.wait_for_completion(
-                    session=batch.session_reference,
-                    timeout=timeout,
-                    poll_interval=poll_interval,
+            with auth.batch_session(state=batch.session_reference) as session:
+                status = (
+                    session.wait(timeout=timeout, poll_interval=poll_interval)
+                    if wait
+                    else session.get_status()
                 )
-                if wait
-                else auth.batch.get_status(session=batch.session_reference)
-            )
             updated = receipt.model_copy(
                 update={
                     "batch": batch.model_copy(
@@ -163,18 +156,18 @@ def invoices_upo(
                 online = receipt.online
                 if online is None:
                     raise ValueError("Receipt does not contain online invoice data.")
-                session = auth.resume_online_session(online.session_state)
                 status = online.status
-                if wait:
-                    status = session.wait_for_invoice_ready(
-                        invoice_reference_number=online.invoice_reference,
-                        timeout=timeout,
-                        poll_interval=poll_interval,
+                if wait or status is None:
+                    session = auth.online_session(state=online.session_state)
+                    submission = session.submission(
+                        reference_number=online.invoice_reference,
                     )
-                elif status is None:
-                    status = session.get_invoice_status(
-                        invoice_reference_number=online.invoice_reference
-                    )
+                    if wait:
+                        status = submission.wait(
+                            timeout=timeout, poll_interval=poll_interval
+                        )
+                    elif status is None:
+                        status = submission.get_status()
 
                 if status.status.code >= 400:
                     raise ValueError(
@@ -189,8 +182,9 @@ def invoices_upo(
                 else:
                     assert upo_dir is not None
                     target = _invoice_upo_path(upo_dir, online.file)
-                content = session.get_invoice_upo_by_reference(
-                    invoice_reference_number=online.invoice_reference
+                content = auth.invoice_sessions.download_upo(
+                    session_reference_number=online.session_state.reference_number,
+                    invoice_reference_number=online.invoice_reference,
                 )
                 saved = SavedFile(
                     path=write_bytes_file(target, content), size=len(content)
@@ -230,18 +224,14 @@ def invoices_upo(
                 and cached_status.upo_references
             ):
                 status = cached_status
-            elif wait:
-                status = BatchSessionStatus.from_status(
-                    auth.batch.wait_for_completion(
-                        session=batch.session_reference,
-                        timeout=timeout,
-                        poll_interval=poll_interval,
-                    )
-                )
             else:
-                status = BatchSessionStatus.from_status(
-                    auth.batch.get_status(session=batch.session_reference)
-                )
+                with auth.batch_session(state=batch.session_reference) as session:
+                    sdk_status = (
+                        session.wait(timeout=timeout, poll_interval=poll_interval)
+                        if wait
+                        else session.get_status()
+                    )
+                status = BatchSessionStatus.from_status(sdk_status)
             saved_upos = download_batch_upos(
                 auth=auth,
                 session_reference=batch.session_reference,

@@ -4,10 +4,10 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.domain.models.invoices import SendInvoiceResponse
-from ksef2.domain.models.session import (
+from ksef2.clients import AuthenticatedClient
+from ksef2.models import (
     OnlineSessionResumeState,
+    SendInvoiceResponse,
     SessionInvoicesResponse,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
@@ -51,7 +51,7 @@ def online_open(
     def operation() -> OnlineSessionOpened:
         def open_session(auth: AuthenticatedClient) -> OnlineSessionResumeState:
             session = auth.online_session(form_code=form.form_schema)
-            return session.get_state()
+            return session.resume_state()
 
         state = run_authenticated(ctx, open_session)
         if state_file:
@@ -102,8 +102,8 @@ def online_send(
             auth: AuthenticatedClient,
         ) -> tuple[list[OnlineSendItem], OnlineSessionResumeState]:
             if state_file:
-                session = auth.resume_online_session(
-                    read_model_file(state_file, OnlineSessionResumeState)
+                session = auth.online_session(
+                    state=read_model_file(state_file, OnlineSessionResumeState)
                 )
             else:
                 session = auth.online_session(form_code=form.form_schema)
@@ -111,17 +111,17 @@ def online_send(
                 results: list[OnlineSendItem] = []
                 for invoice_path in invoice_paths:
                     xml = invoice_path.read_bytes()
+                    submission = session.send_invoice(invoice_xml=xml)
                     result: OnlineSendResponse
                     if wait:
-                        result = session.send_invoice_and_wait(
-                            invoice_xml=xml,
+                        result = submission.wait(
                             timeout=timeout,
                             poll_interval=poll_interval,
                         )
                     else:
-                        result = session.send_invoice(invoice_xml=xml)
+                        result = submission.response
                     results.append(OnlineSendItem(file=invoice_path, result=result))
-                state = session.get_state()
+                state = session.resume_state()
                 return results, state
             finally:
                 if not keep_open:
@@ -151,8 +151,8 @@ def online_status(
 
     def operation() -> SessionStatusResponse:
         def get_status(auth: AuthenticatedClient) -> SessionStatusResponse:
-            return auth.resume_online_session(
-                read_model_file(state_file, OnlineSessionResumeState)
+            return auth.online_session(
+                state=read_model_file(state_file, OnlineSessionResumeState)
             ).get_status()
 
         return run_authenticated(ctx, get_status)
@@ -178,8 +178,8 @@ def online_list(
 
     def operation() -> SessionInvoicesResponse:
         def list_session_invoices(auth: AuthenticatedClient) -> SessionInvoicesResponse:
-            session = auth.resume_online_session(
-                read_model_file(state_file, OnlineSessionResumeState)
+            session = auth.online_session(
+                state=read_model_file(state_file, OnlineSessionResumeState)
             )
             if failed:
                 return session.list_failed_invoices(
@@ -211,12 +211,11 @@ def online_invoice_status(
         def get_session_invoice_status(
             auth: AuthenticatedClient,
         ) -> SessionInvoiceStatusResponse:
-            session = auth.resume_online_session(
-                read_model_file(state_file, OnlineSessionResumeState)
+            session = auth.online_session(
+                state=read_model_file(state_file, OnlineSessionResumeState)
             )
             if wait:
-                return session.wait_for_invoice_ready(
-                    invoice_reference_number=invoice_reference,
+                return session.submission(reference_number=invoice_reference).wait(
                     timeout=timeout,
                     poll_interval=poll_interval,
                 )
@@ -250,16 +249,14 @@ def online_upo(
             )
 
     def get_upo(auth: AuthenticatedClient) -> SavedFile:
-        session = auth.resume_online_session(
-            read_model_file(state_file, OnlineSessionResumeState)
+        session = auth.online_session(
+            state=read_model_file(state_file, OnlineSessionResumeState)
         )
         if invoice_reference:
-            content = session.get_invoice_upo_by_reference(
-                invoice_reference_number=invoice_reference
-            )
+            content = session.download_invoice_upo(reference_number=invoice_reference)
         else:
             assert ksef_number is not None
-            content = session.get_invoice_upo_by_ksef_number(ksef_number=ksef_number)
+            content = session.download_invoice_upo(ksef_number=ksef_number)
         return SavedFile(path=write_bytes_file(output_file, content), size=len(content))
 
     run_authenticated_command(ctx, get_upo, validate=validate)
@@ -276,7 +273,7 @@ def online_close(
 
     def operation() -> SessionClosed:
         state = read_model_file(state_file, OnlineSessionResumeState)
-        run_authenticated(ctx, lambda auth: auth.resume_online_session(state).close())
+        run_authenticated(ctx, lambda auth: auth.online_session(state=state).close())
         return SessionClosed(reference_number=state.reference_number)
 
     run_command(ctx, operation)

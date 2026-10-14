@@ -1,12 +1,12 @@
 """Invoice command-owned models."""
 
-import base64
 import json
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
-from ksef2.domain.models.session import (
+from ksef2.models import (
+    ExportResumeState,
     OnlineSessionResumeState,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
@@ -14,10 +14,6 @@ from ksef2.domain.models.session import (
 from pydantic import Field
 
 from ksef2_cli.results import CliResult, SavedFile
-
-if TYPE_CHECKING:
-    from ksef2.domain.models.invoices import ExportHandle
-
 
 InvoiceWorkflowMode = Literal["online", "batch"]
 InvoiceWorkflowItemStatus = Literal["submitted", "accepted", "failed"]
@@ -170,32 +166,10 @@ class InvoicesUpoResult(CliResult):
 
 
 class ExportHandleSaved(CliResult):
-    """Export handle material printed or saved by export commands."""
+    """Export resume state redacted for output, plus its optional saved file path."""
 
-    reference_number: str
-    aes_key: str
-    iv: str
+    state: ExportResumeState
     handle_file: Path | None = None
-
-    @classmethod
-    def from_handle(
-        cls, handle: "ExportHandle", *, handle_file: Path | None = None
-    ) -> "ExportHandleSaved":
-        return cls(
-            reference_number=handle.reference_number,
-            aes_key=base64.b64encode(handle.aes_key).decode("ascii"),
-            iv=base64.b64encode(handle.iv).decode("ascii"),
-            handle_file=handle_file,
-        )
-
-    def to_handle(self) -> "ExportHandle":
-        from ksef2.domain.models.invoices import ExportHandle
-
-        return ExportHandle(
-            reference_number=self.reference_number,
-            aes_key=base64.b64decode(self.aes_key),
-            iv=base64.b64decode(self.iv),
-        )
 
 
 class ExportPaths(CliResult):
@@ -203,6 +177,15 @@ class ExportPaths(CliResult):
 
     reference_number: str
     paths: list[Path]
+    handle_file: Path | None = None
+
+
+class InvoicePdfExport(CliResult):
+    """PDFs rendered from the invoices in a downloaded export package."""
+
+    reference_number: str
+    pdfs: list[SavedFile] = Field(default_factory=list)
+    invoice_xml_files: list[Path] = Field(default_factory=list)
     handle_file: Path | None = None
 
 

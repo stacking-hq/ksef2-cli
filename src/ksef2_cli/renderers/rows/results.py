@@ -20,6 +20,8 @@ from ksef2_cli.commands.invoices.models import (
 )
 from ksef2_cli.results import (
     ActionResult,
+    AuthStateRemoved,
+    BatchPrepared,
     BatchSubmitted,
     CertificateRevoked,
     ConfigInitialized,
@@ -32,6 +34,7 @@ from ksef2_cli.results import (
     OnlineSendItem,
     OnlineSendResult,
     ProfileCurrent,
+    ProfileDeleted,
     ProfileListItem,
     ProfileListResult,
     ProfileSaved,
@@ -79,6 +82,15 @@ def register() -> None:
     @register_text(CurrentSessionTerminated)
     def _(value: CurrentSessionTerminated, renderer: PlainTextRenderer) -> str:
         return format_fields((("terminated_current", value.terminated_current),))
+
+    @register_text(AuthStateRemoved)
+    def _(value: AuthStateRemoved, renderer: PlainTextRenderer) -> str:
+        return format_fields(
+            (
+                ("path", value.path),
+                ("terminated_current", value.terminated_current),
+            )
+        )
 
     @register_text(CertificateRevoked)
     def _(value: CertificateRevoked, renderer: PlainTextRenderer) -> str:
@@ -158,6 +170,18 @@ def register() -> None:
                 ("environment", value.profile.environment.value),
                 ("nip", value.profile.nip),
                 ("auth", value.profile.auth.type.value),
+                ("poll_interval", value.profile.poll_interval),
+                ("max_poll_attempts", value.profile.max_poll_attempts),
+            )
+        )
+
+    @register_text(ProfileDeleted)
+    def _(value: ProfileDeleted, renderer: PlainTextRenderer) -> str:
+        return format_fields(
+            (
+                ("name", value.name),
+                ("deleted", value.deleted),
+                ("was_active", value.was_active),
             )
         )
 
@@ -172,6 +196,17 @@ def register() -> None:
                 ("state_file", value.state_file),
                 ("state", value.state),
                 ("status", value.status),
+            )
+        )
+
+    @register_text(BatchPrepared)
+    def _(value: BatchPrepared, renderer: PlainTextRenderer) -> str:
+        return format_fields(
+            (
+                ("path", value.path),
+                ("invoices", value.invoices),
+                ("parts", value.parts),
+                ("digest", value.digest),
             )
         )
 
@@ -289,9 +324,7 @@ def register() -> None:
     def _(value: ExportHandleSaved, renderer: PlainTextRenderer) -> str:
         return format_fields(
             (
-                ("reference_number", value.reference_number),
-                ("aes_key", value.aes_key),
-                ("iv", value.iv),
+                ("state", value.state),
                 ("handle_file", value.handle_file),
             )
         )

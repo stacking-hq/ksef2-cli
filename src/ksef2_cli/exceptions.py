@@ -6,11 +6,53 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import Iterable, Sequence
 from urllib.parse import urlencode
 
-from ksef2 import KSeFApiError, KSeFException
+from ksef2 import (
+    KSeFApiError,
+    KSeFArgumentError,
+    KSeFAuthError,
+    KSeFAuthPollingTimeoutError,
+    KSeFAuthTokenRedemptionError,
+    KSeFAuthenticationExpiredError,
+    KSeFBatchSessionTimeoutError,
+    KSeFBatchUploadError,
+    KSeFCertificateEnrollmentFailedError,
+    KSeFCertificateEnrollmentTimeoutError,
+    KSeFClientClosedError,
+    KSeFException,
+    KSeFExportFailedError,
+    KSeFExportTimeoutError,
+    KSeFInvoiceDownloadTimeoutError,
+    KSeFInvoiceProcessingTimeoutError,
+    KSeFInvoiceQueryTimeoutError,
+    KSeFInvoiceRejectedError,
+    KSeFInvoiceRenderingError,
+    KSeFNotReadyError,
+    KSeFOnlineSessionTimeoutError,
+    KSeFPermissionOperationFailedError,
+    KSeFPermissionOperationTimeoutError,
+    KSeFRateLimitError,
+    KSeFTokenStatusTimeoutError,
+    KSeFUnsupportedEnvironmentError,
+    KSeFValidationError,
+)
 from rich.console import Console
 from rich.markup import escape
 
 BUG_REPORT_URL = "https://github.com/stacking-hq/ksef2-cli/issues/new"
+
+# Both PDF commands (`invoices export-pdf` and `fa3 render --pdf`) render with
+# WeasyPrint, which arrives as an optional extra. One message for both, so the
+# install command a user sees matches the package they installed.
+PDF_INSTALL_HINT = (
+    'Install the extra with: uv tool install "ksef2-cli[pdf]" or '
+    'pip install "ksef2-cli[pdf]". In a project that depends on the SDK directly: '
+    "uv add 'ksef2[pdf]'."
+)
+PDF_SYSTEM_LIBS_HINT = (
+    "On Linux, WeasyPrint needs system libraries: libpango-1.0-0, libharfbuzz0b, "
+    "libpangoft2-1.0-0, and libharfbuzz-subset0."
+)
+
 SECRET_OPTIONS = {
     "--key-password",
     "--ksef-token",
@@ -18,6 +60,37 @@ SECRET_OPTIONS = {
     "--refresh-token",
     "--token",
 }
+
+# SDK exceptions that mean the user can redo the call with different arguments.
+_USAGE_SDK_ERRORS = (KSeFArgumentError, KSeFUnsupportedEnvironmentError)
+
+# SDK exceptions for authentication that started but never reached a usable session.
+_AUTH_INCOMPLETE_SDK_ERRORS = (
+    KSeFAuthPollingTimeoutError,
+    KSeFAuthTokenRedemptionError,
+)
+
+# SDK exceptions raised when a KSeF job outlived the deadline set on the command.
+_POLLING_TIMEOUT_SDK_ERRORS = (
+    KSeFExportTimeoutError,
+    KSeFInvoiceProcessingTimeoutError,
+    KSeFOnlineSessionTimeoutError,
+    KSeFBatchSessionTimeoutError,
+    KSeFTokenStatusTimeoutError,
+    KSeFPermissionOperationTimeoutError,
+    KSeFCertificateEnrollmentTimeoutError,
+    KSeFInvoiceQueryTimeoutError,
+    KSeFInvoiceDownloadTimeoutError,
+)
+
+# SDK exceptions carrying KSeF's own account of a job that finished badly.
+_REPORTED_FAILURE_SDK_ERRORS = (
+    KSeFExportFailedError,
+    KSeFPermissionOperationFailedError,
+    KSeFCertificateEnrollmentFailedError,
+    KSeFInvoiceRejectedError,
+    KSeFBatchUploadError,
+)
 
 
 class CliError(Exception):
@@ -76,6 +149,10 @@ class FileCliError(CliError):
 
 class AuthenticationConfigError(CliError):
     """Authentication settings are absent, incomplete, or mutually exclusive."""
+
+
+class MissingOptionalDependencyError(CliError):
+    """A command needs an install extra that is not present in this environment."""
 
 
 class RemoteServiceError(CliError):
@@ -138,19 +215,109 @@ def error_from_exception(error: Exception) -> CliError:
 
     if isinstance(error, CliError):
         return error
-    if isinstance(error, KSeFApiError):
+    if isinstance(error, KSeFClientClosedError):
+        # The CLI keeps one client open for the whole command, so this is our bug.
+        return UnexpectedCliError(error)
+    if isinstance(error, _USAGE_SDK_ERRORS):
+        return UsageError(_sdk_message(error))
+    if isinstance(error, KSeFInvoiceRenderingError):
+        return UsageError(_sdk_message(error))
+    if isinstance(error, KSeFValidationError):
+        return ConfigError(_sdk_message(error))
+    if isinstance(error, KSeFAuthenticationExpiredError):
+        return AuthenticationConfigError(
+            _sdk_message(error),
+            title="Authentication expired",
+            hints=("Authenticate again with: ksef2 auth login --save-state PATH",),
+        )
+    if isinstance(error, KSeFAuthError):
+        return _from_api_error(
+            error,
+            cli_error=AuthenticationConfigError,
+            title="KSeF rejected the authentication",
+        )
+    if isinstance(error, KSeFNotReadyError):
+        return _from_api_error(
+            error,
+            cli_error=RemoteServiceError,
+            title="KSeF has not finished processing yet",
+            message=f"KSeF has not finished processing the request (HTTP {error.status_code}).",
+            hints=("Retry the same command later.",),
+        )
+    if isinstance(error, KSeFRateLimitError):
+        hints = (
+            f"Wait at least {error.retry_after} seconds before retrying."
+            if error.retry_after is not None
+            else "Wait before retrying the same command."
+        )
         return RemoteServiceError(
-            f"KSeF request failed with HTTP {error.status_code}.",
+            _sdk_message(error),
+            title="KSeF rate limit exceeded",
+            hints=(hints,),
+        )
+    if isinstance(error, _AUTH_INCOMPLETE_SDK_ERRORS):
+        return AuthenticationConfigError(
+            _sdk_message(error),
+            title="Authentication did not complete",
+            hints=("Raise --auth-timeout, or check that the credentials are valid.",),
+        )
+    if isinstance(error, _POLLING_TIMEOUT_SDK_ERRORS):
+        return RemoteServiceError(
+            _sdk_message(error),
+            title="Timed out waiting for KSeF",
+            hints=(
+                "KSeF is still working, so check the status later or raise --timeout "
+                "where the command has one.",
+            ),
+        )
+    if isinstance(error, _REPORTED_FAILURE_SDK_ERRORS):
+        return RemoteServiceError(_sdk_message(error), title="KSeF reported a failure")
+    if isinstance(error, KSeFApiError):
+        return _from_api_error(
+            error,
+            cli_error=RemoteServiceError,
             title="KSeF rejected the request",
-            details=tuple(str(error).splitlines()),
         )
     if isinstance(error, KSeFException):
-        return RemoteServiceError(str(error), title="KSeF operation failed")
+        return RemoteServiceError(_sdk_message(error), title="KSeF operation failed")
     if isinstance(error, ValueError):
         return UsageError(str(error))
     if isinstance(error, OSError):
         return FileCliError.from_os_error(error)
     return UnexpectedCliError(error)
+
+
+def _sdk_message(error: KSeFException) -> str:
+    """Return the SDK message without the ``Hint:`` line ``str(error)`` appends.
+
+    SDK hints name Python calls such as ``wait()`` or ``with_token()``, which
+    mean nothing on the command line; the CLI error carries its own hints.
+    """
+
+    return str(error.args[0]) if error.args else str(error)
+
+
+def _from_api_error(
+    error: KSeFApiError,
+    *,
+    cli_error: type[CliError],
+    title: str,
+    message: str | None = None,
+    hints: Iterable[str] = (),
+) -> CliError:
+    """Build a CLI error that keeps the HTTP status, KSeF code and trace ID of an API error."""
+
+    details = [*_sdk_message(error).splitlines(), f"HTTP status: {error.status_code}"]
+    if error.ksef_code is not None:
+        details.append(f"KSeF code: {error.ksef_code}")
+    if error.trace_id:
+        details.append(f"Trace ID: {error.trace_id}")
+    return cli_error(
+        message or f"KSeF request failed with HTTP {error.status_code}.",
+        title=title,
+        details=tuple(details),
+        hints=tuple(hints),
+    )
 
 
 def render_cli_error(

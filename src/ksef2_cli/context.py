@@ -7,31 +7,21 @@ from typing import Callable, TypeVar
 
 import typer
 from ksef2 import Client
-from ksef2.clients.authenticated import AuthenticatedClient
+from ksef2.clients import AuthenticatedClient
+from ksef2.renderers import PDFPageSize
 from pydantic import BaseModel
 
 from ksef2_cli.config import AuthenticatedRuntime, Settings
 from ksef2_cli.exceptions import CliError, error_from_exception, render_cli_error
 from ksef2_cli.renderers import console, render
 from ksef2_cli.runtime import (
-    AuthMethod,
-    AuthenticatedContext,
-    CertificateLoader,
-    CredentialSource,
-    ENVIRONMENT_MAPPING,
-    P12ArchiveLoader,
-    PrivateKeyLoader,
     authenticate_client as authenticate_runtime_client,
     create_client as create_runtime_client,
-    fail,
     get_authenticated_client as get_runtime_authenticated_client,
-    load_p12_credentials,
-    load_pem_credentials,
-    password_bytes,
     read_model as read_runtime_model,
+    render_invoice_pdf as render_runtime_invoice_pdf,
     run_authenticated as run_runtime_authenticated,
     run_client as run_runtime_client,
-    select_auth_method,
     use_client as use_runtime_client,
 )
 
@@ -144,3 +134,13 @@ def read_model(ctx: typer.Context, path: Path, model_type: type[ModelT]) -> Mode
     """Read a model payload, using a runtime fake when supplied by tests."""
 
     return read_runtime_model(get_settings(ctx), path, model_type)
+
+
+def render_invoice_pdf(
+    ctx: typer.Context, invoice_xml_path: Path, *, page_size: PDFPageSize | None = None
+) -> bytes:
+    """Render invoice XML to PDF, using a runtime fake when supplied by tests."""
+
+    return render_runtime_invoice_pdf(
+        get_settings(ctx), invoice_xml_path, page_size=page_size
+    )

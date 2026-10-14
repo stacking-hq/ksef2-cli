@@ -1,20 +1,66 @@
 """Authentication and invoice-session inspection command group."""
 
+from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.domain.models.auth import (
+from ksef2.clients import AuthenticatedClient
+from ksef2.models import (
     AuthenticationSession,
-    AuthenticationSessionsResponse,
+    ListSessionsQuery,
+    SessionSummary,
 )
-from ksef2.domain.models.session import ListSessionsResponse, SessionSummary
 
 from ksef2_cli.context import run_authenticated, run_authenticated_command, run_command
-from ksef2_cli.results import CurrentSessionTerminated, SessionClosed
+from ksef2_cli.io import write_bytes_file
+from ksef2_cli.parsing import parse_iso_datetime
+from ksef2_cli.results import CurrentSessionTerminated, SavedFile, SessionClosed
+
+
+def _session_date(value: str | None, option_name: str) -> datetime | None:
+    """Parse one optional session-date option, e.g. ``2026-01-01T00:00:00Z``."""
+    return None if value is None else parse_iso_datetime(value, option_name=option_name)
+
 
 app = typer.Typer(help="Inspect authentication and historical invoice sessions.")
+
+
+@app.command("upo")
+def sessions_upo(
+    ctx: typer.Context,
+    session_reference: Annotated[str, typer.Option("--session")],
+    output_file: Annotated[Path, typer.Option("--out", "-o", dir_okay=False)],
+    ksef_number: Annotated[str | None, typer.Option("--ksef-number")] = None,
+    invoice_reference: Annotated[
+        str | None, typer.Option("--invoice-reference")
+    ] = None,
+    upo_reference: Annotated[str | None, typer.Option("--upo-reference")] = None,
+) -> None:
+    """Download a UPO by session reference without saved session state."""
+
+    def validate() -> None:
+        selector_count = sum(
+            value is not None
+            for value in (ksef_number, invoice_reference, upo_reference)
+        )
+        if selector_count != 1:
+            raise ValueError(
+                "Provide exactly one of --ksef-number, --invoice-reference, "
+                "or --upo-reference."
+            )
+
+    def get_upo(auth: AuthenticatedClient) -> SavedFile:
+        content = auth.invoice_sessions.download_upo(
+            session_reference,
+            ksef_number=ksef_number,
+            invoice_reference_number=invoice_reference,
+            upo_reference_number=upo_reference,
+        )
+        return SavedFile(path=write_bytes_file(output_file, content), size=len(content))
+
+    run_authenticated_command(ctx, get_upo, validate=validate)
 
 
 @app.command("auth-list")
@@ -24,23 +70,34 @@ def sessions_auth_list(
         int | None, typer.Option("--page-size", min=10, max=100)
     ] = None,
     continuation_token: Annotated[
-        str | None, typer.Option("--continuation-token")
+        str | None,
+        typer.Option(
+            "--continuation-token",
+            help="Unsupported since ksef2 1.0; paging is handled internally.",
+        ),
     ] = None,
     all_pages: Annotated[bool, typer.Option("--all", help="Fetch all pages.")] = False,
 ) -> None:
     """List active authentication sessions."""
 
+    def validate() -> None:
+        if continuation_token:
+            raise ValueError(
+                "--continuation-token is no longer supported; ksef2 1.0 pages "
+                "sessions internally. Use --page-size and --all instead."
+            )
+
     def list_sessions(
         auth: AuthenticatedClient,
-    ) -> AuthenticationSessionsResponse | list[AuthenticationSession]:
+    ) -> list[AuthenticationSession]:
+        # The auth-session listing takes a page size only: ksef2 has no date or status
+        # filters on it, unlike `invoice_sessions.list()` with its `ListSessionsQuery`.
+        pager = auth.sessions.list(page_size=page_size)
         if all_pages:
-            pages = list(auth.sessions.all(page_size=page_size))
-            return [item for page in pages for item in page.items]
-        return auth.sessions.query(
-            page_size=page_size, continuation_token=continuation_token
-        )
+            return list(pager)
+        return pager.first_page()
 
-    run_authenticated_command(ctx, list_sessions)
+    run_authenticated_command(ctx, list_sessions, validate=validate)
 
 
 @app.command("auth-close")
@@ -53,7 +110,7 @@ def sessions_auth_close(
     def operation() -> SessionClosed:
         run_authenticated(
             ctx,
-            lambda auth: auth.sessions.close(reference_number=reference_number),
+            lambda auth: auth.sessions.terminate(reference_number=reference_number),
         )
         return SessionClosed(reference_number=reference_number)
 
@@ -94,34 +151,62 @@ def sessions_invoice_list(
         typer.Option("--status", help="Session status filter. Repeat for multiple."),
     ] = [],
     reference_number: Annotated[str | None, typer.Option("--reference")] = None,
+    created_from: Annotated[
+        str | None,
+        typer.Option("--created-from", help="Created at or after, ISO datetime/date."),
+    ] = None,
+    created_to: Annotated[
+        str | None,
+        typer.Option("--created-to", help="Created at or before, ISO datetime/date."),
+    ] = None,
+    closed_from: Annotated[
+        str | None,
+        typer.Option("--closed-from", help="Closed at or after, ISO datetime/date."),
+    ] = None,
+    closed_to: Annotated[
+        str | None,
+        typer.Option("--closed-to", help="Closed at or before, ISO datetime/date."),
+    ] = None,
+    modified_from: Annotated[
+        str | None,
+        typer.Option(
+            "--modified-from", help="Modified at or after, ISO datetime/date."
+        ),
+    ] = None,
+    modified_to: Annotated[
+        str | None,
+        typer.Option(
+            "--modified-to", help="Modified at or before, ISO datetime/date."
+        ),
+    ] = None,
     page_size: Annotated[int, typer.Option("--page-size", min=10, max=100)] = 10,
     all_pages: Annotated[bool, typer.Option("--all", help="Fetch all pages.")] = False,
 ) -> None:
     """List historical online or batch invoice sessions."""
 
-    def operation() -> ListSessionsResponse | list[SessionSummary]:
-        from ksef2.domain.models.pagination import ListSessionsQuery
-
+    def operation() -> list[SessionSummary]:
         params = ListSessionsQuery(
             session_type=session_type.value,
             reference_number=reference_number,
             statuses=[item.value for item in status] or None,
             page_size=page_size,
+            date_created_from=_session_date(created_from, "--created-from"),
+            date_created_to=_session_date(created_to, "--created-to"),
+            date_closed_from=_session_date(closed_from, "--closed-from"),
+            date_closed_to=_session_date(closed_to, "--closed-to"),
+            date_modified_from=_session_date(modified_from, "--modified-from"),
+            date_modified_to=_session_date(modified_to, "--modified-to"),
         )
 
         def list_invoice_sessions(
             auth: AuthenticatedClient,
-        ) -> ListSessionsResponse | list[SessionSummary]:
-            if all_pages:
-                pages = list(
-                    auth.invoice_sessions.all(
-                        session_type=session_type.value, params=params
-                    )
-                )
-                return [session for page in pages for session in page.sessions]
-            return auth.invoice_sessions.query(
+        ) -> list[SessionSummary]:
+            pager = auth.invoice_sessions.list(
                 session_type=session_type.value, params=params
             )
+            if all_pages:
+                return list(pager)
+            return pager.first_page()
 
         return run_authenticated(ctx, list_invoice_sessions)
 

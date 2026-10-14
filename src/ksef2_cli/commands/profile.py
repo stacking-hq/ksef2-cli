@@ -4,25 +4,26 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.domain.models.auth import ContextIdentifierTypeEnum
-
-from ksef2_cli.config import (
-    CliConfig,
-    EnvironmentName,
+from ksef2.models import ContextIdentifierTypeEnum
+from ksef2.profiles import (
     ProfileAuthConfig,
     ProfileAuthType,
     ProfileConfig,
-    load_cli_config,
-    write_cli_config,
+    ProfileStore,
 )
-from ksef2_cli.context import fail, get_settings, run_command
+
+from ksef2_cli.config import EnvironmentName, OutputMode
+from ksef2_cli.context import get_settings, run_command
+from ksef2_cli.exceptions import UsageError
 from ksef2_cli.results import (
     ProfileCurrent,
+    ProfileDeleted,
     ProfileListItem,
     ProfileListResult,
     ProfileSaved,
     ProfileSelected,
 )
+from ksef2_cli.runtime import fail
 
 app = typer.Typer(help="Create, inspect, and select local CLI profiles.")
 
@@ -115,6 +116,24 @@ def profile_create(
             help="Select this profile after saving it.",
         ),
     ] = True,
+    poll_interval: Annotated[
+        float | None,
+        typer.Option(
+            "--poll-interval",
+            min=0.1,
+            help="Seconds between authentication status checks made with this profile.",
+            show_default=False,
+        ),
+    ] = None,
+    max_poll_attempts: Annotated[
+        int | None,
+        typer.Option(
+            "--max-poll-attempts",
+            min=1,
+            help="How many authentication status checks this profile waits for.",
+            show_default=False,
+        ),
+    ] = None,
     force: Annotated[
         bool, typer.Option("--force", help="Replace an existing profile.")
     ] = False,
@@ -137,20 +156,23 @@ def profile_create(
             p12=p12,
             p12_password_env=p12_password_env,
         )
-        profile = ProfileConfig(environment=environment, nip=nip, auth=auth)
-        config = _load_config(ctx)
-        if name in config.profiles and not force:
-            fail(
-                f"Profile {name!r} already exists. "
-                "Re-run with --force to replace it."
-            )
+        profile = ProfileConfig(
+            environment=environment,
+            nip=nip,
+            auth=auth,
+            poll_interval=poll_interval,
+            max_poll_attempts=max_poll_attempts,
+        )
+        store = _profile_store(ctx)
+        if name in store.load().profiles and not force:
+            fail(f"Profile {name!r} already exists. Re-run with --force to replace it.")
 
-        config.profiles[name] = profile
-        if activate:
-            config.active_profile = name
-        _write_config(ctx, config)
+        _ = store.save(name, profile, activate=activate, overwrite=True)
+        current = store.current()
         return ProfileSaved(
-            name=name, active=config.active_profile == name, profile=profile
+            name=name,
+            active=current is not None and current[0] == name,
+            profile=profile,
         )
 
     run_command(ctx, operation)
@@ -161,7 +183,7 @@ def profile_list(ctx: typer.Context) -> None:
     """List configured profiles."""
 
     def operation() -> ProfileListResult:
-        config = _load_config(ctx)
+        config = _profile_store(ctx).load()
         profiles = [
             ProfileListItem(
                 name=name,
@@ -182,13 +204,10 @@ def profile_current(ctx: typer.Context) -> None:
     """Show the active profile."""
 
     def operation() -> ProfileCurrent:
-        config = _load_config(ctx)
-        if config.active_profile is None:
+        current = _profile_store(ctx).current()
+        if current is None:
             return ProfileCurrent()
-        return ProfileCurrent(
-            name=config.active_profile,
-            profile=config.profiles[config.active_profile],
-        )
+        return ProfileCurrent(name=current[0], profile=current[1])
 
     run_command(ctx, operation)
 
@@ -201,14 +220,11 @@ def profile_show(
     """Show one profile, or the active profile when no name is provided."""
 
     def operation() -> ProfileCurrent:
-        config = _load_config(ctx)
-        profile_name = name or config.active_profile
+        store = _profile_store(ctx)
+        profile_name = name or store.load().active_profile
         if profile_name is None:
             fail("No active profile is selected.")
-        profile = config.profiles.get(profile_name)
-        if profile is None:
-            fail(f"Profile {profile_name!r} is not defined.")
-        return ProfileCurrent(name=profile_name, profile=profile)
+        return ProfileCurrent(name=profile_name, profile=store.get(profile_name))
 
     run_command(ctx, operation)
 
@@ -221,13 +237,37 @@ def profile_use(
     """Select the active profile."""
 
     def operation() -> ProfileSelected:
-        config = _load_config(ctx)
-        profile = config.profiles.get(name)
-        if profile is None:
-            fail(f"Profile {name!r} is not defined.")
-        config.active_profile = name
-        _write_config(ctx, config)
-        return ProfileSelected(name=name, profile=profile)
+        return ProfileSelected(name=name, profile=_profile_store(ctx).use(name))
+
+    run_command(ctx, operation)
+
+
+@app.command("delete")
+def profile_delete(
+    ctx: typer.Context,
+    name: Annotated[str, typer.Argument(help="Profile name.")],
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", help="Delete without asking for confirmation."),
+    ] = False,
+) -> None:
+    """Remove a profile, leaving no profile active when it was the selected one."""
+
+    def operation() -> ProfileDeleted:
+        store = _profile_store(ctx)
+        was_active = store.load().active_profile == name
+
+        if not yes:
+            if get_settings(ctx).output is OutputMode.json:
+                raise UsageError(
+                    "JSON output has no confirmation prompt, so deleting a profile "
+                    "needs --yes."
+                )
+            if not typer.confirm(f"Delete profile {name!r}?"):
+                return ProfileDeleted(name=name, deleted=False, was_active=was_active)
+
+        _ = store.delete(name)
+        return ProfileDeleted(name=name, was_active=was_active)
 
     run_command(ctx, operation)
 
@@ -257,31 +297,25 @@ def _profile_auth(
 
     if token_env is not None:
         return ProfileAuthConfig(
-            type=ProfileAuthType.token,
+            type=ProfileAuthType.TOKEN,
             token_env=token_env,
             context_type=context_type,
         )
     if test_certificate:
-        return ProfileAuthConfig(type=ProfileAuthType.test_certificate)
+        return ProfileAuthConfig(type=ProfileAuthType.TEST_CERTIFICATE)
     if p12 is not None:
         return ProfileAuthConfig(
-            type=ProfileAuthType.xades_p12,
+            type=ProfileAuthType.XADES_P12,
             p12=p12,
             p12_password_env=p12_password_env,
         )
     return ProfileAuthConfig(
-        type=ProfileAuthType.xades_pem,
+        type=ProfileAuthType.XADES_PEM,
         cert=cert,
         key=key,
         key_password_env=key_password_env,
     )
 
 
-def _load_config(ctx: typer.Context) -> CliConfig:
-    settings = get_settings(ctx)
-    return load_cli_config(settings.config_file)
-
-
-def _write_config(ctx: typer.Context, config: CliConfig) -> None:
-    settings = get_settings(ctx)
-    write_cli_config(settings.config_file, config, force=True)
+def _profile_store(ctx: typer.Context) -> ProfileStore:
+    return ProfileStore(get_settings(ctx).config_file)

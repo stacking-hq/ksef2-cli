@@ -22,7 +22,7 @@ see [Rendering Refactor Plan](./rendering-refactor-plan.md).
 ```text
 src/ksef2_cli/
   app.py                 Root Typer app, global options, command registration
-  config.py              Profile config models, settings resolution, output mode, environment names
+  config.py              Settings resolution, output mode, environment names (profile models come from the ksef2 SDK)
   context.py             Typer adapter for command execution and rendering
   runtime.py             Typer-free client creation, authentication, and model reads
   invoice_workflows.py   Shared invoice metadata, send, export, and UPO workflows
@@ -51,7 +51,7 @@ src/ksef2_cli/
 
 1. `app.py` builds the root `Typer` app and stores global `Settings` on `ctx.obj`.
 2. A command module receives `ctx: typer.Context`.
-3. `config.resolve_settings()` selects a profile, applies CLI/environment overrides, and stores runtime-ready settings.
+3. `config.resolve_settings()` delegates profile selection to `ksef2.profiles`, applies CLI/environment overrides, and stores runtime-ready settings.
 4. Commands with local file or multi-step work define a zero-argument `operation` and pass it to `run_command(ctx, operation)`.
 5. Single authenticated SDK calls use `run_authenticated_command(ctx, command)`; use `run_authenticated(ctx, operation)` only when the command has local work around the SDK call.
 6. Public commands call `run_client_command(ctx, command)` when they only need a root SDK client.

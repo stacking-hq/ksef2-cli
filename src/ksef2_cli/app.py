@@ -5,22 +5,29 @@ from typing import Annotated
 
 import typer
 
-from ksef2.domain.models.auth import ContextIdentifierTypeEnum
+from ksef2 import KSeFException
+from ksef2.models import ContextIdentifierTypeEnum
 
 from ksef2_cli.commands import (
     auth,
+    batch,
     certificates,
-    config as config_commands,
+    collective,
     encryption,
+    fa3,
     limits,
     online,
     peppol,
     permissions,
-    profile as profile_commands,
     sessions,
     testdata,
     tokens,
-    batch,
+)
+from ksef2_cli.commands import (
+    config as config_commands,
+)
+from ksef2_cli.commands import (
+    profile as profile_commands,
 )
 from ksef2_cli.commands.invoices.group import app as invoices_app
 from ksef2_cli.config import (
@@ -38,11 +45,13 @@ app = typer.Typer(
 
 app.add_typer(auth.app, name="auth")
 app.add_typer(invoices_app, name="invoices")
+app.add_typer(fa3.app, name="fa3")
 app.add_typer(online.app, name="online")
 app.add_typer(batch.app, name="batch")
 app.add_typer(tokens.app, name="tokens")
 app.add_typer(sessions.app, name="sessions")
 app.add_typer(certificates.app, name="certificates")
+app.add_typer(collective.app, name="collective")
 app.add_typer(config_commands.app, name="config")
 app.add_typer(profile_commands.app, name="profile")
 app.add_typer(permissions.app, name="permissions")
@@ -87,7 +96,7 @@ def root(
             "--config",
             envvar="KSEF2_CONFIG",
             dir_okay=False,
-            help="Local config file. Defaults to ~/.config/ksef2-cli/config.toml.",
+            help="Local config file. Defaults to ~/.config/ksef2/config.toml.",
         ),
     ] = None,
     no_config: Annotated[
@@ -117,6 +126,16 @@ def root(
             "--context-type",
             envvar="KSEF2_CONTEXT_TYPE",
             help="Token-auth context type.",
+        ),
+    ] = None,
+    auth_state: Annotated[
+        Path | None,
+        typer.Option(
+            "--auth-state",
+            envvar="KSEF2_AUTH_STATE",
+            exists=True,
+            dir_okay=False,
+            help="Reuse saved auth state from --save-state instead of authenticating.",
         ),
     ] = None,
     test_certificate: Annotated[
@@ -204,6 +223,7 @@ def root(
             nip=nip,
             token=token,
             context_type=context_type,
+            auth_state=auth_state,
             test_certificate=test_certificate,
             cert=cert,
             key=key,
@@ -214,7 +234,7 @@ def root(
             auth_timeout=auth_timeout,
             runtime_overrides=runtime_overrides,
         )
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, KSeFException) as exc:
         raise typer.BadParameter(str(exc), param_hint="--config") from exc
 
 
