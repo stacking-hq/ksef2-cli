@@ -13,7 +13,7 @@ ksef2 1.0.0 is on PyPI.
 ## Working on `next`
 
 `pyproject.toml` on `next` has a temporary `[tool.uv.sources]` entry that
-installs ksef2 from `https://github.com/stacking-hq/ksef2` `main`, and
+installs ksef2 from `https://github.com/stacking-hq/ksef2` `chore/08-release-1-0-0`, and
 `uv.lock` pins the exact SDK commit:
 
 ```bash

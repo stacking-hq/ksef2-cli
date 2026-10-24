@@ -33,13 +33,12 @@ Repository = "https://github.com/stacking-hq/ksef2-cli"
 Issues = "https://github.com/stacking-hq/ksef2-cli/issues"
 
 # TEMPORARY (until ksef2 1.0.0 is on PyPI, stacking-hq/ksef2#147).
-# The `next` branch tracks the SDK's `main` head, which is the unreleased 1.0
-# surface but still reports version 0.22.2, so the floor stays at 0.22.2 here.
+# Track the SDK's 1.0 release branch until the release is available on PyPI.
 # `tool.uv.sources` is uv-only dev config and never reaches the built wheel.
 # Pick up new SDK commits with `uv lock -P ksef2`. On release day: delete this
 # table, set `ksef2>=1.0,<2`, and run `uv lock -P ksef2` in one commit.
 [tool.uv.sources]
-ksef2 = { git = "https://github.com/stacking-hq/ksef2.git", branch = "main" }
+ksef2 = { git = "https://github.com/stacking-hq/ksef2.git", branch = "chore/08-release-1-0-0" }
 
 [dependency-groups]
 dev = [
