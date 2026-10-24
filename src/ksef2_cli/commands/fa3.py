@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.fa3 import FA3InvoiceBuilder, parse_invoice_xml
+from ksef2.fa3 import InvoiceBuilder, parse_invoice_xml
 from ksef2.renderers import InvoiceXSLTRenderer
 
 from ksef2_cli.context import run_command
@@ -100,7 +100,7 @@ def fa3_build(
     """Build FA(3) XML from a JSON invoice draft."""
 
     def operation() -> object:
-        builder = FA3InvoiceBuilder.from_state_json(_read_draft(draft_file))
+        builder = InvoiceBuilder.from_state_json(_read_draft(draft_file))
         xml = builder.to_xml(pretty_print=pretty, validate=validate)
         return xml if out is None else _write(out, xml)
 

@@ -18,6 +18,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "src" / "ksef2_cli"
 
+DEPRECATED_NAMES = frozenset({"FA3InvoiceBuilder"})
+
 # Deprecated wherever they are called.
 DEPRECATED_METHODS = frozenset(
     {
@@ -134,3 +136,30 @@ def test_deprecated_sdk_calls_match_the_pending_migration_list() -> None:
         for (path, call), count in sorted(migrated.items())
     ]
     assert not problems, "\n".join(problems)
+
+
+def _deprecated_imports(source: str) -> list[tuple[int, str]]:
+    return [
+        (node.lineno, name.name)
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.ImportFrom)
+        and node.module is not None
+        and node.module.startswith("ksef2")
+        for name in node.names
+        if name.name in DEPRECATED_NAMES
+    ]
+
+
+def test_no_deprecated_sdk_imports() -> None:
+    problems = [
+        f"deprecated SDK import: {path.relative_to(SOURCE)}:{line}: {name}"
+        for path in sorted(SOURCE.rglob("*.py"))
+        for line, name in _deprecated_imports(path.read_text(encoding="utf-8"))
+    ]
+    assert not problems, "\n".join(problems)
+
+
+def test_deprecated_sdk_import_is_flagged() -> None:
+    assert _deprecated_imports("from ksef2.fa3 import FA3InvoiceBuilder\n") == [
+        (1, "FA3InvoiceBuilder")
+    ]
