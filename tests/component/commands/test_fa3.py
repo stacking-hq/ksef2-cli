@@ -4,12 +4,15 @@ These commands run the real SDK builder, parser and XSLT renderer on tiny
 fixtures: nothing here talks to KSeF, so no client fake is needed.
 """
 
+import inspect
 import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 from conftest import cli_args, payload, plain
+from ksef2 import Environment
+from ksef2.renderers import InvoicePDFExporter
 from ksef2.fa3 import InvoiceBuilder
 from ksef2_cli.app import app
 from ksef2_cli import runtime
@@ -233,7 +236,11 @@ def test_render_rejects_missing_invoice_file(runner, tmp_path) -> None:
 
 class FakePdfExporter:
     def __init__(
-        self, *, page_size: object | None = None, enable_code_lookups: bool = False
+        self,
+        *,
+        verification_environment: Environment,
+        page_size: object | None = None,
+        enable_code_lookups: bool = False,
     ) -> None:
         self.page_size = page_size
         self.enable_code_lookups = enable_code_lookups
@@ -269,6 +276,34 @@ def test_render_writes_html_and_pdf(
     assert [item["path"] for item in files] == [str(html), str(pdf)]
     assert "<html" in html.read_text(encoding="utf-8")
     assert pdf.read_bytes().startswith(b"%PDF")
+
+
+@pytest.mark.parametrize("environment", [None, "demo"])
+def test_render_pdf_passes_environment_to_sdk_constructor(
+    runner, invoice_file, tmp_path, monkeypatch, environment
+) -> None:
+    environments = []
+
+    class SignatureCheckedExporter(FakePdfExporter):
+        def __init__(self, *args, **kwargs):
+            inspect.signature(InvoicePDFExporter.__init__).bind(self, *args, **kwargs)
+            environments.append(kwargs["verification_environment"])
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(runtime, "InvoicePDFExporter", SignatureCheckedExporter)
+    args = ["--config", str(tmp_path / "missing-config.json")]
+    if environment is not None:
+        args.extend(["--env", environment])
+    pdf = tmp_path / "invoice.pdf"
+    result = runner.invoke(
+        app, args + ["fa3", "render", "--in", str(invoice_file), "--pdf", str(pdf)]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert pdf.read_bytes().startswith(b"%PDF")
+    assert environments == [
+        Environment.PRODUCTION if environment is None else Environment.DEMO
+    ]
 
 
 def test_render_pdf_names_the_missing_extra(

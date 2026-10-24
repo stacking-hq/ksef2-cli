@@ -1,3 +1,4 @@
+import inspect
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -5,6 +6,7 @@ import pytest
 import typer
 
 from conftest import FakeClient, FakeService, settings
+from ksef2.renderers import InvoicePDFExporter
 from ksef2.profiles import ProfileAuthConfig, ProfileAuthType, ProfileConfig
 from ksef2_cli.config import OutputMode, RuntimeOverrides
 from ksef2_cli.exceptions import AuthenticationConfigError
@@ -278,3 +280,22 @@ def test_credential_loader_wrappers(tmp_path) -> None:
         cert_loader=lambda path: ("cert", path),
         key_loader=lambda path, password: (("key", path), password),
     ) == (("cert", cert_path), (("key", key_path), b"secret"))
+
+
+def test_render_invoice_pdf_passes_environment_to_sdk_constructor(monkeypatch) -> None:
+    environments = []
+
+    class SignatureCheckedExporter:
+        def __init__(self, *args, **kwargs):
+            inspect.signature(InvoicePDFExporter.__init__).bind(self, *args, **kwargs)
+            environments.append(kwargs["verification_environment"])
+
+        def export_from_path(self, path):
+            assert path == Path("invoice.xml")
+            return b"%PDF-1.4"
+
+    monkeypatch.setattr(runtime, "InvoicePDFExporter", SignatureCheckedExporter)
+    settings_obj = settings()
+
+    assert runtime.render_invoice_pdf(settings_obj, Path("invoice.xml")) == b"%PDF-1.4"
+    assert environments == [settings_obj.environment]

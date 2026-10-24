@@ -13,7 +13,7 @@ import typer
 from ksef2.fa3 import InvoiceBuilder, parse_invoice_xml
 from ksef2.renderers import InvoiceXSLTRenderer
 
-from ksef2_cli.context import run_command
+from ksef2_cli.context import get_settings, run_command
 from ksef2_cli.io import write_text_file
 from ksef2_cli.results import SavedFile
 from ksef2_cli.runtime import create_pdf_exporter
@@ -168,7 +168,10 @@ def fa3_render(
         # The exporter is built first so a missing optional extra fails before the
         # command has written anything the user has to clean up.
         exporter = (
-            create_pdf_exporter(enable_code_lookups=code_lookups)
+            create_pdf_exporter(
+                environment=get_settings(ctx).environment,
+                enable_code_lookups=code_lookups,
+            )
             if pdf is not None
             else None
         )

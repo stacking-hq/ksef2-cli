@@ -28,6 +28,7 @@ from ksef2 import (
     KSeFInvoiceRenderingError,
     KSeFNotReadyError,
     KSeFOnlineSessionTimeoutError,
+    KSeFPermissionDeniedError,
     KSeFPermissionOperationFailedError,
     KSeFPermissionOperationTimeoutError,
     KSeFRateLimitError,
@@ -235,6 +236,16 @@ def error_from_exception(error: Exception) -> CliError:
             error,
             cli_error=AuthenticationConfigError,
             title="KSeF rejected the authentication",
+        )
+    if isinstance(error, KSeFPermissionDeniedError):
+        return _from_api_error(
+            error,
+            cli_error=AuthenticationConfigError,
+            title="KSeF denied permission for this operation",
+            hints=(
+                "Check that the authenticated identity has the required KSeF permissions "
+                "for this context.",
+            ),
         )
     if isinstance(error, KSeFNotReadyError):
         return _from_api_error(
