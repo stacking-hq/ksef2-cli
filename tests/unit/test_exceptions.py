@@ -25,6 +25,7 @@ from ksef2 import (
     KSeFInvoiceRenderingError,
     KSeFNotReadyError,
     KSeFOnlineSessionTimeoutError,
+    KSeFPermissionDeniedError,
     KSeFPermissionOperationFailedError,
     KSeFPermissionOperationTimeoutError,
     KSeFRateLimitError,
@@ -445,3 +446,20 @@ def test_sdk_hints_for_python_callers_stay_out_of_cli_errors(
 
     shown = [error.message, *error.details]
     assert not any("Hint:" in line for line in shown), shown
+
+
+def test_permission_denied_reports_required_permissions() -> None:
+    error = error_from_exception(
+        KSeFPermissionDeniedError(
+            403,
+            "Brak uprawnień do operacji",
+            ksef_code=21301,
+            trace_id="trace-permission",
+        )
+    )
+
+    assert isinstance(error, AuthenticationConfigError)
+    assert error.title == "KSeF denied permission for this operation"
+    assert error.hints == (
+        "Check that the authenticated identity has the required KSeF permissions for this context.",
+    )
