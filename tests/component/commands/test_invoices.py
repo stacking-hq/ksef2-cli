@@ -200,6 +200,8 @@ def test_invoices_metadata_query_and_all(runner) -> None:
             "metadata",
             "--date-from",
             "2026-01-01T00:00:00Z",
+            "--date-to",
+            "2026-01-02T00:00:00Z",
             "--currency",
             "PLN",
             "--invoice-type",
@@ -221,7 +223,13 @@ def test_invoices_metadata_query_and_all(runner) -> None:
     result = runner.invoke(
         app,
         cli_args(
-            "invoices", "metadata", "--date-from", "2026-01-01T00:00:00Z", "--all"
+            "invoices",
+            "metadata",
+            "--date-from",
+            "2026-01-01T00:00:00Z",
+            "--date-to",
+            "2026-01-02T00:00:00Z",
+            "--all",
         ),
         obj=runtime,
     )
@@ -271,7 +279,9 @@ def test_invoices_metadata_parses_date_options(runner) -> None:
         obj=runtime,
     )
     assert reversed_range.exit_code == 1
-    assert "date_from must be less than or equal to date_to" in reversed_range.output
+    assert "date_from must be less than or equal to date_to" in plain(
+        reversed_range.output
+    )
 
 
 def test_invoice_download_writes_xml(runner, tmp_path) -> None:
@@ -853,6 +863,8 @@ def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
             "export",
             "--date-from",
             "2026-01-01T00:00:00Z",
+            "--date-to",
+            "2026-01-02T00:00:00Z",
             "--handle-file",
             str(handle_file),
         ),
@@ -962,6 +974,8 @@ def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
             "export-download",
             "--date-from",
             "2026-01-01T00:00:00Z",
+            "--date-to",
+            "2026-01-02T00:00:00Z",
             "--out-dir",
             str(download_dir),
             "--handle-file",
@@ -1024,7 +1038,14 @@ def test_invoices_metadata_permanent_storage_high_water_mark(runner) -> None:
 
     unrestricted = runner.invoke(
         app,
-        cli_args("invoices", "metadata", "--date-from", "2026-01-01T00:00:00Z"),
+        cli_args(
+            "invoices",
+            "metadata",
+            "--date-from",
+            "2026-01-01T00:00:00Z",
+            "--date-to",
+            "2026-01-02T00:00:00Z",
+        ),
         obj=runtime,
     )
     assert payload(unrestricted) == {"invoices": []}
@@ -1040,6 +1061,8 @@ def test_invoices_metadata_permanent_storage_high_water_mark(runner) -> None:
             "metadata",
             "--date-from",
             "2026-01-01T00:00:00Z",
+            "--date-to",
+            "2026-01-02T00:00:00Z",
             "--restrict-to-permanent-storage-hwm-date",
         ),
         obj=runtime,
@@ -1149,6 +1172,8 @@ def test_invoice_export_sends_metadata_filters(runner, tmp_path) -> None:
                     "export",
                     "--date-from",
                     "2026-01-01T00:00:00Z",
+                    "--date-to",
+                    "2026-01-02T00:00:00Z",
                     option,
                     value,
                 ),
@@ -1189,7 +1214,10 @@ def test_invoice_export_redacts_stdout(runner, tmp_path, json_output, save_handl
     args = ["--no-config"]
     if json_output:
         args.append("--json")
-    args.extend(["invoices", "export", "--date-from", "2026-01-01T00:00:00Z"])
+    args.extend([
+        "invoices", "export", "--date-from", "2026-01-01T00:00:00Z",
+        "--date-to", "2026-01-02T00:00:00Z",
+    ])
     handle_file = tmp_path / "handle.json"
     if save_handle:
         handle_file.write_text("old handle", encoding="utf-8")
@@ -1250,6 +1278,8 @@ def test_invoices_export_pdf_renders_each_downloaded_invoice(runner, tmp_path) -
                 "export-pdf",
                 "--date-from",
                 "2026-01-01T00:00:00Z",
+                "--date-to",
+                "2026-01-02T00:00:00Z",
                 "--out-dir",
                 str(out_dir),
                 "--pdf-dir",
@@ -1291,6 +1321,8 @@ def test_invoices_export_pdf_defaults_to_the_out_dir(runner, tmp_path) -> None:
                 "export-pdf",
                 "--date-from",
                 "2026-01-01T00:00:00Z",
+                "--date-to",
+                "2026-01-02T00:00:00Z",
                 "--out-dir",
                 str(out_dir),
             ),
@@ -1322,6 +1354,8 @@ def test_invoices_export_pdf_saves_a_readable_handle_privately(runner, tmp_path)
             "export-pdf",
             "--date-from",
             "2026-01-01T00:00:00Z",
+            "--date-to",
+            "2026-01-02T00:00:00Z",
             "--out-dir",
             str(tmp_path / "out"),
             "--handle-file",
@@ -1372,6 +1406,8 @@ def test_invoices_export_pdf_reports_a_missing_pdf_extra(
             "export-pdf",
             "--date-from",
             "2026-01-01T00:00:00Z",
+            "--date-to",
+            "2026-01-02T00:00:00Z",
             "--out-dir",
             str(tmp_path / "out"),
         ),
