@@ -860,14 +860,14 @@ def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
     )
     data = payload(result)
     assert data["state"] == {
-        "format_version": 1,
+        "format_version": "1",
         "reference_number": "export-ref",
         "aes_key": "**********",
         "iv": "**********",
     }
     assert data["handle_file"] == str(handle_file)
     assert json.loads(handle_file.read_text(encoding="utf-8")) == {
-        "format_version": 1,
+        "format_version": "1",
         "reference_number": "export-ref",
         "aes_key": _EXPORT_AES_KEY,
         "iv": _EXPORT_IV,

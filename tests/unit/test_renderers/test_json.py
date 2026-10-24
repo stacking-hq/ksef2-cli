@@ -186,7 +186,7 @@ def test_export_handle_json_redacts_secrets_and_omits_empty_handle_file(tmp_path
         iv="AAAAAAAAAAAAAAAAAAAAAA==",
     )
     redacted_state = {
-        "format_version": 1,
+        "format_version": "1",
         "reference_number": "export-ref",
         "aes_key": "**********",
         "iv": "**********",

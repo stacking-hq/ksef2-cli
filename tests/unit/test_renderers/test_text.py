@@ -192,7 +192,7 @@ def test_export_handle_text_redacts_secrets_and_includes_saved_handle_path(tmp_p
     assert plain_renderer.render(
         ExportHandleSaved(state=state, handle_file=tmp_path / "handle.json")
     ) == (
-        'state: {"format_version":1,"reference_number":"export-ref",'
+        'state: {"format_version":"1","reference_number":"export-ref",'
         '"aes_key":"**********","iv":"**********"}\n'
         f"handle_file: {tmp_path / 'handle.json'}"
     )
