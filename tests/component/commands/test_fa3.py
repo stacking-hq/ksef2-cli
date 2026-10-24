@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 from conftest import cli_args, payload, plain
-from ksef2.fa3 import FA3InvoiceBuilder
+from ksef2.fa3 import InvoiceBuilder
 from ksef2_cli.app import app
 from ksef2_cli import runtime
 
@@ -55,7 +55,7 @@ def draft_file(tmp_path: Path) -> Path:
 def invoice_file(draft_file: Path, tmp_path: Path) -> Path:
     """FA(3) XML built straight from the draft fixture by the SDK builder."""
 
-    xml = FA3InvoiceBuilder.from_state_json(
+    xml = InvoiceBuilder.from_state_json(
         draft_file.read_text(encoding="utf-8")
     ).to_xml()
     path = tmp_path / "invoice.xml"
