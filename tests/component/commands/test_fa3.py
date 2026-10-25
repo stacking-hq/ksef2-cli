@@ -133,7 +133,7 @@ def test_build_reports_invalid_draft(runner, tmp_path) -> None:
 
     result = runner.invoke(app, cli_args("fa3", "build", "--in", str(draft)))
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "Extra inputs are not permitted" in result.output
 
 
@@ -196,7 +196,7 @@ def test_inspect_reports_non_fa3_xml(runner, tmp_path) -> None:
 
     result = runner.invoke(app, cli_args("fa3", "inspect", "--in", str(xml)))
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "Expected a Faktura root" in result.output
 
 

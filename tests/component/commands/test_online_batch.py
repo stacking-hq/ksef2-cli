@@ -266,7 +266,7 @@ def test_online_resume_commands(runner, tmp_path) -> None:
         cli_args("online", "upo", "--state-file", str(state_file), "--out", str(out)),
         obj=runtime,
     )
-    assert invalid.exit_code == 1
+    assert invalid.exit_code == 2
     assert "Provide exactly one" in invalid.output
 
     assert payload(
@@ -463,7 +463,7 @@ def test_batch_session_flags_fail_before_authentication(
 
     result = runner.invoke(app, cli_args(*args), obj=runtime)
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert json.loads(result.output)["error"]["type"] == "UsageError"
     assert (
         "Use either --reference or --state-file, not both."

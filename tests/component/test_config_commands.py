@@ -317,7 +317,7 @@ def test_profile_delete_needs_yes_in_json_mode(runner, tmp_path) -> None:
         app, cli_args("--config", str(config_path), "profile", "delete", "demo")
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "needs --yes" in plain(result.output)
     assert _saved_profile_names(config_path) == ["demo"]
 

@@ -155,7 +155,7 @@ def test_batch_submit_needs_invoices_or_a_usable_artifact(
 
     result = runner.invoke(app, cli_args("batch", "submit", *args), obj=runtime)
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert expected in result.output
     assert "batch prepare" in result.output
 
@@ -175,7 +175,7 @@ def test_batch_submit_rejects_invoices_together_with_an_artifact(
         obj=runtime,
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "not both" in result.output
 
 
@@ -269,7 +269,7 @@ def test_batch_upload_reports_an_artifact_that_does_not_fit_the_session(
         obj=runtime,
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "no longer match the package" in plain(result.output)
 
 
@@ -374,6 +374,6 @@ def test_batch_upload_rejects_state_it_cannot_resume(runner, tmp_path) -> None:
         obj=runtime,
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "not hold resumable" in result.output
     assert "batch submit" in result.output

@@ -127,6 +127,27 @@ class Aborted(CliError):
 class UsageError(CliError):
     """The command is valid, but the user supplied incomplete or conflicting input."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        title: str = "Command failed",
+        details: Iterable[str] = (),
+        hints: Iterable[str] = (),
+        exit_code: int = 2,
+        reportable: bool = False,
+        show_traceback: bool = False,
+    ) -> None:
+        super().__init__(
+            message,
+            title=title,
+            details=details,
+            hints=hints,
+            exit_code=exit_code,
+            reportable=reportable,
+            show_traceback=show_traceback,
+        )
+
 
 class ConfigError(CliError):
     """The local CLI configuration is missing, malformed, or contradictory."""

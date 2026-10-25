@@ -42,6 +42,7 @@ from ksef2_cli.commands.invoices.models import (
     SortOrderChoice,
 )
 from ksef2_cli.config import FormSchemaChoice
+from ksef2_cli.exceptions import UsageError
 from ksef2_cli.io import (
     SECRET_MODEL_FILE_MODE,
     write_bytes_file,
@@ -570,8 +571,9 @@ def fetch_invoice_export(
     # The package is only reachable through wait(); this check keeps the answer for an
     # export that is still building a clear "not ready" instead of a polling timeout.
     if not inputs.wait and job.get_status().package is None:
-        raise ValueError(
-            "Export package is not ready. Re-run with --wait or check export-status."
+        raise UsageError(
+            "Export package is not ready. Re-run with --wait or check export-status.",
+            exit_code=1,
         )
     paths = job.wait(
         timeout=inputs.timeout,
@@ -660,22 +662,24 @@ def download_batch_upos(
     upo_dir: Path,
 ) -> list[SavedFile]:
     if status is None:
-        raise ValueError("--upo-dir requires a completed batch status.")
+        raise UsageError("--upo-dir requires a completed batch status.", exit_code=1)
     if status.code is not None and status.code >= 400:
-        raise ValueError(
+        raise UsageError(
             "Batch processing failed: "
-            f"{session_reference} ({status.code}: {status.description})"
+            f"{session_reference} ({status.code}: {status.description})",
+            exit_code=1,
         )
     if not status.upo_references:
-        raise ValueError("Batch UPO is not ready. Re-run with --wait.")
+        raise UsageError("Batch UPO is not ready. Re-run with --wait.", exit_code=1)
 
     with auth.batch_session(state=session_reference) as session:
         # KSeF hands back one page per UPO reference, in the order the status reported.
         pages = session.download_upo()
     if len(pages) != len(status.upo_references):
-        raise ValueError(
+        raise UsageError(
             f"Batch session {session_reference} reported UPO references "
-            f"{', '.join(status.upo_references)} but returned {len(pages)} pages."
+            f"{', '.join(status.upo_references)} but returned {len(pages)} pages.",
+            exit_code=1,
         )
 
     saved: list[SavedFile] = []

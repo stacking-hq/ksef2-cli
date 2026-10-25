@@ -244,7 +244,7 @@ def test_tokens_commands(runner) -> None:
     missing = runner.invoke(
         app, cli_args("tokens", "generate", "--description", "demo"), obj=runtime
     )
-    assert missing.exit_code == 1
+    assert missing.exit_code == 2
     assert "At least one --permission" in missing.output
 
     assert payload(
@@ -391,7 +391,7 @@ def test_sessions_commands(runner) -> None:
         cli_args("sessions", "auth-list", "--continuation-token", "ct"),
         obj=runtime,
     )
-    assert cursor.exit_code == 1
+    assert cursor.exit_code == 2
     assert "--continuation-token" in cursor.output
 
     assert payload(
@@ -479,5 +479,5 @@ def test_sessions_invoice_list_date_filters(runner) -> None:
         ),
         obj=runtime,
     )
-    assert bad_date.exit_code == 1
+    assert bad_date.exit_code == 2
     assert "--closed-from must be a date like" in bad_date.output

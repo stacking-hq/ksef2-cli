@@ -281,7 +281,7 @@ def test_permission_grant_person_entity_and_authorization(runner) -> None:
         ),
         obj=runtime,
     )
-    assert missing.exit_code == 1
+    assert missing.exit_code == 2
     assert "At least one --permission" in missing.output
 
     assert payload(

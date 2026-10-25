@@ -1,6 +1,7 @@
 import importlib
 import json
 import sys
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import click
@@ -10,8 +11,9 @@ from click.testing import CliRunner as ClickRunner
 from ksef2 import KSeFPermissionDeniedError
 from typer.testing import CliRunner
 
-from conftest import FakeClient, FakeService, fake_runtime
+from conftest import FakeClient, FakeService, fake_runtime, plain
 from ksef2_cli.app import app, main
+from ksef2_cli.config import RuntimeOverrides
 
 
 @pytest.fixture
@@ -272,3 +274,57 @@ def test_main_json_renders_command_abort(monkeypatch):
         "hints": [],
         "exit_code": 1,
     }
+
+
+@pytest.mark.parametrize("option", ["--attachment", "--self-invoicing"])
+@pytest.mark.parametrize("output_flags", [[], ["--json"], ["-o", "json"]])
+def test_metadata_invalid_boolean_fails_before_auth(
+    separate_runner, option, output_flags
+):
+    callbacks = []
+
+    def unexpected_callback():
+        callbacks.append(True)
+        raise AssertionError("Invalid filters must fail before authentication")
+
+    result = separate_runner.invoke(
+        app,
+        [
+            "--no-config", *output_flags,
+            "invoices", "metadata",
+            "--date-from", "2026-10-20", "--date-to", "2026-10-21",
+            option, "maybe",
+        ],
+        obj=RuntimeOverrides(
+            client_factory=unexpected_callback,
+            authenticated_client_factory=unexpected_callback,
+        ),
+    )
+    assert callbacks == []
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    message = f"{option} must be yes or no."
+    if output_flags:
+        assert error_payload(result, 2) == {
+            "type": "UsageError", "title": "Command failed", "message": message,
+            "details": [], "hints": [], "exit_code": 2,
+        }
+    else:
+        assert f"Error: {message}" in plain(result.stderr)
+
+
+@pytest.mark.parametrize("output_flags", [["--json"], ["-o", "json"]])
+def test_metadata_runtime_failure_keeps_exit_one(separate_runner, output_flags):
+    service = FakeService(search=RuntimeError("Search failed"))
+    result = separate_runner.invoke(
+        app,
+        [
+            "--no-config", *output_flags, "invoices", "metadata",
+            "--date-from", "2026-10-20", "--date-to", "2026-10-21",
+        ],
+        obj=fake_runtime(auth=SimpleNamespace(invoices=service)),
+    )
+    error = error_payload(result, 1)
+    assert error["type"] == "UnexpectedCliError"
+    assert error["exit_code"] == result.exit_code == 1
+    assert len(service.calls) == 1

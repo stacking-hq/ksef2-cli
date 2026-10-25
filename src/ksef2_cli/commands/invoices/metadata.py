@@ -40,7 +40,11 @@ from ksef2_cli.invoice_workflows import (
     download_invoice,
     query_invoice_metadata,
 )
-from ksef2_cli.parsing import parse_iso_datetime, validate_offset_pagination
+from ksef2_cli.parsing import (
+    parse_iso_datetime,
+    parse_optional_bool,
+    validate_offset_pagination,
+)
 from ksef2_cli.results import SavedFile
 
 
@@ -94,6 +98,8 @@ def invoices_metadata(
 
     def load_input() -> InvoiceMetadataInput:
         validate_offset_pagination(all_pages=all_pages, page_offset=page_offset)
+        parse_optional_bool(attachment, option_name="--attachment")
+        parse_optional_bool(self_invoicing, option_name="--self-invoicing")
         return InvoiceMetadataInput(
             date_from=parse_iso_datetime(date_from, option_name="--date-from"),
             date_to=None
