@@ -218,6 +218,18 @@ Use `--json` or `--output json` for scripts:
 uv run ksef2 --json invoices metadata --date-from 2026-01-01T00:00:00Z
 ```
 
+### JSON errors
+
+In JSON mode, failures write one JSON object to stderr and leave stdout empty.
+The `error` object contains `type`, `title`, `message`, `details`, `hints`, and
+`exit_code`; API errors also include `ksef` metadata when available.
+Unexpected errors include `report_url`, and `--verbose` adds `traceback` when available.
+Exit codes stay the same, including code 2 for invalid command usage.
+
+```bash
+uv run ksef2 --json auth login --token 2>error.json
+```
+
 ## Common environment variables
 
 | Variable | Purpose |

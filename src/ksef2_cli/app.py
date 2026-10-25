@@ -1,10 +1,13 @@
 """Root Typer application and global option handling."""
 
+import sys
 from pathlib import Path
 from typing import Annotated
 
+import click
 import typer
 from click.core import ParameterSource
+from typer.main import get_command
 
 from ksef2 import KSeFException
 from ksef2.models import ContextIdentifierTypeEnum
@@ -245,5 +248,45 @@ def root(
         raise typer.BadParameter(str(exc), param_hint="--config") from exc
 
 
+def _requests_json(argv: list[str]) -> bool:
+    """Read global output flags without mistaking option values for commands."""
+    parameters = {
+        option: parameter
+        for parameter in get_command(app).params
+        for option in parameter.opts
+    }
+    json_output = False
+    output = None
+    index = 0
+    while index < len(argv):
+        argument = argv[index]
+        if not argument.startswith("-") or argument == "--":
+            break
+        option, separator, value = argument.partition("=")
+        parameter = parameters.get(option)
+        if parameter is not None and not parameter.is_flag and not separator:
+            index += 1
+            value = argv[index] if index < len(argv) else ""
+        if option == "--json":
+            json_output = True
+        elif option in {"--output", "-o"}:
+            output = value
+        index += 1
+    return json_output or output == "json"
+
+
 def main() -> None:
-    app()
+    if not _requests_json(sys.argv[1:]):
+        app()
+        return
+
+    from ksef2_cli.exceptions import UsageError, render_cli_error
+    from ksef2_cli.renderers import console
+
+    try:
+        exit_code = app(standalone_mode=False)
+    except click.ClickException as exc:
+        error = UsageError(exc.format_message(), exit_code=exc.exit_code)
+        render_cli_error(error, console=console, json_output=True)
+        raise SystemExit(exc.exit_code) from exc
+    raise SystemExit(exit_code)

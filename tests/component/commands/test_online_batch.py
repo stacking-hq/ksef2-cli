@@ -464,7 +464,7 @@ def test_batch_session_flags_fail_before_authentication(
     result = runner.invoke(app, cli_args(*args), obj=runtime)
 
     assert result.exit_code == 1
-    assert "Error:" in result.output
+    assert json.loads(result.output)["error"]["type"] == "UsageError"
     assert (
         "Use either --reference or --state-file, not both."
         if conflicting
