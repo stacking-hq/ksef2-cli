@@ -72,13 +72,13 @@ def test_auth_login_save_state_writes_secret_file(runner, tmp_path) -> None:
         obj=fake_runtime(client=FakeClient(authentication=auth)),
     )
 
-    assert payload(result)["access_token"]["valid_until"]
+    assert payload(result)["access_token_valid_until"]
     assert _saved(state_file)["access_token"] == "access-token"
     assert _saved(state_file)["refresh_token"] == "refresh-token"
     assert stat.S_IMODE(state_file.stat().st_mode) == 0o600
 
 
-def test_auth_login_prints_tokens_in_text_mode(runner, tmp_path) -> None:
+def test_auth_login_masks_tokens_in_text_mode(runner, tmp_path) -> None:
     state_file = tmp_path / "auth.json"
     auth = FakeService(with_token=FakeAuthenticated(auth_state()))
 
@@ -99,8 +99,8 @@ def test_auth_login_prints_tokens_in_text_mode(runner, tmp_path) -> None:
     )
 
     assert result.exit_code == 0, result.output
-    assert "access_token: access-token" in result.output
-    assert "refresh_token: refresh-token" in result.output
+    assert "access_token: access-t…oken" in result.output
+    assert "refresh_token: refresh-…oken" in result.output
 
 
 def test_auth_login_without_save_state_writes_nothing(runner, tmp_path) -> None:
@@ -132,7 +132,7 @@ def test_auth_resume_reuses_valid_access_token_without_refresh(
         obj=fake_runtime(client=FakeClient(authentication=auth)),
     )
 
-    assert payload(result)["refresh_token"]["valid_until"]
+    assert payload(result)["refresh_token_valid_until"]
     assert _methods(auth) == ["resume"]
     assert _resumed_state(auth).access_token.get_secret_value() == "access-token"
 
@@ -163,7 +163,7 @@ def test_auth_resume_refreshes_expired_access_token_and_saves_it(
         obj=fake_runtime(client=FakeClient(authentication=auth)),
     )
 
-    assert payload(result)["access_token"]["valid_until"]
+    assert payload(result)["access_token_valid_until"]
     assert auth.called("refresh")["refresh_token"] == "refresh-token"
     assert _resumed_state(auth).access_token.get_secret_value() == "fresh-access"
     assert _saved(saved)["access_token"] == "fresh-access"

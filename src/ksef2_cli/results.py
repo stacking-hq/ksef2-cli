@@ -4,10 +4,12 @@ from pathlib import Path
 from typing import Generic, TypeVar
 
 from ksef2.models import (
+    AuthTokens,
     BatchSessionResumeState,
     Identifier,
     OnlineSessionResumeState,
     Permission,
+    RefreshedToken,
     SendInvoiceResponse,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
@@ -65,6 +67,14 @@ class CurrentSessionTerminated(CliResult):
     """Result for terminating the active authentication session."""
 
     terminated_current: bool = True
+
+
+class AuthTokenOutput(CliResult):
+    """Auth tokens with CLI display options, separate from persisted state."""
+
+    tokens: AuthTokens | RefreshedToken
+    show_tokens: bool = False
+    state_file: Path | None = None
 
 
 class AuthStateRemoved(CliResult):

@@ -2,10 +2,16 @@
 
 from ksef2.models import AuthTokens, RefreshedToken, TokenCredentials
 
+from ksef2_cli.renderers.auth import auth_token_fields
+from ksef2_cli.results import AuthTokenOutput
 from ksef2_cli.renderers.text import PlainTextRenderer, format_fields, register_text
 
 
 def register() -> None:
+    @register_text(AuthTokenOutput)
+    def _(value: AuthTokenOutput, renderer: PlainTextRenderer) -> str:
+        return format_fields(auth_token_fields(value).items())
+
     @register_text(TokenCredentials)
     def _(value: TokenCredentials, renderer: PlainTextRenderer) -> str:
         return format_fields(

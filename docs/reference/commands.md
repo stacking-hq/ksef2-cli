@@ -66,6 +66,7 @@ Authenticate with the configured method and print access/refresh tokens.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
+| `--show-tokens` | - | false | - | Print the raw access and refresh tokens. They are bearer credentials; keep them out of logs. |
 | `--save-state` | FILE | - | - | Write resumable auth state to this file. It holds bearer tokens in plain text. |
 
 ### `auth logout`
@@ -83,6 +84,7 @@ Exchange a refresh token for a new access token.
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
 | `--refresh-token` | TEXT | required | KSEF2_REFRESH_TOKEN | Refresh token. |
+| `--show-tokens` | - | false | - | Print the raw access and refresh tokens. They are bearer credentials; keep them out of logs. |
 
 ### `auth resume`
 
@@ -91,6 +93,7 @@ Reuse saved auth state, refreshing the access token when it expired.
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
 | `--state-file`, `--auth-state` | FILE | - | - | Saved auth state to reuse. Defaults to the global --auth-state. |
+| `--show-tokens` | - | false | - | Print the raw access and refresh tokens. They are bearer credentials; keep them out of logs. |
 | `--save-state` | FILE | - | - | Write the resumed state, including any refreshed access token. |
 
 ## `batch`

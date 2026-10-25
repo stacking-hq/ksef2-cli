@@ -24,11 +24,14 @@ uv run ksef2 profile create test-company \
   --test-cert
 ```
 
-Authenticate with that profile and print the SDK auth token payload:
+Authenticate with that profile and print masked tokens and their expiry times:
 
 ```bash
 uv run ksef2 --profile test-company --json auth login
 ```
+
+Use `--show-tokens` to print raw bearer credentials, or `--save-state FILE` to
+save reusable credentials while keeping output masked.
 
 Global options such as `--profile`, `--env`, `--nip`, `--test-cert`, and
 `--json` must appear before the command group.
