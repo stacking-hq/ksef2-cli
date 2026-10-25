@@ -280,11 +280,14 @@ def main() -> None:
         app()
         return
 
-    from ksef2_cli.exceptions import UsageError, render_cli_error
+    from ksef2_cli.exceptions import Aborted, UsageError, render_cli_error
     from ksef2_cli.renderers import console
 
     try:
         exit_code = app(standalone_mode=False)
+    except (click.Abort, KeyboardInterrupt, EOFError) as exc:
+        render_cli_error(Aborted("Aborted."), console=console, json_output=True)
+        raise SystemExit(1) from exc
     except click.ClickException as exc:
         error = UsageError(exc.format_message(), exit_code=exc.exit_code)
         render_cli_error(error, console=console, json_output=True)

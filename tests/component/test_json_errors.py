@@ -1,9 +1,11 @@
+import importlib
 import json
 import sys
 from urllib.parse import parse_qs, urlsplit
 
 import click
 import pytest
+import typer
 from click.testing import CliRunner as ClickRunner
 from ksef2 import KSeFPermissionDeniedError
 from typer.testing import CliRunner
@@ -246,3 +248,27 @@ def test_main_json_preserves_success_and_error_exit_codes(monkeypatch):
         ],
     )
     assert error_payload(result)["type"] == "AuthenticationConfigError"
+
+
+def test_main_json_renders_command_abort(monkeypatch):
+    abort_app = typer.Typer()
+
+    @abort_app.callback()
+    def root(json_output: bool = typer.Option(False, "--json")):
+        pass
+
+    @abort_app.command()
+    def abort():
+        raise click.Abort()
+
+    monkeypatch.setattr(importlib.import_module("ksef2_cli.app"), "app", abort_app)
+    result = invoke_main(monkeypatch, ["--json", "abort"])
+
+    assert error_payload(result) == {
+        "type": "Aborted",
+        "title": "Command failed",
+        "message": "Aborted.",
+        "details": [],
+        "hints": [],
+        "exit_code": 1,
+    }

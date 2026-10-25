@@ -120,6 +120,10 @@ class CliError(Exception):
         self.show_traceback = show_traceback
 
 
+class Aborted(CliError):
+    """The user interrupted the command."""
+
+
 class UsageError(CliError):
     """The command is valid, but the user supplied incomplete or conflicting input."""
 
