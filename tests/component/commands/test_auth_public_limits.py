@@ -346,15 +346,17 @@ def test_tokens_list_text_mode_renders_token_rows(runner) -> None:
 
     first_page = runner.invoke(app, ["--no-config", "tokens", "list"], obj=runtime)
     assert [line.split()[0] for line in first_page.output.splitlines()] == [
-        "reference_number=t1"
+        "REFERENCE",
+        "t1",
     ]
 
     all_pages = runner.invoke(
         app, ["--no-config", "tokens", "list", "--all"], obj=runtime
     )
     assert [line.split()[0] for line in all_pages.output.splitlines()] == [
-        "reference_number=t1",
-        "reference_number=t2",
+        "REFERENCE",
+        "t1",
+        "t2",
     ]
 
 

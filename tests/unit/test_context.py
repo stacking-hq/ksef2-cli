@@ -14,7 +14,7 @@ from ksef2_cli import context, runtime
 
 
 def ctx_for(settings_obj):
-    return SimpleNamespace(obj=settings_obj)
+    return SimpleNamespace(obj=settings_obj, parent=None, params={})
 
 
 def token_profile(

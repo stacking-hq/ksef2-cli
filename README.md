@@ -150,7 +150,15 @@ ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   batch submit --prepared batch-parts --state-file batch-state.json
 ```
 
-Use `--json` before the command group when output is consumed by scripts.
+List and record-query commands print aligned plain-text tables with uppercase
+headers and one row per record. Empty lists print `No results.`. Identifiers stay
+complete; long names and descriptions may end in `…`, and optional columns may
+disappear on narrow terminals. Datetime columns use UTC, dates use `YYYY-MM-DD`,
+and amounts use two decimal places. Redirected output uses a 120-column layout.
+Pagination metadata, when returned by the command, appears below the table.
+
+Use `--json` before the command group for all fields or when scripts consume the
+output. JSON retains the SDK fields, values, and nulls.
 
 ## Documentation
 
