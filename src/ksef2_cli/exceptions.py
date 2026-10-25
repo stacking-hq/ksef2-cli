@@ -1,10 +1,12 @@
 """Human-oriented CLI exceptions and rendering helpers."""
 
+import json
+import os
 import sys
 import traceback
 from importlib.metadata import PackageNotFoundError, version
 from typing import Iterable, Sequence
-from urllib.parse import urlencode
+from urllib.parse import quote, quote_plus, urlencode
 
 from ksef2 import (
     KSeFApiError,
@@ -116,6 +118,10 @@ class CliError(Exception):
         self.exit_code = exit_code
         self.reportable = reportable
         self.show_traceback = show_traceback
+
+
+class Aborted(CliError):
+    """The user interrupted the command."""
 
 
 class UsageError(CliError):
@@ -332,9 +338,84 @@ def _from_api_error(
 
 
 def render_cli_error(
-    error: CliError, *, console: Console, verbose: bool = False
+    error: CliError,
+    *,
+    console: Console,
+    verbose: bool = False,
+    json_output: bool = False,
+    source: Exception | None = None,
+    secrets: Iterable[str] = (),
 ) -> None:
     """Render a concise, actionable error message."""
+
+    if json_output:
+        payload: dict[str, object] = {
+            "type": type(error).__name__,
+            "title": error.title,
+            "message": error.message,
+            "details": list(error.details),
+            "hints": list(error.hints),
+            "exit_code": error.exit_code,
+        }
+        if isinstance(source, KSeFApiError):
+            ksef: dict[str, object] = {
+                "status_code": source.status_code,
+                "exception_code": source.exception_code.value,
+                "message": _sdk_message(source),
+            }
+            for name in ("ksef_code", "trace_id", "details"):
+                value = getattr(source, name)
+                if value is not None and value != [] and value != "":
+                    ksef[name] = value
+            if source.response is not None:
+                ksef["response"] = source.response.model_dump(mode="json")
+            payload["ksef"] = ksef
+        if error.reportable and isinstance(error, UnexpectedCliError):
+            payload["report_url"] = error.report_url()
+        if verbose and error.show_traceback:
+            original = error.error if isinstance(error, UnexpectedCliError) else error
+            payload["traceback"] = "".join(traceback.format_exception(original))
+        command = error.command if isinstance(error, UnexpectedCliError) else sys.argv
+        secret_values = set(secrets)
+        for original, redacted in zip(command, redact_argv(command)):
+            if original != redacted:
+                secret_values.add(
+                    original if redacted == "<redacted>" else original.partition("=")[2]
+                )
+        for option in SECRET_OPTIONS:
+            value = os.environ.get("KSEF2_" + option[2:].replace("-", "_").upper())
+            if value:
+                secret_values.add(value)
+
+        # Redact before JSON encoding so quotes and newlines in secrets cannot escape it.
+        def redact(value: object) -> object:
+            if isinstance(value, str):
+                for secret in sorted(
+                    filter(None, secret_values), key=len, reverse=True
+                ):
+                    for form in {secret, quote(secret, safe=""), quote_plus(secret)}:
+                        value = value.replace(form, "<redacted>")
+                return value
+            if isinstance(value, list):
+                return [redact(item) for item in value]
+            if isinstance(value, dict):
+                return {key: redact(item) for key, item in value.items()}
+            return value
+
+        print(
+            json.dumps(
+                {
+                    "error": {
+                        key: value if key in {"type", "exit_code"} else redact(value)
+                        for key, value in payload.items()
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
+        return
 
     if verbose and error.show_traceback:
         console.print_exception()

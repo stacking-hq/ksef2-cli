@@ -1,5 +1,7 @@
 """Auth environment variables yield to a selected profile, but typed flags do not."""
 
+import json
+
 import pytest
 from ksef2 import Client, Environment
 
@@ -134,8 +136,8 @@ def test_auth_env_conflicts_without_profile(runner, auth_env, typed_cert) -> Non
     )
 
     assert result.exit_code == 1
-    assert plain(result.output) == (
-        "Error: Provide only one auth method: token (KSEF2_TOKEN), "
+    assert json.loads(result.output)["error"]["message"] == (
+        "Provide only one auth method: token (KSEF2_TOKEN), "
         f"certificate ({'--cert' if typed_cert else 'KSEF2_CERT'}, KSEF2_KEY)."
     )
     assert auth.calls == []
