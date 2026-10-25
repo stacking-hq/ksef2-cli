@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, NoReturn, Protocol, TypeVar
 
-from ksef2 import Client, Environment
+from ksef2 import Client, Environment, KSeFValidationError
 from ksef2.clients import AuthenticatedClient
 from ksef2.models import AuthenticationResumeState
 from ksef2.profiles import ProfileAuthType
@@ -388,7 +388,7 @@ def read_resume_state(path: Path) -> AuthenticationResumeState:
 
     try:
         return read_model_file(path, AuthenticationResumeState)
-    except ValidationError as error:
+    except (ValidationError, KSeFValidationError) as error:
         raise AuthenticationConfigError(
             f"{path} does not hold resumable auth state.",
             title="Auth state cannot be resumed",
