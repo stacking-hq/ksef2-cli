@@ -505,12 +505,16 @@ def download_invoice(
     wait: bool = False,
     timeout: float = 120.0,
     poll_interval: float = 2.0,
-) -> SavedFile:
+) -> SavedFile | bytes:
+    """Save invoice XML, or return its original bytes when ``output_file`` is ``-``."""
+
     content = auth.invoices.download(
         ksef_number=ksef_number,
         timeout=timeout if wait else None,
         poll_interval=poll_interval,
     )
+    if output_file == Path("-"):
+        return content
     target = output_file or Path(_safe_filename(ksef_number, ".xml"))
     return SavedFile(path=write_bytes_file(target, content), size=len(content))
 

@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Annotated
 
+import click
 import typer
 from ksef2.clients import AuthenticatedClient
 
@@ -34,7 +35,9 @@ from ksef2_cli.commands.invoices.models import (
     InvoiceRoleChoice,
     SortOrderChoice,
 )
-from ksef2_cli.context import run_authenticated_command
+from ksef2_cli.config import OutputMode
+from ksef2_cli.context import get_settings, run_authenticated_command
+from ksef2_cli.exceptions import UsageError
 from ksef2_cli.invoice_workflows import (
     InvoiceMetadataInput,
     download_invoice,
@@ -143,7 +146,16 @@ def invoices_download(
     ],
     output_file: Annotated[
         Path | None,
-        typer.Option("--out", "-o", dir_okay=False, help="Target XML file."),
+        typer.Option(
+            "--out",
+            "-o",
+            dir_okay=False,
+            help=(
+                "Target XML file (default: NUMBER.xml in the current directory). "
+                "Use - for raw XML bytes on stdout; diagnostics stay on stderr. "
+                "Incompatible with global JSON output."
+            ),
+        ),
     ] = None,
     wait: Annotated[
         bool, typer.Option("--wait", help="Poll until the invoice can be downloaded.")
@@ -153,8 +165,16 @@ def invoices_download(
 ) -> None:
     """Download processed invoice XML by KSeF number."""
 
-    def work(auth: AuthenticatedClient) -> SavedFile:
-        return download_invoice(
+    def validate() -> None:
+        if output_file == Path("-") and get_settings(ctx).output is OutputMode.json:
+            raise UsageError(
+                "--out - cannot be combined with global JSON output "
+                "(--json, --output json, or -o json).",
+                exit_code=2,
+            )
+
+    def work(auth: AuthenticatedClient) -> SavedFile | None:
+        result = download_invoice(
             auth,
             ksef_number=ksef_number,
             output_file=output_file,
@@ -162,5 +182,11 @@ def invoices_download(
             timeout=timeout,
             poll_interval=poll_interval,
         )
+        if isinstance(result, bytes):
+            stream = click.get_binary_stream("stdout")
+            stream.write(result)
+            stream.flush()
+            return None
+        return result
 
-    run_authenticated_command(ctx, work)
+    run_authenticated_command(ctx, work, validate=validate)
