@@ -5,7 +5,6 @@ from typing import Annotated
 
 import typer
 from ksef2 import Client
-from ksef2.models import AuthTokens, RefreshedToken
 
 from ksef2_cli.context import (
     authenticate_client,
@@ -14,7 +13,7 @@ from ksef2_cli.context import (
     run_command,
     use_client,
 )
-from ksef2_cli.results import AuthStateRemoved
+from ksef2_cli.results import AuthStateRemoved, AuthTokenOutput
 from ksef2_cli.runtime import (
     fail,
     read_resume_state,
@@ -30,12 +29,19 @@ app = typer.Typer(
 _SAVE_STATE_HELP = (
     "Write resumable auth state to this file. It holds bearer tokens in plain text."
 )
+_SHOW_TOKENS_HELP = (
+    "Print the raw access and refresh tokens. "
+    "They are bearer credentials; keep them out of logs."
+)
 _STATE_FILE_HELP = "Saved auth state to reuse. Defaults to the global --auth-state."
 
 
 @app.command("login")
 def auth_login(
     ctx: typer.Context,
+    show_tokens: Annotated[
+        bool, typer.Option("--show-tokens", help=_SHOW_TOKENS_HELP)
+    ] = False,
     save_state: Annotated[
         Path | None,
         typer.Option("--save-state", dir_okay=False, help=_SAVE_STATE_HELP),
@@ -43,11 +49,13 @@ def auth_login(
 ) -> None:
     """Authenticate with the configured method and print access/refresh tokens."""
 
-    def command(client: Client) -> AuthTokens:
+    def command(client: Client) -> AuthTokenOutput:
         state = authenticate_client(ctx, client).resume_state()
         if save_state is not None:
             _ = save_resume_state(save_state, state)
-        return state.to_tokens()
+        return AuthTokenOutput(
+            tokens=state.to_tokens(), show_tokens=show_tokens, state_file=save_state
+        )
 
     run_client_command(ctx, command)
 
@@ -65,6 +73,9 @@ def auth_resume(
             help=_STATE_FILE_HELP,
         ),
     ] = None,
+    show_tokens: Annotated[
+        bool, typer.Option("--show-tokens", help=_SHOW_TOKENS_HELP)
+    ] = False,
     save_state: Annotated[
         Path | None,
         typer.Option(
@@ -76,7 +87,7 @@ def auth_resume(
 ) -> None:
     """Reuse saved auth state, refreshing the access token when it expired."""
 
-    def command(client: Client) -> AuthTokens:
+    def command(client: Client) -> AuthTokenOutput:
         source = state_file or get_settings(ctx).auth_state
         if source is None:
             fail("Provide --state-file, --auth-state, or KSEF2_AUTH_STATE.")
@@ -87,7 +98,9 @@ def auth_resume(
         resume_authentication(client, state)
         if save_state is not None:
             _ = save_resume_state(save_state, state)
-        return state.to_tokens()
+        return AuthTokenOutput(
+            tokens=state.to_tokens(), show_tokens=show_tokens, state_file=save_state
+        )
 
     run_client_command(ctx, command)
 
@@ -138,10 +151,16 @@ def auth_refresh(
             "--refresh-token", envvar="KSEF2_REFRESH_TOKEN", help="Refresh token."
         ),
     ],
+    show_tokens: Annotated[
+        bool, typer.Option("--show-tokens", help=_SHOW_TOKENS_HELP)
+    ] = False,
 ) -> None:
     """Exchange a refresh token for a new access token."""
 
-    def command(client: Client) -> RefreshedToken:
-        return client.authentication.refresh(refresh_token=refresh_token)
+    def command(client: Client) -> AuthTokenOutput:
+        return AuthTokenOutput(
+            tokens=client.authentication.refresh(refresh_token=refresh_token),
+            show_tokens=show_tokens,
+        )
 
     run_client_command(ctx, command)

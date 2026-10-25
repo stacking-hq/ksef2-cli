@@ -11,7 +11,7 @@ from conftest import (
     fake_runtime,
     payload,
 )
-from ksef2.models import SubjectLimits, TokenInfo
+from ksef2.models import RefreshedToken, SubjectLimits, TokenCredentials, TokenInfo
 from ksef2.profiles import (
     CliProfileConfig,
     ProfileAuthConfig,
@@ -38,10 +38,11 @@ def test_auth_login_uses_configured_auth_method(runner) -> None:
         obj=fake_runtime(client=fake_client),
     )
 
-    # The SDK keeps bearer values out of serialized token models, so JSON reports expiries.
     assert payload(result) == {
-        "access_token": {"valid_until": "2026-02-01T00:00:00Z"},
-        "refresh_token": {"valid_until": "2026-02-02T00:00:00Z"},
+        "access_token": "access-t…oken",
+        "access_token_valid_until": "2026-02-01T00:00:00Z",
+        "refresh_token": "refresh-…oken",
+        "refresh_token_valid_until": "2026-02-02T00:00:00Z",
     }
     assert fake_client.entered == 1
 
@@ -77,7 +78,12 @@ def test_auth_login_uses_active_profile(runner, tmp_path) -> None:
         obj=fake_runtime(client=fake_client),
     )
 
-    assert set(payload(result)) == {"access_token", "refresh_token"}
+    assert set(payload(result)) == {
+        "access_token",
+        "access_token_valid_until",
+        "refresh_token",
+        "refresh_token_valid_until",
+    }
     method, args, kwargs = auth.calls[-1]
     assert method == "with_profile"
     assert args == ("demo",)
@@ -87,7 +93,12 @@ def test_auth_login_uses_active_profile(runner, tmp_path) -> None:
 
 
 def test_auth_refresh_requires_and_uses_refresh_token(runner) -> None:
-    client = FakeClient(authentication=FakeService(refresh={"access_token": "new"}))
+    refreshed = RefreshedToken(
+        access_token=TokenCredentials(
+            token="new-access-token", valid_until=datetime(2026, 2, 1, tzinfo=UTC)
+        )
+    )
+    client = FakeClient(authentication=FakeService(refresh=refreshed))
 
     missing = runner.invoke(
         app, cli_args("auth", "refresh"), obj=fake_runtime(client=client)
@@ -100,10 +111,13 @@ def test_auth_refresh_requires_and_uses_refresh_token(runner) -> None:
         obj=fake_runtime(client=client),
     )
 
-    assert payload(result) == {"access_token": "new"}
+    assert payload(result) == {
+        "access_token": "new-acce…oken",
+        "access_token_valid_until": "2026-02-01T00:00:00Z",
+    }
     assert client.authentication.called("refresh")["refresh_token"] == "refresh"
 
-    env_client = FakeClient(authentication=FakeService(refresh={"access_token": "new"}))
+    env_client = FakeClient(authentication=FakeService(refresh=refreshed))
     result = runner.invoke(
         app,
         cli_args("auth", "refresh"),
@@ -111,7 +125,10 @@ def test_auth_refresh_requires_and_uses_refresh_token(runner) -> None:
         obj=fake_runtime(client=env_client),
     )
 
-    assert payload(result) == {"access_token": "new"}
+    assert payload(result) == {
+        "access_token": "new-acce…oken",
+        "access_token_valid_until": "2026-02-01T00:00:00Z",
+    }
     assert (
         env_client.authentication.called("refresh")["refresh_token"]
         == "refresh-from-env"

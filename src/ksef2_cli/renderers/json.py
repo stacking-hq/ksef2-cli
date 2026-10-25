@@ -9,7 +9,8 @@ from ksef2_cli.commands.invoices.models import (
     ExportPaths,
     InvoicePdfExport,
 )
-from ksef2_cli.results import FocusedResult
+from ksef2_cli.renderers.auth import auth_token_fields
+from ksef2_cli.results import AuthTokenOutput, FocusedResult
 
 _JSON_VALUE = TypeAdapter(object)
 
@@ -25,6 +26,8 @@ class JsonRenderer:
         )
 
     def to_jsonable(self, value: object) -> object:
+        if isinstance(value, AuthTokenOutput):
+            value = auth_token_fields(value)
         if isinstance(value, FocusedResult):
             value = value.payload
         if isinstance(value, (ExportHandleSaved, ExportPaths, InvoicePdfExport)):

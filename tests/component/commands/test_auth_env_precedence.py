@@ -80,7 +80,12 @@ def test_token_profile_ignores_auth_env(
         app, [*args, "auth", "login"], obj=fake_runtime(client=client)
     )
 
-    assert set(payload(result)) == {"access_token", "refresh_token"}
+    assert set(payload(result)) == {
+        "access_token",
+        "access_token_valid_until",
+        "refresh_token",
+        "refresh_token_valid_until",
+    }
     assert auth.called("with_token") == {
         "ksef_token": "profile-token",
         "nip": "6880313213" if override_nip else "5261040828",
@@ -116,7 +121,12 @@ def test_typed_pem_overrides_token_profile(runner, token_config, auth_env) -> No
         ),
     )
 
-    assert set(payload(result)) == {"access_token", "refresh_token"}
+    assert set(payload(result)) == {
+        "access_token",
+        "access_token_valid_until",
+        "refresh_token",
+        "refresh_token_valid_until",
+    }
     assert [name for name, _, _ in auth.calls] == ["with_xades"]
     assert auth.called("with_xades")["cert"] == "pem-cert"
     assert str(loaded[0]["cert_path"]) == auth_env["KSEF2_CERT"]
@@ -152,5 +162,10 @@ def test_token_env_without_profile_still_authenticates(runner, monkeypatch) -> N
         obj=fake_runtime(client=FakeClient(authentication=auth)),
     )
 
-    assert set(payload(result)) == {"access_token", "refresh_token"}
+    assert set(payload(result)) == {
+        "access_token",
+        "access_token_valid_until",
+        "refresh_token",
+        "refresh_token_valid_until",
+    }
     assert auth.called("with_token")["ksef_token"] == "env-token"

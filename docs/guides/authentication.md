@@ -164,8 +164,10 @@ refresh token is still valid:
 uv run ksef2 --json auth resume --state-file "$XDG_RUNTIME_DIR/ksef2-auth.json"
 ```
 
-Like `auth login`, its JSON output reports token expiry times and leaves out the
-token values, so use `--save-state` when a script needs the refreshed state.
+`auth login`, `auth resume`, and `auth refresh` mask tokens in text and JSON;
+use `--show-tokens` to print raw values or `--save-state FILE` on login/resume to
+save reusable credentials. With `--save-state`, output stays masked even with
+`--show-tokens` and includes `state_file`.
 
 Any other command can reuse the same state by pointing the global `--auth-state`
 option, or `KSEF2_AUTH_STATE`, at it instead of naming an authentication method:
