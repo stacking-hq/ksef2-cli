@@ -74,7 +74,7 @@ def test_collective_generate_requires_invoices(runner) -> None:
 
     result = runner.invoke(app, cli_args("collective", "generate"), obj=runtime)
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "at least one --invoice" in result.output
 
 
@@ -164,7 +164,7 @@ def test_collective_list_rejects_invalid_dates(runner) -> None:
         obj=runtime,
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "--date-to must be a date like" in result.output
 
 
@@ -229,7 +229,7 @@ def test_collective_list_invoices_caps_identifier_numbers(runner) -> None:
         obj=runtime,
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "at most 10 collective" in result.output
 
 

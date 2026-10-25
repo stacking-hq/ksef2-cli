@@ -40,7 +40,11 @@ from ksef2_cli.invoice_workflows import (
     download_invoice,
     query_invoice_metadata,
 )
-from ksef2_cli.parsing import parse_iso_datetime
+from ksef2_cli.parsing import (
+    parse_iso_datetime,
+    parse_optional_bool,
+    validate_offset_pagination,
+)
 from ksef2_cli.results import SavedFile
 
 
@@ -66,8 +70,23 @@ def invoices_metadata(
     invoicing_mode: InvoicingModeOption = None,
     attachment: AttachmentOption = None,
     self_invoicing: SelfInvoicingOption = None,
-    page_size: Annotated[int, typer.Option("--page-size", min=10, max=250)] = 10,
-    page_offset: Annotated[int, typer.Option("--page-offset", min=0)] = 0,
+    page_size: Annotated[
+        int,
+        typer.Option(
+            "--page-size",
+            min=10,
+            max=250,
+            help="Items per API request, including with --all.",
+        ),
+    ] = 10,
+    page_offset: Annotated[
+        int,
+        typer.Option(
+            "--page-offset",
+            min=0,
+            help="Offset for a single page; must be 0 with --all.",
+        ),
+    ] = 0,
     sort_order: Annotated[
         SortOrderChoice, typer.Option("--sort-order", help="asc or desc.")
     ] = SortOrderChoice.ASC,
@@ -78,6 +97,9 @@ def invoices_metadata(
     """Query invoice metadata."""
 
     def load_input() -> InvoiceMetadataInput:
+        validate_offset_pagination(all_pages=all_pages, page_offset=page_offset)
+        parse_optional_bool(attachment, option_name="--attachment")
+        parse_optional_bool(self_invoicing, option_name="--self-invoicing")
         return InvoiceMetadataInput(
             date_from=parse_iso_datetime(date_from, option_name="--date-from"),
             date_to=None

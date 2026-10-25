@@ -19,6 +19,7 @@ from ksef2.models import (
 )
 
 from ksef2_cli.context import get_settings, run_authenticated, run_command
+from ksef2_cli.parsing import validate_offset_pagination
 from ksef2_cli.results import CertificateRevoked
 
 app = typer.Typer(help="Manage MCU certificates.")
@@ -120,8 +121,23 @@ def certificates_list(
     expires_after: Annotated[
         str | None, typer.Option("--expires-after", help="ISO datetime.")
     ] = None,
-    page_size: Annotated[int, typer.Option("--page-size", min=10, max=100)] = 10,
-    page_offset: Annotated[int, typer.Option("--page-offset", min=0)] = 0,
+    page_size: Annotated[
+        int,
+        typer.Option(
+            "--page-size",
+            min=10,
+            max=100,
+            help="Items per API request, including with --all.",
+        ),
+    ] = 10,
+    page_offset: Annotated[
+        int,
+        typer.Option(
+            "--page-offset",
+            min=0,
+            help="Offset for a single page; must be 0 with --all.",
+        ),
+    ] = 0,
     all_pages: Annotated[bool, typer.Option("--all", help="Fetch all pages.")] = False,
 ) -> None:
     """Query certificates."""
@@ -129,6 +145,7 @@ def certificates_list(
     def operation() -> list[CertificateInfo]:
         from ksef2.models import validate_certificate_serial_number
 
+        validate_offset_pagination(all_pages=all_pages, page_offset=page_offset)
         params = OffsetPaginationParams(page_size=page_size, page_offset=page_offset)
         serial = (
             validate_certificate_serial_number(serial_number) if serial_number else None

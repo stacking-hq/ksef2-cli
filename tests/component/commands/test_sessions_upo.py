@@ -76,7 +76,7 @@ def test_sessions_upo_requires_one_identifier_before_authentication(
         obj=fake_runtime(client=client),
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert (
         "Provide exactly one of --ksef-number, --invoice-reference, or --upo-reference."
         in plain(result.output)

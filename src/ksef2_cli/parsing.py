@@ -3,6 +3,8 @@
 import re
 from datetime import datetime
 
+from ksef2_cli.exceptions import UsageError
+
 
 def parse_iso_datetime(
     value: str, *, option_name: str, require_offset: bool = False
@@ -50,3 +52,13 @@ def parse_optional_bool(value: str | None, *, option_name: str) -> bool | None:
     if normalized in {"0", "false", "no", "n", "off"}:
         return False
     raise ValueError(f"{option_name} must be yes or no.")
+
+
+def validate_offset_pagination(*, all_pages: bool, page_offset: int) -> None:
+    """Reject an offset that conflicts with fetching all pages."""
+    if all_pages and page_offset != 0:
+        raise UsageError(
+            "--all cannot be combined with a nonzero --page-offset. "
+            "Omit --page-offset or use --page-offset 0.",
+            exit_code=2,
+        )

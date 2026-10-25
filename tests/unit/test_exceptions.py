@@ -265,7 +265,7 @@ def test_each_sdk_exception_maps_to_its_own_cli_error(
     assert type(error) is cli_error
     assert error.title == title
     assert bool(error.hints) is hinted
-    assert error.exit_code == 1
+    assert error.exit_code == (2 if cli_error is UsageError else 1)
     expected = sdk_error.args[0] if message is _ERROR_MESSAGE else message
     assert error.message == expected
 
@@ -463,3 +463,9 @@ def test_permission_denied_reports_required_permissions() -> None:
     assert error.hints == (
         "Check that the authenticated identity has the required KSeF permissions for this context.",
     )
+
+
+def test_usage_error_defaults_to_two_and_preserves_explicit_override() -> None:
+    assert UsageError("Invalid input").exit_code == 2
+    assert UsageError("Explicit status", exit_code=1).exit_code == 1
+    assert CliError("Runtime failure").exit_code == 1

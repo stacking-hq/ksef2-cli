@@ -127,7 +127,7 @@ def test_testdata_sandbox_requires_test_environment(runner) -> None:
         obj=fake_runtime(),
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "requires --env test" in result.output
 
 
@@ -176,7 +176,7 @@ def test_testdata_subject_and_person_commands(runner) -> None:
         ),
         obj=runtime,
     )
-    assert invalid.exit_code == 1
+    assert invalid.exit_code == 2
     assert "NIP:description" in invalid.output
 
     assert payload(
@@ -314,7 +314,7 @@ def test_testdata_permission_commands(runner) -> None:
         ),
         obj=runtime,
     )
-    assert missing.exit_code == 1
+    assert missing.exit_code == 2
     assert "At least one --permission" in missing.output
 
     granted = payload(
@@ -403,7 +403,7 @@ def test_testdata_update_certificate_valid_to(runner) -> None:
         obj=runtime,
     )
 
-    assert invalid.exit_code == 1
+    assert invalid.exit_code == 2
     assert "--valid-to must be a date like" in invalid.output
 
 
@@ -451,7 +451,7 @@ def test_testdata_update_certificate_valid_to_rejects_naive_valid_to(runner) -> 
         obj=runtime,
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "--valid-to must include a UTC offset" in plain(result.output)
     assert service.calls == []
 
@@ -476,7 +476,7 @@ def test_testdata_update_certificate_valid_to_rejects_bad_serial_number(
             obj=runtime,
         )
 
-        assert result.exit_code == 1, serial_number
+        assert result.exit_code == 2, serial_number
         assert "--serial-number must be 16 hexadecimal characters" in plain(
             result.output
         )

@@ -201,6 +201,9 @@ selects the query shape, `--payload` names the file, and `--page-size`,
 `--page-offset`, and `--all` page the result the same way as the other list
 commands.
 
+`--page-size` sets the number of items per API request, including with `--all`.
+`--all` requires `--page-offset` to be 0, its default, and rejects a nonzero offset.
+
 | Kind | Payload model | Required fields |
 | --- | --- | --- |
 | `personal` | `PersonalPermissionsQuery` | none |

@@ -23,6 +23,11 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
   --all
 ```
 
+`invoices metadata --page-size 12` returns one page of up to 12 items.
+Add `--all` to fetch every page, with up to 12 items per API request.
+`--all` requires `--page-offset` to be 0, its default. A nonzero offset
+selects a single page and cannot be combined with `--all`.
+
 `invoices metadata`, `invoices export`, `invoices export-download`, and
 `invoices export-pdf` accept the same filters, so a query you tuned against
 metadata replays unchanged on an export:

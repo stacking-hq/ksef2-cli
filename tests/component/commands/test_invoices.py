@@ -263,7 +263,7 @@ def test_invoices_metadata_parses_date_options(runner) -> None:
         cli_args("invoices", "metadata", "--date-from", "yesterday"),
         obj=runtime,
     )
-    assert bad_date.exit_code == 1
+    assert bad_date.exit_code == 2
     assert "must be a date like" in bad_date.output
 
     reversed_range = runner.invoke(
@@ -465,7 +465,7 @@ def test_invoices_send_online_directory_without_xml_errors(runner, tmp_path) -> 
         obj=runtime,
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "No XML invoice files found" in result.output
 
 
@@ -492,7 +492,7 @@ def test_invoices_send_online_multiple_files_require_receipt_dir(
         obj=runtime,
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert (
         "Use --receipt-dir when writing receipts for multiple files." in result.output
     )
@@ -1443,3 +1443,57 @@ def test_invoices_export_pdf_reports_a_missing_pdf_extra(
     )
     assert 'ksef2-cli[pdf]' in plain(result.output)
     assert "issues/new" not in result.output
+
+
+@pytest.mark.parametrize(
+    "option,field",
+    [("--attachment", "has_attachment"), ("--self-invoicing", "is_self_invoicing")],
+)
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("yes", True), ("true", True), ("1", True), ("y", True), ("on", True),
+        ("no", False), ("false", False), ("0", False), ("n", False), ("off", False),
+    ],
+)
+def test_metadata_boolean_aliases_reach_search(runner, option, field, value, expected):
+    service = FakeService(search=FakeSearch([]))
+    result = runner.invoke(
+        app,
+        cli_args(
+            "invoices", "metadata", "--date-from", "2026-10-20",
+            "--date-to", "2026-10-21", option, value,
+        ),
+        obj=fake_runtime(auth=SimpleNamespace(invoices=service)),
+    )
+    assert payload(result) == {"invoices": []}
+    assert getattr(service.called("search")["filters"], field) is expected
+
+
+@pytest.mark.parametrize(
+    "code,message",
+    [(150, "UPO is not ready."), (450, "Invoice processing failed:")],
+)
+def test_invoice_upo_operational_errors_keep_exit_one(runner, tmp_path, code, message):
+    receipt_file = tmp_path / "receipt.json"
+    receipt_file.write_text("{}", encoding="utf-8")
+    status = _invoice_processing_status(ksef_number=None)
+    status.status.code = code
+    receipt = SimpleNamespace(
+        mode="online",
+        online=SimpleNamespace(status=status, invoice_reference="invoice-ref"),
+    )
+    service = FakeService()
+    result = runner.invoke(
+        app,
+        cli_args(
+            "invoices", "upo", "--receipt", str(receipt_file),
+            "--out", str(tmp_path / "upo.xml"),
+        ),
+        obj=fake_runtime(auth=service, model_reader=lambda *_: receipt),
+    )
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["exit_code"] == 1
+    assert message in error["message"]
+    assert service.calls == []
