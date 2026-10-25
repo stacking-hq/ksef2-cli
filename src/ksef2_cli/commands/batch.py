@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated, Self
 
 import typer
-from ksef2 import KSeFBatchUploadError
+from ksef2 import KSeFBatchUploadError, KSeFValidationError
 from ksef2.clients import AuthenticatedClient, BatchSessionClient
 from ksef2.models import (
     BatchSessionResumeState,
@@ -70,7 +70,7 @@ def _read_session_state(path: Path, *, prepared: Path) -> BatchSessionResumeStat
 
     try:
         return read_model_file(path, BatchSessionResumeState)
-    except ValidationError as error:
+    except (ValidationError, KSeFValidationError) as error:
         raise UsageError(
             f"{path} does not hold resumable batch session state.",
             title="Batch session state cannot be resumed",

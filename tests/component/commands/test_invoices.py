@@ -1015,7 +1015,7 @@ _INVOICE_FILTER_ARGS = (
     "--invoice-number",
     "FA/1/2026",
     "--ksef-number",
-    "ksef-1",
+    "5261040828-20260101-ABCDEF123456-AB",
     "--amount-min",
     "10",
     "--amount-max",
@@ -1149,7 +1149,7 @@ def test_invoice_export_sends_metadata_filters(runner, tmp_path) -> None:
         assert filters.seller_nip == "5261040828"
         assert filters.buyer_nip == "5261040555"
         assert filters.invoice_number == "FA/1/2026"
-        assert filters.ksef_number == "ksef-1"
+        assert filters.ksef_number == "5261040828-20260101-ABCDEF123456-AB"
         assert filters.amount_min == 10.0
         assert filters.amount_max == 100.0
         assert filters.invoice_schema is FormSchema.FA3

@@ -7,7 +7,7 @@ from typing import Annotated, cast
 
 import typer
 from cryptography.hazmat.primitives import serialization
-from ksef2 import Client, Environment
+from ksef2 import Client, Environment, KSeFValidationError
 from ksef2.models import (
     AuthContextIdentifier,
     AuthContextIdentifierTypeEnum,
@@ -533,7 +533,7 @@ def _validated_serial_number(value: str) -> str:
     """Return the serial number, rejecting one KSeF could never accept."""
     try:
         return validate_certificate_serial_number(value)
-    except ValidationError:
+    except (ValidationError, KSeFValidationError) as exc:
         raise ValueError(
             "--serial-number must be 16 hexadecimal characters, e.g. ABCDEF1234567890."
-        ) from None
+        ) from exc
