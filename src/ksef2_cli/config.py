@@ -32,6 +32,17 @@ ModelT = TypeVar("ModelT", bound=BaseModel)
 DEFAULT_POLL_INTERVAL = 1.0
 DEFAULT_AUTH_TIMEOUT = 60.0
 
+AUTH_ENV_VARS = {
+    "token": "KSEF2_TOKEN",
+    "context_type": "KSEF2_CONTEXT_TYPE",
+    "test_certificate": "KSEF2_TEST_CERT",
+    "cert": "KSEF2_CERT",
+    "key": "KSEF2_KEY",
+    "key_password": "KSEF2_KEY_PASSWORD",
+    "p12": "KSEF2_P12",
+    "p12_password": "KSEF2_P12_PASSWORD",
+}
+
 
 class EnvironmentName(StrEnum):
     """Typer-facing environment choice kept lowercase for readable ``--help``."""
@@ -145,6 +156,7 @@ class Settings:
     poll_interval: float | None
     auth_timeout: float | None
     runtime_overrides: RuntimeOverrides | None = None
+    auth_env_params: frozenset[str] = frozenset()
 
     @property
     def effective_poll_interval(self) -> float:
@@ -214,6 +226,7 @@ def resolve_settings(
     auth_timeout: float | None = None,
     runtime_overrides: RuntimeOverrides | None = None,
     environ: Mapping[str, str] | None = None,
+    auth_env_params: frozenset[str] = frozenset(),
 ) -> Settings:
     env = os.environ if environ is None else environ
     resolved_config_file = resolve_config_path(config_file)
@@ -258,6 +271,11 @@ def resolve_settings(
     if resolved_nip is None and selected_profile is not None:
         resolved_nip = selected_profile.nip
 
+    # A selected profile owns auth credentials; only typed flags override it.
+    ignored_auth_params = (
+        auth_env_params if selected_profile is not None else frozenset()
+    )
+
     return Settings(
         config_file=resolved_config_file,
         config_loaded=resolved_config_file.exists(),
@@ -267,16 +285,19 @@ def resolve_settings(
         output=OutputMode.json if json_output else output or OutputMode.text,
         verbose=verbose,
         nip=resolved_nip,
-        token=token,
-        context_type=context_type,
+        token=None if "token" in ignored_auth_params else token,
+        context_type=None if "context_type" in ignored_auth_params else context_type,
         auth_state=auth_state.expanduser() if auth_state else auth_state,
-        test_certificate=test_certificate,
-        cert=cert,
-        key=key,
-        key_password=key_password,
-        p12=p12,
-        p12_password=p12_password,
+        test_certificate=(
+            False if "test_certificate" in ignored_auth_params else test_certificate
+        ),
+        cert=None if "cert" in ignored_auth_params else cert,
+        key=None if "key" in ignored_auth_params else key,
+        key_password=None if "key_password" in ignored_auth_params else key_password,
+        p12=None if "p12" in ignored_auth_params else p12,
+        p12_password=None if "p12_password" in ignored_auth_params else p12_password,
         poll_interval=poll_interval,
         auth_timeout=auth_timeout,
         runtime_overrides=runtime_overrides,
+        auth_env_params=auth_env_params,
     )

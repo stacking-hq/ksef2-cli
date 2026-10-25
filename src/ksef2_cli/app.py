@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from click.core import ParameterSource
 
 from ksef2 import KSeFException
 from ksef2.models import ContextIdentifierTypeEnum
@@ -31,6 +32,7 @@ from ksef2_cli.commands import (
 )
 from ksef2_cli.commands.invoices.group import app as invoices_app
 from ksef2_cli.config import (
+    AUTH_ENV_VARS,
     EnvironmentName,
     OutputMode,
     RuntimeOverrides,
@@ -233,6 +235,11 @@ def root(
             poll_interval=poll_interval,
             auth_timeout=auth_timeout,
             runtime_overrides=runtime_overrides,
+            auth_env_params=frozenset(
+                name
+                for name in AUTH_ENV_VARS
+                if context.get_parameter_source(name) is ParameterSource.ENVIRONMENT
+            ),
         )
     except (OSError, ValueError, KSeFException) as exc:
         raise typer.BadParameter(str(exc), param_hint="--config") from exc

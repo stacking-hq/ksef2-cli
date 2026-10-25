@@ -15,7 +15,7 @@ from ksef2.profiles import ProfileAuthType
 from ksef2.renderers import InvoicePDFExporter, PDFPageSize
 from pydantic import BaseModel, SecretStr, ValidationError
 
-from ksef2_cli.config import AuthenticatedRuntime, Settings
+from ksef2_cli.config import AUTH_ENV_VARS, AuthenticatedRuntime, Settings
 from ksef2_cli.exceptions import (
     PDF_INSTALL_HINT,
     PDF_SYSTEM_LIBS_HINT,
@@ -352,8 +352,28 @@ def select_auth_method(settings: Settings) -> ProfileAuthType | None:
     ]
 
     if len(selected) > 1:
+
+        def source(name: str, flag: str) -> str:
+            return AUTH_ENV_VARS[name] if name in settings.auth_env_params else flag
+
+        descriptions = {
+            ProfileAuthType.TOKEN: f"token ({source('token', '--token')})",
+            ProfileAuthType.TEST_CERTIFICATE: (
+                f"test certificate ({source('test_certificate', '--test-cert')})"
+            ),
+            ProfileAuthType.XADES_P12: f"PKCS#12 ({source('p12', '--p12')})",
+            ProfileAuthType.XADES_PEM: "certificate ("
+            + ", ".join(
+                source(name, f"--{name}")
+                for name in ("cert", "key")
+                if getattr(settings, name) is not None
+            )
+            + ")",
+        }
         fail(
-            "Provide only one auth method: --token, --test-cert, --cert/--key, or --p12."
+            "Provide only one auth method: "
+            + ", ".join(descriptions[method] for method in selected)
+            + "."
         )
 
     return selected[0] if selected else None
