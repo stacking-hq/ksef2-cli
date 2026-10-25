@@ -247,8 +247,10 @@ def test_collective_list_invoices_renders_text_rows(runner) -> None:
     )
 
     assert result.exit_code == 0
-    assert "ksef_number=KSEF-1" in result.output
-    assert "hidden=no" in result.output
+    assert result.output == (
+        "KSEF NUMBER  PAYMENT  DESCRIPTION  HIDDEN\n"
+        "KSEF-1                             no\n"
+    )
 
 
 def test_collective_commands_render_text_rows(runner) -> None:
@@ -289,6 +291,7 @@ def test_collective_commands_render_text_rows(runner) -> None:
     )
 
     assert generated.output.strip() == "collective_identifier_number: CID-1"
-    assert "identifier=CID-1" in listed.output
-    assert "invoices=2" in listed.output
-    assert "current_context=no" in references.output
+    assert listed.output.startswith("IDENTIFIER  CREATED (UTC)")
+    assert "CID-1       2026-01-02 03:04:00" in listed.output
+    assert listed.output.splitlines()[1].split()[-2:] == ["2", "yes"]
+    assert references.output.splitlines()[1].endswith("no")

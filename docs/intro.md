@@ -57,3 +57,14 @@ The command groups mirror the SDK domains:
 - `testdata`
 - `config`
 - `profile`
+
+## List output
+
+List and record-query commands show plain-text tables. Identifiers remain complete,
+while long names and descriptions may end in `…`. Narrow terminals may hide
+optional columns; redirected output uses a 120-column layout. Empty lists print
+`No results.`. Datetime headers mark UTC, dates use `YYYY-MM-DD`, and amounts use
+two decimal places. Available pagination metadata appears below the table.
+
+Use `--json` before the command group to get all fields and unchanged SDK values,
+including nulls. For example, `ksef2 --profile test-company --json tokens list`.
