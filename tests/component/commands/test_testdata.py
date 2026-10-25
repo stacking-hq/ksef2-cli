@@ -404,7 +404,7 @@ def test_testdata_update_certificate_valid_to(runner) -> None:
     )
 
     assert invalid.exit_code == 1
-    assert "--valid-to must be an ISO 8601 date or datetime" in invalid.output
+    assert "--valid-to must be a date like" in invalid.output
 
 
 def test_testdata_update_certificate_valid_to_keeps_a_non_utc_offset(runner) -> None:

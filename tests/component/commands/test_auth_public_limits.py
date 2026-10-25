@@ -478,4 +478,4 @@ def test_sessions_invoice_list_date_filters(runner) -> None:
         obj=runtime,
     )
     assert bad_date.exit_code == 1
-    assert "--closed-from must be an ISO 8601" in bad_date.output
+    assert "--closed-from must be a date like" in bad_date.output
