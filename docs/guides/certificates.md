@@ -151,6 +151,9 @@ with an ISO 8601 datetime, which is how you ask for what is about to run out.
 `--page-size` takes 10 to 100, `--page-offset` skips records, and `--all` walks
 every page.
 
+`--page-size` sets the number of items per API request, including with `--all`.
+`--all` requires `--page-offset` to be 0, its default, and rejects a nonzero offset.
+
 Text output prints one `key: value` block per certificate, with `serial_number`,
 `name`, `common_name`, `type`, `status`, `subject_identifier`, `valid_from`,
 `valid_to`, and `request_date`. `last_use_date` appears only for a certificate

@@ -234,8 +234,8 @@ Query certificates.
 | `--type` | [authentication\|offline] | - | - | - |
 | `--status` | [active\|blocked\|revoked\|expired] | - | - | - |
 | `--expires-after` | TEXT | - | - | ISO datetime. |
-| `--page-size` | INTEGER RANGE | 10 | - | - |
-| `--page-offset` | INTEGER RANGE | 0 | - | - |
+| `--page-size` | INTEGER RANGE | 10 | - | Items per API request, including with --all. |
+| `--page-offset` | INTEGER RANGE | 0 | - | Offset for a single page; must be 0 with --all. |
 | `--all` | - | false | - | Fetch all pages. |
 
 ### `certificates retrieve`
@@ -540,8 +540,8 @@ Query invoice metadata.
 | `--invoicing-mode` | [online\|offline] | - | - | online or offline. |
 | `--attachment` | TEXT | - | - | Filter by attachment presence: yes or no. |
 | `--self-invoicing` | TEXT | - | - | Filter by self-invoicing flag: yes or no. |
-| `--page-size` | INTEGER RANGE | 10 | - | - |
-| `--page-offset` | INTEGER RANGE | 0 | - | - |
+| `--page-size` | INTEGER RANGE | 10 | - | Items per API request, including with --all. |
+| `--page-offset` | INTEGER RANGE | 0 | - | Offset for a single page; must be 0 with --all. |
 | `--sort-order` | [asc\|desc] | asc | - | asc or desc. |
 | `--all` | - | false | - | Fetch all metadata items. |
 
@@ -716,8 +716,8 @@ List PEPPOL providers.
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
 | `--all` | - | false | - | Fetch all pages. |
-| `--page-size` | INTEGER RANGE | 10 | - | - |
-| `--page-offset` | INTEGER RANGE | 0 | - | - |
+| `--page-size` | INTEGER RANGE | 10 | - | Items per API request, including with --all. |
+| `--page-offset` | INTEGER RANGE | 0 | - | Offset for a single page; must be 0 with --all. |
 
 ## `permissions`
 
@@ -733,8 +733,8 @@ List roles assigned to the authenticated entity.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--page-size` | INTEGER RANGE | 10 | - | - |
-| `--page-offset` | INTEGER RANGE | 0 | - | - |
+| `--page-size` | INTEGER RANGE | 10 | - | Items per API request, including with --all. |
+| `--page-offset` | INTEGER RANGE | 0 | - | Offset for a single page; must be 0 with --all. |
 | `--all` | - | false | - | Fetch all pages. |
 
 ### `permissions grant-authorization`
@@ -851,8 +851,8 @@ Run a permission query from a JSON payload.
 | --- | --- | --- | --- | --- |
 | `KIND:{entities|persons|authorizations|personal|eu-entities|subordinate-entities|subunits}` | - | required | - | entities, persons, authorizations, personal, eu-entities, subordinate-entities, or subunits. |
 | `--payload` | FILE | required | - | JSON payload for the SDK query model. |
-| `--page-size` | INTEGER RANGE | 10 | - | - |
-| `--page-offset` | INTEGER RANGE | 0 | - | - |
+| `--page-size` | INTEGER RANGE | 10 | - | Items per API request, including with --all. |
+| `--page-offset` | INTEGER RANGE | 0 | - | Offset for a single page; must be 0 with --all. |
 | `--all` | - | false | - | Fetch all pages. |
 
 ### `permissions revoke-authorization`
