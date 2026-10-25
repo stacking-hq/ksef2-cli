@@ -35,6 +35,9 @@ metadata replays unchanged on an export:
 - Money: `--amount-type` with `--amount-min` and `--amount-max`
 - Flags: `--role`, `--attachment yes|no`, `--self-invoicing yes|no`
 
+Date options also accept day-first `DD.MM.YYYY` or `DD-MM-YYYY` dates, with one or
+two digits for the day and month.
+
 `--restrict-hwm` (short for `--restrict-to-permanent-storage-hwm-date`) restricts
 the result set to the permanent-storage high-water mark, so repeated requests
 return the same invoices. Without it the query runs against whatever KSeF holds

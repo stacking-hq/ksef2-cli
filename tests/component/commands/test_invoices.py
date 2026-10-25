@@ -264,7 +264,7 @@ def test_invoices_metadata_parses_date_options(runner) -> None:
         obj=runtime,
     )
     assert bad_date.exit_code == 1
-    assert "must be an ISO 8601" in bad_date.output
+    assert "must be a date like" in bad_date.output
 
     reversed_range = runner.invoke(
         app,
@@ -282,6 +282,29 @@ def test_invoices_metadata_parses_date_options(runner) -> None:
     assert "date_from must be less than or equal to date_to" in plain(
         reversed_range.output
     )
+
+
+def test_invoices_metadata_polish_dates_match_iso_filters(runner) -> None:
+    service = FakeService(search=lambda **kwargs: FakeSearch([]))
+    runtime = fake_runtime(auth=type("Auth", (), {"invoices": service})())
+
+    for date_from, date_to in (
+        ("01.10.2026", "15.10.2026"),
+        ("2026-10-01", "2026-10-15"),
+    ):
+        result = runner.invoke(
+            app,
+            cli_args(
+                "invoices", "metadata", "--date-from", date_from, "--date-to", date_to
+            ),
+            obj=runtime,
+        )
+        assert payload(result) == {"invoices": []}
+
+    filters = [kwargs["filters"] for name, _, kwargs in service.calls if name == "search"]
+    assert len(filters) == 2
+    assert filters[0].date_from == filters[1].date_from
+    assert filters[0].date_to == filters[1].date_to
 
 
 def test_invoice_download_writes_xml(runner, tmp_path) -> None:

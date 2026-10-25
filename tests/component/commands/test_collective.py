@@ -165,7 +165,7 @@ def test_collective_list_rejects_invalid_dates(runner) -> None:
     )
 
     assert result.exit_code == 1
-    assert "--date-to must be an ISO 8601 date or datetime" in result.output
+    assert "--date-to must be a date like" in result.output
 
 
 def test_collective_list_for_invoice(runner) -> None:
