@@ -387,7 +387,7 @@ Download processed invoice XML by KSeF number.
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
 | `--ksef-number` | TEXT | required | - | KSeF invoice number. |
-| `--out`, `-o` | FILE | - | - | Target XML file. |
+| `--out`, `-o` | FILE | - | - | Target XML file (default: NUMBER.xml in the current directory). Use - for raw XML bytes on stdout; diagnostics stay on stderr. Incompatible with global JSON output. |
 | `--wait` | - | false | - | Poll until the invoice can be downloaded. |
 | `--timeout` | FLOAT RANGE | 120.0 | - | - |
 | `--poll-interval` | FLOAT RANGE | 2.0 | - | - |

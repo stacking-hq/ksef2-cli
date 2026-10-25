@@ -59,6 +59,25 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   --out invoice.xml
 ```
 
+Without `--out`, the command saves `NUMBER.xml` in the current directory, where
+`NUMBER` is the KSeF number. Characters unsafe for filenames are replaced with
+underscores. Use `--out PATH` or the local `-o PATH` to choose a file. File downloads
+print the saved path and byte count, or the existing JSON result with `--json`.
+
+Use `--out -` or the local `-o -` to pipe the original XML bytes to another command:
+
+```bash
+uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+  invoices download --ksef-number "$KSEF_NUMBER" --out - \
+  | xmllint --format -
+```
+
+Stdout contains exactly the downloaded bytes, preserving their encoding with no
+added newline or summary. This mode creates no file. Errors and any progress stay
+on stderr. Do not combine `--out -` with global `--json`, `--output json`, or
+`-o json`. The command rejects that combination with exit code 2 before
+authentication or download, with a JSON error on stderr and empty stdout.
+
 Add `--wait` when the invoice may not be ready yet:
 
 ```bash
