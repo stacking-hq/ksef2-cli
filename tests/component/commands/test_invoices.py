@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from rich.cells import cell_len
 
 from ksef2 import KSeFInvoiceRejectedError, KSeFSessionError
 
@@ -585,6 +586,57 @@ def test_invoices_send_online_wait_marks_failed_status_from_session(
     assert receipt.online.status == rejected
     assert receipt_file.stat().st_mode & 0o777 == 0o600
     assert [name for name, _, _ in submission.calls] == ["wait"]
+
+
+def test_invoices_status_plain_text_fits_the_declared_width(runner, tmp_path) -> None:
+    # The record behind `invoices status` is identifiers and a receipt path, and none
+    # of them can be shortened to fit a terminal.
+    receipts = tmp_path / "receipts" / "with-a-name-long-enough-to-overflow-a-line"
+    receipts.mkdir(parents=True)
+    receipt_file = receipts / "invoice-workflow-receipt.json"
+    invoice = tmp_path / "invoice.xml"
+    invoice.write_text("<invoice/>", encoding="utf-8")
+    reference = "5926ad107b01e605f9ebb4cbca0080fea655114b8ca67168543dc7ca3bb2eeee"
+    _ = receipt_file.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "mode": "online",
+                "submitted_files": [str(invoice)],
+                "online": {
+                    "file": str(invoice),
+                    "session_state": online_state().to_dict(mode="json"),
+                    "invoice_reference": reference,
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    submission = FakeSubmission(
+        reference,
+        get_status=_invoice_processing_status(
+            reference_number=reference, ksef_number="ksef-612701234567-2411BF0003"
+        ),
+    )
+    session = FakeSession(
+        submission=lambda **kwargs: submission,
+        close=KSeFSessionError("status must not close the resumed session"),
+    )
+    runtime = fake_runtime(auth=FakeService(online_session=session))
+
+    result = runner.invoke(
+        app,
+        ["--no-config", "invoices", "status", "--receipt", str(receipt_file)],
+        obj=runtime,
+        env={"COLUMNS": "80", "NO_COLOR": "1", "FORCE_COLOR": None},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert max(cell_len(line) for line in result.output.splitlines()) <= 80
+    # The identifiers arrive whole, spread over the lines the width allowed.
+    assert reference in "".join(result.output.split())
+    assert "ksef-612701234567-2411BF0003" in "".join(result.output.split())
 
 
 @pytest.mark.parametrize("wait_for_upo", [False, True])

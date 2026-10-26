@@ -249,7 +249,7 @@ def error_from_exception(error: Exception) -> CliError:
     if isinstance(error, _USAGE_SDK_ERRORS):
         return UsageError(_sdk_message(error))
     if isinstance(error, KSeFInvoiceRenderingError):
-        return UsageError(_sdk_message(error))
+        return _from_rendering_error(error)
     if isinstance(error, KSeFValidationError):
         return ConfigError(_sdk_message(error))
     if isinstance(error, KSeFAuthenticationExpiredError):
@@ -323,6 +323,33 @@ def error_from_exception(error: Exception) -> CliError:
     if isinstance(error, OSError):
         return FileCliError.from_os_error(error)
     return UnexpectedCliError(error)
+
+
+# The bundled FA(3) stylesheet reads its code lists from the network when code
+# lookups are on, so libxslt reports an unreachable list as a transform failure.
+_UNRESOLVED_URI = "Cannot resolve URI"
+
+
+def _from_rendering_error(error: KSeFInvoiceRenderingError) -> CliError:
+    """Keep the stylesheet's own reason visible on a rendering failure.
+
+    The SDK message names only the transformation step, so a run that asked for code
+    lookups fails with no clue that a code list is what could not be read.
+    """
+
+    cause = error.__cause__
+    if cause is None:
+        return UsageError(_sdk_message(error))
+    reason = " ".join(str(cause).split())
+    hints: tuple[str, ...] = ()
+    if _UNRESOLVED_URI in reason:
+        hints = (
+            "Re-run without code lookups: the stylesheet then prints coded values as "
+            "codes and reads no code list from the network.",
+        )
+    return UsageError(
+        _sdk_message(error), details=(f"Stylesheet error: {reason}",), hints=hints
+    )
 
 
 def _sdk_message(error: KSeFException) -> str:

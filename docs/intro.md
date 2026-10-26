@@ -68,3 +68,9 @@ two decimal places. Available pagination metadata appears below the table.
 
 Use `--json` before the command group to get all fields and unchanged SDK values,
 including nulls. For example, `ksef2 --profile test-company --json tokens list`.
+
+Single records are not tables, so they keep every character: a value wider than the
+terminal moves onto the indented lines under its name instead of being cut. A terminal
+states its own width, and redirected output takes it from `COLUMNS`, so
+`COLUMNS=80 ksef2 fa3 inspect --in faktura.xml` wraps to 80 columns. Output with no
+width stated stays one field per line.
