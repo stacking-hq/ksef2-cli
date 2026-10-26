@@ -9,6 +9,7 @@ from typing import Self, cast
 from ksef2 import KSeFInvoiceRejectedError, KSeFSessionError
 from ksef2.clients import AuthenticatedClient, OnlineSessionClient
 from ksef2.models import (
+    BatchSessionResumeState,
     CurrencyCodes,
     ExportResumeState,
     FormSchema,
@@ -368,7 +369,7 @@ class BatchInvoiceHandler:
         saved_upos = (
             download_batch_upos(
                 auth=self.auth,
-                session_reference=state.reference_number,
+                state=state,
                 status=status,
                 upo_dir=inputs.upo_dir,
             )
@@ -388,6 +389,7 @@ class BatchInvoiceHandler:
                 submitted_files=inputs.invoice_files,
                 batch=BatchInvoiceReceipt(
                     session_reference=state.reference_number,
+                    session_state=state,
                     files=inputs.invoice_files,
                     status=status,
                     upo_files=upo_files,
@@ -658,13 +660,43 @@ def export_invoices_to_pdf(
     )
 
 
+def require_batch_session_state(
+    batch: BatchInvoiceReceipt,
+) -> BatchSessionResumeState:
+    """Return the state a batch receipt carries, or say why an old one cannot resume.
+
+    ``auth.batch_session`` resumes from session state or its JSON, never from a bare
+    session reference, which it reads as malformed JSON. Receipts written before the
+    CLI stored that state only carry the reference, so they get the actionable error
+    here instead of the SDK's parse message.
+    """
+
+    if batch.session_state is None:
+        raise UsageError(
+            f"The receipt of batch session {batch.session_reference} holds only its "
+            "reference number, so the session cannot be resumed.",
+            title="Batch receipt cannot be resumed",
+            hints=(
+                "Save resumable state with ksef2 batch submit --state-file FILE, then "
+                "use ksef2 batch status --state-file FILE or ksef2 batch upo "
+                "--state-file FILE --upo-reference REFERENCE --out FILE.",
+                "Or re-send these invoices to get a resumable receipt: ksef2 invoices "
+                f"send {' '.join(str(path) for path in batch.files)} --mode batch "
+                "--wait --receipt-dir DIR.",
+            ),
+            exit_code=1,
+        )
+    return batch.session_state
+
+
 def download_batch_upos(
     *,
     auth: AuthenticatedClient,
-    session_reference: str,
+    state: BatchSessionResumeState,
     status: BatchSessionStatus | None,
     upo_dir: Path,
 ) -> list[SavedFile]:
+    session_reference = state.reference_number
     if status is None:
         raise UsageError("--upo-dir requires a completed batch status.", exit_code=1)
     if status.code is not None and status.code >= 400:
@@ -676,7 +708,7 @@ def download_batch_upos(
     if not status.upo_references:
         raise UsageError("Batch UPO is not ready. Re-run with --wait.", exit_code=1)
 
-    with auth.batch_session(state=session_reference) as session:
+    with auth.batch_session(state=state) as session:
         # KSeF hands back one page per UPO reference, in the order the status reported.
         pages = session.download_upo()
     if len(pages) != len(status.upo_references):
