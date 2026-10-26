@@ -1,7 +1,10 @@
+import base64
+import json
 from datetime import UTC, datetime
 
 import pytest
 from conftest import FakePager, FakeService, cli_args, fake_runtime, payload
+from ksef2 import KSeFResponseValidationError
 from ksef2.models import (
     Certificate,
     CertificateEnrollmentResponse,
@@ -9,8 +12,36 @@ from ksef2.models import (
     CertificateLimitsResponse,
     RetrievedCertificatesList,
 )
+from pydantic import BaseModel, Base64Str, ValidationError
+from typer.testing import CliRunner
 
 from ksef2_cli.app import app
+
+
+class _RetrieveResponse(BaseModel):
+    """The retrieve response the SDK validates, reduced to the field that broke.
+
+    ``Base64Str`` is Pydantic's base64 of a *string*, so the Base64 of the DER bytes
+    KSeF returns for an issued certificate is rejected before the CLI sees it.
+    """
+
+    certificates: list[dict[str, Base64Str]]
+
+
+def _unreadable_certificate_response() -> KSeFResponseValidationError:
+    """The SDK error from the QA run, with the Pydantic rejection as its cause."""
+
+    der_as_base64 = base64.b64encode(b"\x30\x82\x0c\xde\x00\x01\x02").decode("ascii")
+    try:
+        _RetrieveResponse.model_validate(
+            {"certificates": [{"certificate": der_as_base64}]}
+        )
+    except ValidationError as error:
+        try:
+            raise KSeFResponseValidationError("Invalid response payload") from error
+        except KSeFResponseValidationError as response_error:
+            return response_error
+    raise AssertionError("Base64 DER was accepted; the SDK model changed")
 
 
 class FakeCertificateEnrollment:
@@ -244,3 +275,63 @@ def test_certificate_list_retrieve_and_revoke(runner, tmp_path) -> None:
         "revoked": True,
     }
     assert service.called("revoke")["reason"] == "superseded"
+
+
+def test_certificate_retrieve_writes_the_certificate_ksef_returned(
+    runner, tmp_path
+) -> None:
+    """A real DER payload, Base64-encoded, must reach the file untouched."""
+
+    serial = "014AA06A66BE5720"
+    der_as_base64 = base64.b64encode(bytes(range(256))).decode("ascii")
+    service = FakeService(
+        retrieve=RetrievedCertificatesList(
+            certificates=[
+                Certificate(
+                    serial_number=serial,
+                    base64_encoded_certificate=der_as_base64,
+                    name="qa-admin",
+                    certificate_type="authentication",
+                )
+            ]
+        )
+    )
+    runtime = fake_runtime(auth=type("Auth", (), {"certificates": service})())
+    output_dir = tmp_path / "issued"
+
+    retrieved = payload(
+        runner.invoke(
+            app,
+            cli_args("certificates", "retrieve", serial, "--out-dir", str(output_dir)),
+            obj=runtime,
+        )
+    )
+
+    assert service.called("retrieve")["certificate_serial_numbers"] == [serial]
+    assert retrieved["certificates"][0]["base64_encoded_certificate"] == der_as_base64
+    assert (
+        (output_dir / f"{serial}.b64").read_text(encoding="utf-8")
+        == der_as_base64 + "\n"
+    )
+
+
+def test_certificate_retrieve_reports_which_response_field_broke() -> None:
+    """An unreadable KSeF response is a remote problem the CLI has to explain."""
+
+    service = FakeService(retrieve=_unreadable_certificate_response())
+    runtime = fake_runtime(auth=type("Auth", (), {"certificates": service})())
+
+    result = CliRunner(mix_stderr=False).invoke(
+        app,
+        cli_args("certificates", "retrieve", "014AA06A66BE5720"),
+        obj=runtime,
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    error = json.loads(result.stderr)["error"]
+    assert error["type"] == "RemoteServiceError"
+    assert error["title"] == "KSeF response could not be parsed"
+    assert error["details"][0].startswith("certificates.0.certificate: ")
+    assert any("uv tool upgrade" in hint for hint in error["hints"])
+    assert any("--verbose" in hint for hint in error["hints"])
