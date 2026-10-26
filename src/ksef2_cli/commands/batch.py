@@ -25,6 +25,7 @@ from ksef2_cli.io import (
     write_text_file,
 )
 from ksef2_cli.results import BatchPrepared, BatchSubmitted, SavedFile
+from ksef2_cli.sdk_compat import allow_deprecated_batch_reference_reads
 
 app = typer.Typer(help="Submit and inspect batch invoice sessions.")
 
@@ -443,11 +444,14 @@ def batch_status(
 
         def get_batch_status(auth: AuthenticatedClient) -> SessionStatusResponse:
             if inputs.reference:
-                if wait:
-                    return auth.batch.wait_for_completion(
-                        session=inputs.reference, timeout=timeout, poll_interval=poll_interval
-                    )
-                return auth.batch.get_status(session=inputs.reference)
+                with allow_deprecated_batch_reference_reads():
+                    if wait:
+                        return auth.batch.wait_for_completion(
+                            session=inputs.reference,
+                            timeout=timeout,
+                            poll_interval=poll_interval,
+                        )
+                    return auth.batch.get_status(session=inputs.reference)
             with auth.batch_session(state=state) as session:
                 if wait:
                     return session.wait(
@@ -493,15 +497,18 @@ def batch_list(
 
         def list_batch_invoices(auth: AuthenticatedClient) -> SessionInvoicesResponse:
             if inputs.reference:
-                if failed:
-                    return auth.batch.list_failed_invoices(
-                        session=inputs.reference, page_size=page_size,
+                with allow_deprecated_batch_reference_reads():
+                    if failed:
+                        return auth.batch.list_failed_invoices(
+                            session=inputs.reference,
+                            page_size=page_size,
+                            continuation_token=continuation_token,
+                        )
+                    return auth.batch.list_invoices(
+                        session=inputs.reference,
+                        page_size=page_size,
                         continuation_token=continuation_token,
                     )
-                return auth.batch.list_invoices(
-                    session=inputs.reference, page_size=page_size,
-                    continuation_token=continuation_token,
-                )
             with auth.batch_session(state=state) as session:
                 if failed:
                     return session.list_failed_invoices(

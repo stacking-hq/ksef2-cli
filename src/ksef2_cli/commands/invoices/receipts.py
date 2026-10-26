@@ -17,6 +17,7 @@ from ksef2_cli.exceptions import UsageError
 from ksef2_cli.invoice_workflows import download_batch_upos
 from ksef2_cli.io import SECRET_MODEL_FILE_MODE, write_bytes_file, write_text_file
 from ksef2_cli.results import SavedFile
+from ksef2_cli.sdk_compat import allow_deprecated_batch_reference_reads
 
 
 def _safe_filename(value: str, suffix: str) -> str:
@@ -83,15 +84,16 @@ def invoices_status(
             batch = receipt.batch
             if batch is None:
                 raise ValueError("Receipt does not contain batch data.")
-            status = (
-                auth.batch.wait_for_completion(
-                    session=batch.session_reference,
-                    timeout=timeout,
-                    poll_interval=poll_interval,
+            with allow_deprecated_batch_reference_reads():
+                status = (
+                    auth.batch.wait_for_completion(
+                        session=batch.session_reference,
+                        timeout=timeout,
+                        poll_interval=poll_interval,
+                    )
+                    if wait
+                    else auth.batch.get_status(session=batch.session_reference)
                 )
-                if wait
-                else auth.batch.get_status(session=batch.session_reference)
-            )
             updated = receipt.model_copy(
                 update={
                     "batch": batch.model_copy(
@@ -230,15 +232,16 @@ def invoices_upo(
             ):
                 status = cached_status
             else:
-                sdk_status = (
-                    auth.batch.wait_for_completion(
-                        session=batch.session_reference,
-                        timeout=timeout,
-                        poll_interval=poll_interval,
+                with allow_deprecated_batch_reference_reads():
+                    sdk_status = (
+                        auth.batch.wait_for_completion(
+                            session=batch.session_reference,
+                            timeout=timeout,
+                            poll_interval=poll_interval,
+                        )
+                        if wait
+                        else auth.batch.get_status(session=batch.session_reference)
                     )
-                    if wait
-                    else auth.batch.get_status(session=batch.session_reference)
-                )
                 status = BatchSessionStatus.from_status(sdk_status)
             saved_upos = download_batch_upos(
                 auth=auth,
