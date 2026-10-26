@@ -14,6 +14,7 @@ from conftest import cli_args, payload, plain
 from ksef2 import Environment
 from ksef2.fa3 import InvoiceBuilder
 from ksef2.renderers import InvoicePDFExporter
+from rich.cells import cell_len
 from typer.testing import CliRunner
 
 from ksef2_cli import runtime
@@ -190,6 +191,24 @@ def test_inspect_reads_invoice_back_from_xml(runner, invoice_file) -> None:
     body = payload(result)
     assert body["seller"]["tax_id"] == "5252222222"
     assert body["body"]["invoice_number"] == "FV/2026/04/0001"
+
+
+def test_inspect_plain_text_fits_the_declared_width(runner, invoice_file) -> None:
+    # Every section of an invoice is nested groups, so this is where a plain record
+    # that ignores the terminal width shows up first.
+    result = runner.invoke(
+        app,
+        ["--no-config", "fa3", "inspect", "--in", str(invoice_file)],
+        env={"COLUMNS": "80", "NO_COLOR": "1", "FORCE_COLOR": None},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert max(cell_len(line) for line in result.output.splitlines()) <= 80
+
+    # The wrap only moved text onto continuation lines: the record is still complete.
+    flat = "".join(result.output.split())
+    for value in ("5252222222", "FV/2026/04/0001", "ACME sp. z o.o.", "2026-04-09"):
+        assert "".join(value.split()) in flat
 
 
 def test_inspect_reports_non_fa3_xml(runner, tmp_path) -> None:
