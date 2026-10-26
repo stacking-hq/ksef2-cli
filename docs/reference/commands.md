@@ -102,10 +102,13 @@ Reuse saved auth state, refreshing the access token when it expired.
 
 List invoices submitted in a batch session.
 
+Reopening the session takes its keys, so --state-file is required and a bare
+--reference is refused before authenticating.
+
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--reference` | TEXT | - | - | - |
-| `--state-file` | FILE | - | - | - |
+| `--reference` | TEXT | - | - | Batch session reference number. Not enough here: listing needs the resumable state in --state-file. |
+| `--state-file` | FILE | - | - | Batch session state written by batch submit --state-file. |
 | `--page-size` | INTEGER RANGE | 10 | - | - |
 | `--continuation-token` | TEXT | - | - | - |
 | `--failed` | - | false | - | List failed invoices only. |
@@ -133,10 +136,13 @@ as protected as a credential file.
 
 Fetch or wait for batch session status.
 
+Reopening the session takes its keys, so --state-file is required and a bare
+--reference is refused before authenticating.
+
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--reference` | TEXT | - | - | - |
-| `--state-file` | FILE | - | - | - |
+| `--reference` | TEXT | - | - | Batch session reference number. Not enough here: status needs the resumable state in --state-file. |
+| `--state-file` | FILE | - | - | Batch session state written by batch submit --state-file. |
 | `--wait` | - | false | - | Wait for completion. |
 | `--timeout` | FLOAT RANGE | 120.0 | - | - |
 | `--poll-interval` | FLOAT RANGE | 2.0 | - | - |
@@ -182,12 +188,15 @@ invoices nor a new package.
 
 Download a collective UPO page for a batch session.
 
+KSeF answers this one by session number, so either handle works and no session is
+reopened.
+
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
 | `--upo-reference` | TEXT | required | - | - |
 | `--out`, `-o` | FILE | required | - | - |
-| `--reference` | TEXT | - | - | - |
-| `--state-file` | FILE | - | - | - |
+| `--reference` | TEXT | - | - | Batch session reference number. A UPO download needs no session state. |
+| `--state-file` | FILE | - | - | Batch session state. Only its reference number is used here. |
 
 ## `certificates`
 
