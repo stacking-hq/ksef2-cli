@@ -5,7 +5,14 @@ from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
-from conftest import FakeClient, FakePager, FakeService, fake_runtime, online_state
+from conftest import (
+    FakeClient,
+    FakePager,
+    FakeService,
+    batch_state,
+    fake_runtime,
+    online_state,
+)
 from ksef2.models import (
     AuthenticationSession,
     CertificateInfo,
@@ -356,12 +363,13 @@ def test_session_invoice_tables_and_pagination(runner, tmp_path, command):
             else Session()
         }
     )
-    if command == "online":
-        path = tmp_path / "state.json"
-        path.write_text(online_state().to_json())
-        options = ["--state-file", str(path)]
-    else:
-        options = ["--reference", REFERENCE]
+    # Listing reopens the session, so both groups read their handle from a state file.
+    path = tmp_path / "state.json"
+    _ = path.write_text(
+        (online_state() if command == "online" else batch_state(REFERENCE)).to_json(),
+        encoding="utf-8",
+    )
+    options = ["--state-file", str(path)]
     args = [command, "list", *options]
     runtime = fake_runtime(auth=auth)
     for extra in ([], ["--failed"]):

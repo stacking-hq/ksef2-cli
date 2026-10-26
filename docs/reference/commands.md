@@ -102,10 +102,13 @@ Reuse saved auth state, refreshing the access token when it expired.
 
 List invoices submitted in a batch session.
 
+Reopening the session takes its keys, so --state-file is required and a bare
+--reference is refused before authenticating.
+
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--reference` | TEXT | - | - | - |
-| `--state-file` | FILE | - | - | - |
+| `--reference` | TEXT | - | - | Batch session reference number. Not enough here: listing needs the resumable state in --state-file. |
+| `--state-file` | FILE | - | - | Batch session state written by batch submit --state-file. |
 | `--page-size` | INTEGER RANGE | 10 | - | - |
 | `--continuation-token` | TEXT | - | - | - |
 | `--failed` | - | false | - | List failed invoices only. |
@@ -133,10 +136,13 @@ as protected as a credential file.
 
 Fetch or wait for batch session status.
 
+Reopening the session takes its keys, so --state-file is required and a bare
+--reference is refused before authenticating.
+
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--reference` | TEXT | - | - | - |
-| `--state-file` | FILE | - | - | - |
+| `--reference` | TEXT | - | - | Batch session reference number. Not enough here: status needs the resumable state in --state-file. |
+| `--state-file` | FILE | - | - | Batch session state written by batch submit --state-file. |
 | `--wait` | - | false | - | Wait for completion. |
 | `--timeout` | FLOAT RANGE | 120.0 | - | - |
 | `--poll-interval` | FLOAT RANGE | 2.0 | - | - |
@@ -182,12 +188,15 @@ invoices nor a new package.
 
 Download a collective UPO page for a batch session.
 
+KSeF answers this one by session number, so either handle works and no session is
+reopened.
+
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
 | `--upo-reference` | TEXT | required | - | - |
 | `--out`, `-o` | FILE | required | - | - |
-| `--reference` | TEXT | - | - | - |
-| `--state-file` | FILE | - | - | - |
+| `--reference` | TEXT | - | - | Batch session reference number. A UPO download needs no session state. |
+| `--state-file` | FILE | - | - | Batch session state. Only its reference number is used here. |
 
 ## `certificates`
 
@@ -275,8 +284,8 @@ Query collective identifiers visible in the current context.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--date-from` | TEXT | required | - | Creation start, ISO datetime/date. |
-| `--date-to` | TEXT | - | - | Creation end, ISO datetime/date. Defaults to now. |
+| `--date-from` | TEXT | required | - | Creation start, ISO 8601 datetime or date; a date is midnight UTC. |
+| `--date-to` | TEXT | - | - | Creation end, ISO 8601 datetime or date; a date is midnight UTC. Defaults to now. |
 | `--number` | TEXT | - | - | Exact identifier number. |
 | `--invoice-count-min` | INTEGER RANGE | - | - | Minimum grouped invoices. |
 | `--invoice-count-max` | INTEGER RANGE | - | - | Maximum grouped invoices. |
@@ -377,6 +386,7 @@ Render invoice XML to HTML, and optionally to PDF.
 | `--out`, `-o` | FILE | - | - | Where to write HTML. Defaults to stdout when --pdf is not used. |
 | `--pdf` | FILE | - | - | Also write PDF here. Needs the optional ksef2[pdf] dependencies. |
 | `--code-lookups`, `--no-code-lookups` | - | false | - | Let the bundled stylesheet read local files and URLs so coded values print as names. Use it only with invoice XML you trust. |
+| `--ksef-number` | TEXT | - | - | With --pdf: the accepted KSeF number of this invoice. It prints under a verification QR for the selected --env. Omit it for a draft PDF. |
 
 ## `invoices`
 
@@ -1119,7 +1129,7 @@ Shorten the validity of a TEST-environment certificate.
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
 | `--serial-number` | TEXT | required | - | 16 hexadecimal characters, e.g. ABCDEF1234567890. |
-| `--valid-to` | TEXT | required | - | ISO 8601 datetime with a UTC offset, e.g. 2026-03-01T12:00:00Z. |
+| `--valid-to` | TEXT | required | - | ISO 8601 datetime with a UTC offset, e.g. 2026-03-01T12:00:00Z, or a date, which is midnight UTC. |
 
 ## `tokens`
 

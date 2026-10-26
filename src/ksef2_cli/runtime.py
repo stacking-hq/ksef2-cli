@@ -1,8 +1,9 @@
 """Typer-free runtime helpers for SDK-backed workflows."""
 
 import os
+import sys
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,9 +19,9 @@ from pydantic import BaseModel, SecretStr, ValidationError
 from ksef2_cli.config import AUTH_ENV_VARS, AuthenticatedRuntime, Settings
 from ksef2_cli.exceptions import (
     PDF_INSTALL_HINT,
-    PDF_SYSTEM_LIBS_HINT,
     AuthenticationConfigError,
     MissingOptionalDependencyError,
+    pdf_system_libs_hint,
 )
 from ksef2_cli.io import (
     SECRET_MODEL_FILE_MODE,
@@ -290,11 +291,15 @@ def create_pdf_exporter(
     """
 
     try:
-        return InvoicePDFExporter(
-            page_size=page_size,
-            enable_code_lookups=enable_code_lookups,
-            verification_environment=environment,
-        )
+        # WeasyPrint prints its own "could not import some external libraries" banner to
+        # stdout while it loads. Under --json stdout carries the command result only, so
+        # the whole load runs with its chatter redirected to stderr.
+        with redirect_stdout(sys.stderr):
+            return InvoicePDFExporter(
+                page_size=page_size,
+                enable_code_lookups=enable_code_lookups,
+                verification_environment=environment,
+            )
     except (ImportError, OSError) as error:
         # ImportError when the extra is absent, OSError when WeasyPrint is installed but
         # the native Pango/GLib libraries are not. Both mean "install this", and only
@@ -303,7 +308,7 @@ def create_pdf_exporter(
             "PDF rendering needs dependencies that are not installed.",
             title="Optional dependency missing",
             details=(str(error),),
-            hints=(PDF_INSTALL_HINT, PDF_SYSTEM_LIBS_HINT),
+            hints=(PDF_INSTALL_HINT, pdf_system_libs_hint()),
         ) from error
 
 
@@ -312,20 +317,22 @@ def render_invoice_pdf(
     invoice_xml_path: Path,
     *,
     page_size: PDFPageSize | None = None,
+    ksef_number: str | None = None,
 ) -> bytes:
     """Render one decrypted invoice XML file to PDF bytes.
 
-    A ``page_size`` of ``None`` leaves the paper to the stylesheet.
+    A ``page_size`` of ``None`` leaves the paper to the stylesheet. A ``ksef_number``
+    adds the verification QR the SDK builds for an accepted invoice; ``None`` omits it.
     """
 
     if settings.runtime_overrides and settings.runtime_overrides.invoice_pdf_renderer:
         return settings.runtime_overrides.invoice_pdf_renderer(
-            invoice_xml_path, page_size=page_size
+            invoice_xml_path, page_size=page_size, ksef_number=ksef_number
         )
 
     return create_pdf_exporter(
         environment=settings.environment, page_size=page_size
-    ).export_from_path(invoice_xml_path)
+    ).export_from_path(invoice_xml_path, ksef_number=ksef_number)
 
 
 def read_model(settings: Settings, path: Path, model_type: type[ModelT]) -> ModelT:

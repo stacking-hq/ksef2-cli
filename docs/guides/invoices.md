@@ -41,7 +41,9 @@ metadata replays unchanged on an export:
 - Flags: `--role`, `--attachment yes|no`, `--self-invoicing yes|no`
 
 Date options also accept day-first `DD.MM.YYYY` or `DD-MM-YYYY` dates, with one or
-two digits for the day and month.
+two digits for the day and month. A value with no offset here is wall-clock time in
+`Europe/Warsaw`, which is how the SDK reads it, so a bare `2026-01-01` is that day at
+midnight Polish time. Write the `Z` or `+HH:MM` form when the window has to mean UTC.
 
 `--restrict-hwm` (short for `--restrict-to-permanent-storage-hwm-date`) restricts
 the result set to the permanent-storage high-water mark, so repeated requests
@@ -158,6 +160,11 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
 | `--pdf-dir DIR` | Where the PDFs go. Defaults to `--out-dir`, so the PDFs sit beside their XML. |
 | `--paper-size` | `a4`, `a4-landscape`, `a3`, `a3-landscape`, `letter`, or `letter-landscape`. Omit to keep the stylesheet paper, normally A4 landscape. |
 
+Each PDF carries the verification QR KSeF publishes for the invoice, built from the
+KSeF number the package's own `_metadata.json` reports for it. That manifest is
+downloaded with the invoices but is never rendered, and an invoice the manifest does
+not describe is still rendered, without a QR.
+
 PDF rendering uses WeasyPrint, which arrives through the optional `pdf` extra, so
 install the CLI as `ksef2-cli[pdf]` before running this command. Without the extra
 the command names the install command and stops; every other command keeps
@@ -245,6 +252,12 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
 `invoices upo` needs `--upo-dir` for a batch receipt: KSeF returns its confirmation
 as pages, and `--out` holds one file. `--offline` and `--max-part-size` belong to
 this mode and fail with `--mode online`.
+
+Both commands resume the batch session from the state inside the receipt, which is
+why the file is credential material. A receipt written by a CLI version that stored
+only the session reference cannot resume it, and reports that instead: finish the
+job with `batch status` or `batch upo` and `--state-file`, or send the invoices
+again.
 
 To hold the session state yourself, prepare the package once and upload it more than
 once, or recover an upload KSeF rejected, use [Batch sessions](batch-sessions.md).

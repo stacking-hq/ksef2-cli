@@ -1,3 +1,4 @@
+import base64
 from datetime import UTC, datetime
 from io import StringIO
 
@@ -29,14 +30,17 @@ from ksef2 import (
     KSeFPermissionOperationFailedError,
     KSeFPermissionOperationTimeoutError,
     KSeFRateLimitError,
+    KSeFResponseValidationError,
     KSeFSessionError,
     KSeFTokenStatusTimeoutError,
     KSeFUnsupportedEnvironmentError,
     KSeFValidationError,
 )
 from ksef2.models import InvoiceStatusInfo, SessionInvoiceStatusResponse
+from pydantic import BaseModel, Base64Str, ValidationError
 from rich.console import Console
 
+from ksef2_cli import exceptions as exceptions_module
 from ksef2_cli.exceptions import (
     AuthenticationConfigError,
     CliError,
@@ -45,9 +49,55 @@ from ksef2_cli.exceptions import (
     UnexpectedCliError,
     UsageError,
     error_from_exception,
+    pdf_system_libs_hint,
     redact_argv,
     render_cli_error,
 )
+
+
+class _CertificateResponse(BaseModel):
+    """The response shape `certificates retrieve` validates, in miniature.
+
+    ``Base64Str`` is Pydantic's base64 of a *string*, so the Base64 of the DER bytes
+    KSeF returns for a certificate never validates against it.
+    """
+
+    certificates: list[dict[str, Base64Str]]
+
+
+def _der_response_error() -> ValidationError:
+    """Pydantic's own rejection of a Base64 DER certificate, as the SDK saw it."""
+
+    der_as_base64 = base64.b64encode(b"\x30\x82\x0c\xde\x00\x01\x02").decode("ascii")
+    with pytest.raises(ValidationError) as caught:
+        _CertificateResponse.model_validate(
+            {"certificates": [{"certificate": der_as_base64}]}
+        )
+    return caught.value
+
+
+def test_response_validation_error_names_the_rejected_fields() -> None:
+    """The SDK says only `Invalid response payload`; the CLI must say which field."""
+
+    error = KSeFResponseValidationError("Invalid response payload")
+    error.__cause__ = _der_response_error()
+
+    mapped = error_from_exception(error)
+
+    assert isinstance(mapped, RemoteServiceError)
+    assert mapped.exit_code == 1
+    assert mapped.show_traceback is True
+    assert mapped.details[0].startswith("certificates.0.certificate: ")
+    assert "utf-8" in mapped.details[0]
+    assert mapped.details[-1] == "Rejected fields: 1."
+
+
+def test_response_validation_error_without_a_pydantic_cause_still_reports() -> None:
+    mapped = error_from_exception(KSeFResponseValidationError("Invalid response payload"))
+
+    assert isinstance(mapped, RemoteServiceError)
+    assert mapped.details == ("Exception: KSeFResponseValidationError: Invalid response payload",)
+    assert mapped.hints
 
 
 def _rejected_invoice_status() -> SessionInvoiceStatusResponse:
@@ -469,3 +519,20 @@ def test_usage_error_defaults_to_two_and_preserves_explicit_override() -> None:
     assert UsageError("Invalid input").exit_code == 2
     assert UsageError("Explicit status", exit_code=1).exit_code == 1
     assert CliError("Runtime failure").exit_code == 1
+
+
+@pytest.mark.parametrize(
+    "platform,needle",
+    [
+        ("linux", "libpango-1.0-0"),
+        ("darwin", "DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib"),
+    ],
+)
+def test_pdf_library_hint_names_the_running_platform(
+    monkeypatch, platform: str, needle: str
+) -> None:
+    """Homebrew and dyld mean nothing on Linux, apt names nothing on macOS."""
+
+    monkeypatch.setattr(exceptions_module.sys, "platform", platform)
+
+    assert needle in pdf_system_libs_hint()

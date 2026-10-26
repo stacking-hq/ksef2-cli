@@ -80,7 +80,17 @@ uv run ksef2 fa3 render --in invoice.xml --out invoice.html --pdf invoice.pdf
 Without those dependencies the command checks for them first and exits non-zero
 naming the extra, so neither the HTML nor a half-written PDF appears. See
 [PDF rendering](../getting-started/installation.md#pdf-rendering) for the system
-libraries WeasyPrint needs.
+libraries WeasyPrint needs, including the `DYLD_FALLBACK_LIBRARY_PATH` a macOS
+checkout often needs on top of Homebrew.
+
+`--ksef-number` adds the verification QR KSeF publishes for an accepted invoice: the
+number is printed under the code, which links to the KSeF verification page for the
+selected `--env`. Leave it out for a draft, whose PDF has no QR.
+
+```bash
+uv run ksef2 fa3 render --in invoice.xml --pdf invoice.pdf \
+  --ksef-number 5252222222-20260409-ABCDEF123456-AB
+```
 
 `--code-lookups` lets the bundled stylesheet read local files and URLs so coded
 values, such as VAT codes, print as names instead of codes. That means the

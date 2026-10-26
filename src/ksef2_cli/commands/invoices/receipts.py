@@ -14,7 +14,10 @@ from ksef2_cli.commands.invoices.models import (
 )
 from ksef2_cli.context import read_model, run_authenticated, run_command
 from ksef2_cli.exceptions import UsageError
-from ksef2_cli.invoice_workflows import download_batch_upos
+from ksef2_cli.invoice_workflows import (
+    download_batch_upos,
+    require_batch_session_state,
+)
 from ksef2_cli.io import SECRET_MODEL_FILE_MODE, write_bytes_file, write_text_file
 from ksef2_cli.results import SavedFile
 
@@ -83,7 +86,8 @@ def invoices_status(
             batch = receipt.batch
             if batch is None:
                 raise ValueError("Receipt does not contain batch data.")
-            with auth.batch_session(state=batch.session_reference) as session:
+            session_state = require_batch_session_state(batch)
+            with auth.batch_session(state=session_state) as session:
                 status = (
                     session.wait(timeout=timeout, poll_interval=poll_interval)
                     if wait
@@ -219,6 +223,9 @@ def invoices_upo(
             target_dir = upo_dir
             if target_dir is None:
                 raise ValueError("Provide --upo-dir.")
+            # The download reopens the session even when the cached status already lists
+            # the UPO references, so a receipt without state fails before either call.
+            session_state = require_batch_session_state(batch)
             cached_status = batch.status
             if (
                 not wait
@@ -227,7 +234,7 @@ def invoices_upo(
             ):
                 status = cached_status
             else:
-                with auth.batch_session(state=batch.session_reference) as session:
+                with auth.batch_session(state=session_state) as session:
                     sdk_status = (
                         session.wait(timeout=timeout, poll_interval=poll_interval)
                         if wait
@@ -236,7 +243,7 @@ def invoices_upo(
                 status = BatchSessionStatus.from_status(sdk_status)
             saved_upos = download_batch_upos(
                 auth=auth,
-                session_reference=batch.session_reference,
+                state=session_state,
                 status=status,
                 upo_dir=target_dir,
             )

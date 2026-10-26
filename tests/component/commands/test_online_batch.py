@@ -6,6 +6,7 @@ from typing import Any, NoReturn
 
 import pytest
 from conftest import (
+    FakeClient,
     FakeService,
     batch_state,
     cli_args,
@@ -13,7 +14,7 @@ from conftest import (
     online_state,
     payload,
 )
-from ksef2 import ExceptionCode, KSeFNotReadyError
+from ksef2 import ExceptionCode, KSeFNotReadyError, KSeFValidationError
 from ksef2.models import (
     BatchSessionResumeState,
     OnlineSessionResumeState,
@@ -301,6 +302,24 @@ def test_online_status_reads_state_written_by_older_cli(runner, tmp_path) -> Non
         ) == {"status": "open"}
 
 
+def _reopen_batch_session(reopened: list[Any], session: FakeService) -> Any:
+    """Build an ``auth.batch_session`` stand-in that reads its ``state`` the SDK way.
+
+    ``AuthenticatedClient.batch_session`` parses a string as ``BatchSessionResumeState``
+    JSON, so a stand-in that accepted anything would hide the one mistake these commands
+    must not make: passing a bare session reference. Each accepted call is recorded.
+    """
+
+    def batch_session(**kwargs: Any) -> FakeService:
+        state = kwargs["state"]
+        if isinstance(state, str):
+            _ = BatchSessionResumeState.from_json(state)
+        reopened.append(state)
+        return session
+
+    return batch_session
+
+
 def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
     """`submit` hands back a closed session client; the rest reopen one from state."""
     submitted = FakeService(
@@ -314,12 +333,13 @@ def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
         list_invoices={"invoices": [{"reference_number": "invoice-ref"}]},
         list_failed_invoices={"invoices": [{"reference_number": "failed-ref"}]},
     )
+    reopened: list[Any] = []
     # ``auth.batch`` is a service object and ``auth.batch_session`` a factory, so
     # neither can come from FakeService's catch-all attribute lookup.
     invoice_sessions = FakeService(download_upo=b"batch-upo")
     auth_service = SimpleNamespace(
         batch=batch_service,
-        batch_session=lambda **kwargs: session,
+        batch_session=_reopen_batch_session(reopened, session),
         invoice_sessions=invoice_sessions,
     )
     runtime = fake_runtime(auth=auth_service)
@@ -372,26 +392,7 @@ def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
         "resume_state",
     ]
 
-    assert (
-        payload(
-            runner.invoke(
-                app,
-                cli_args("batch", "status", "--reference", "batch-ref"),
-                obj=runtime,
-            )
-        )["status"]["description"]
-        == "completed"
-    )
-    waited_status = payload(
-        runner.invoke(
-            app,
-            cli_args("batch", "status", "--reference", "batch-ref", "--wait"),
-            obj=runtime,
-        )
-    )
-    assert waited_status["status"]["description"] == "completed"
-    assert session.called("wait")["timeout"] == 120.0
-    # The state file written by `submit` is the other way back into the session.
+    # Status and listing reopen the session, which only the state file allows.
     assert (
         payload(
             runner.invoke(
@@ -402,19 +403,32 @@ def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
         )["status"]["description"]
         == "completed"
     )
+    waited_status = payload(
+        runner.invoke(
+            app,
+            cli_args("batch", "status", "--state-file", str(state_file), "--wait"),
+            obj=runtime,
+        )
+    )
+    assert waited_status["status"]["description"] == "completed"
+    assert session.called("wait")["timeout"] == 120.0
     assert payload(
         runner.invoke(
-            app, cli_args("batch", "list", "--reference", "batch-ref"), obj=runtime
+            app,
+            cli_args("batch", "list", "--state-file", str(state_file)),
+            obj=runtime,
         )
     ) == {"invoices": [{"reference_number": "invoice-ref"}]}
     assert payload(
         runner.invoke(
             app,
-            cli_args("batch", "list", "--reference", "batch-ref", "--failed"),
+            cli_args("batch", "list", "--state-file", str(state_file), "--failed"),
             obj=runtime,
         )
     ) == {"invoices": [{"reference_number": "failed-ref"}]}
     assert session.called("list_invoices")["page_size"] == 10
+    # Every reopening got the resume state itself, never the reference string.
+    assert reopened == [batch_state()] * 4
 
     out = tmp_path / "batch-upo.xml"
     assert payload(
@@ -472,6 +486,78 @@ def test_batch_session_flags_fail_before_authentication(
     ) in result.output
     assert "Traceback" not in result.output
     assert authenticated == []
+
+
+@pytest.mark.parametrize("command", ["status", "list"])
+def test_batch_status_and_list_refuse_a_bare_reference(runner, command) -> None:
+    """A reference number is not resumable state, so it is refused rather than parsed.
+
+    Both commands used to hand the reference to ``auth.batch_session(state=...)``, which
+    reads a string as serialized state in JSON, so they authenticated first and failed
+    with ``Invalid JSON`` afterwards.
+    """
+
+    reopened: list[Any] = []
+    session = FakeService(get_status=_session_status("completed"))
+    client = FakeClient()
+    runtime = fake_runtime(
+        client=client,
+        auth=SimpleNamespace(batch_session=_reopen_batch_session(reopened, session)),
+    )
+
+    result = runner.invoke(
+        app, cli_args("batch", command, "--reference", "batch-ref"), obj=runtime
+    )
+
+    assert result.exit_code == 2
+    error = json.loads(result.output)["error"]
+    assert error["type"] == "UsageError"
+    assert error["title"] == "Batch session state required"
+    assert f"batch {command} cannot reopen session batch-ref" in error["message"]
+    assert "reference number alone" in error["message"]
+    assert "Invalid JSON" not in result.output
+    assert any("--state-file FILE" in hint for hint in error["hints"])
+    assert any("batch submit --state-file" in hint for hint in error["hints"])
+    # The handle was rejected up front: no session was reopened and none was requested.
+    assert reopened == []
+    assert client.entered == 0
+
+
+@pytest.mark.parametrize("command", ["status", "list"])
+def test_batch_status_and_list_reject_a_state_file_without_keys(
+    runner, tmp_path, command
+) -> None:
+    """An ordinary dump of a session masks its keys, and is named as such."""
+
+    state_file = tmp_path / "state.json"
+    _ = state_file.write_text(batch_state().model_dump_json(indent=2), encoding="utf-8")
+    reopened: list[Any] = []
+    session = FakeService(get_status=_session_status("completed"))
+    client = FakeClient()
+    runtime = fake_runtime(
+        client=client,
+        auth=SimpleNamespace(batch_session=_reopen_batch_session(reopened, session)),
+    )
+
+    result = runner.invoke(
+        app, cli_args("batch", command, "--state-file", str(state_file)), obj=runtime
+    )
+
+    assert result.exit_code == 2
+    error = json.loads(result.output)["error"]
+    assert error["title"] == "Batch session state cannot be resumed"
+    unreadable = f"{state_file} does not hold resumable batch session state."
+    assert unreadable in error["message"]
+    assert any("masks its key material" in hint for hint in error["hints"])
+    assert reopened == []
+    assert client.entered == 0
+
+
+def test_batch_session_state_cannot_be_a_reference_number() -> None:
+    """What makes the two handles different: the SDK reads a string as state JSON."""
+
+    with pytest.raises(KSeFValidationError, match="Invalid JSON"):
+        _ = BatchSessionResumeState.from_json("batch-ref")
 
 
 @pytest.mark.parametrize("use_state_file", [False, True])

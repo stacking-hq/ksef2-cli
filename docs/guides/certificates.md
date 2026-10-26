@@ -200,6 +200,17 @@ the command line when you do not want a prompt. The resulting archive is what th
 [Authentication](authentication.md) for the password environment variables that
 go with it.
 
+When KSeF answers with a body the installed SDK cannot read, the command exits 1
+with `KSeF response could not be parsed`, one line per rejected field, and hints to
+upgrade and to re-run with `--verbose`, which then carries the SDK traceback. With
+SDK 1.0.0 that is what an issued certificate hits: the response model types the
+certificate as `Base64Str`, which is Pydantic's Base64 of a *string*, so the Base64
+of the DER bytes KSeF returns cannot validate. Enrollment, `certificates list` and
+`certificates revoke` are unaffected. Nothing on the command line works around it; the
+SDK tracks it as
+[ksef2#323](https://github.com/stacking-hq/ksef2/issues/323), and `retrieve` works
+again once the response model accepts binary Base64.
+
 ## Revoke
 
 ```bash

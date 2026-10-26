@@ -77,6 +77,18 @@ On Linux, WeasyPrint also needs system libraries:
 sudo apt-get install libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 libharfbuzz-subset0
 ```
 
+On macOS it needs the same libraries from Homebrew. If they are installed and the load
+still fails, hand the dynamic loader the Homebrew directory with each PDF command:
+
+```bash
+brew install pango
+DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib uv run ksef2 fa3 render --in invoice.xml --pdf invoice.pdf
+```
+
+`/usr/local/lib` is the equivalent path on Intel Macs. Both PDF commands report the
+install command, and on macOS the fallback path above, when the dependencies are
+missing; every other command keeps working without them.
+
 Without the extra the CLI still installs and every other command runs; the two PDF
 commands report the install command above instead of rendering.
 
