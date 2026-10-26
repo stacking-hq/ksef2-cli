@@ -275,8 +275,8 @@ Query collective identifiers visible in the current context.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--date-from` | TEXT | required | - | Creation start, ISO datetime/date. |
-| `--date-to` | TEXT | - | - | Creation end, ISO datetime/date. Defaults to now. |
+| `--date-from` | TEXT | required | - | Creation start, ISO 8601 datetime or date; a date is midnight UTC. |
+| `--date-to` | TEXT | - | - | Creation end, ISO 8601 datetime or date; a date is midnight UTC. Defaults to now. |
 | `--number` | TEXT | - | - | Exact identifier number. |
 | `--invoice-count-min` | INTEGER RANGE | - | - | Minimum grouped invoices. |
 | `--invoice-count-max` | INTEGER RANGE | - | - | Maximum grouped invoices. |
@@ -1119,7 +1119,7 @@ Shorten the validity of a TEST-environment certificate.
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
 | `--serial-number` | TEXT | required | - | 16 hexadecimal characters, e.g. ABCDEF1234567890. |
-| `--valid-to` | TEXT | required | - | ISO 8601 datetime with a UTC offset, e.g. 2026-03-01T12:00:00Z. |
+| `--valid-to` | TEXT | required | - | ISO 8601 datetime with a UTC offset, e.g. 2026-03-01T12:00:00Z, or a date, which is midnight UTC. |
 
 ## `tokens`
 

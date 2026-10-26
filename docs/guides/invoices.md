@@ -41,7 +41,9 @@ metadata replays unchanged on an export:
 - Flags: `--role`, `--attachment yes|no`, `--self-invoicing yes|no`
 
 Date options also accept day-first `DD.MM.YYYY` or `DD-MM-YYYY` dates, with one or
-two digits for the day and month.
+two digits for the day and month. A value with no offset here is wall-clock time in
+`Europe/Warsaw`, which is how the SDK reads it, so a bare `2026-01-01` is that day at
+midnight Polish time. Write the `Z` or `+HH:MM` form when the window has to mean UTC.
 
 `--restrict-hwm` (short for `--restrict-to-permanent-storage-hwm-date`) restricts
 the result set to the permanent-storage high-water mark, so repeated requests
