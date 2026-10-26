@@ -34,10 +34,12 @@ from ksef2 import (
     KSeFPermissionOperationFailedError,
     KSeFPermissionOperationTimeoutError,
     KSeFRateLimitError,
+    KSeFResponseValidationError,
     KSeFTokenStatusTimeoutError,
     KSeFUnsupportedEnvironmentError,
     KSeFValidationError,
 )
+from pydantic import ValidationError
 from rich.console import Console
 from rich.markup import escape
 
@@ -267,6 +269,21 @@ def error_from_exception(error: Exception) -> CliError:
         return UsageError(_sdk_message(error))
     if isinstance(error, KSeFInvoiceRenderingError):
         return UsageError(_sdk_message(error))
+    if isinstance(error, KSeFResponseValidationError):
+        # Subclass of KSeFValidationError: the remote payload, not local config.
+        return RemoteServiceError(
+            "KSeF answered with a body the installed SDK could not read.",
+            title="KSeF response could not be parsed",
+            details=_response_validation_details(error),
+            hints=(
+                "Update the CLI together with the SDK it installs, whose response "
+                'models follow the KSeF schema: uv tool upgrade "ksef2-cli".',
+                "Re-run with --verbose to capture the SDK traceback, and report the "
+                f"field errors above at {BUG_REPORT_URL} when they point at a "
+                "response KSeF should have returned.",
+            ),
+            show_traceback=True,
+        )
     if isinstance(error, KSeFValidationError):
         return ConfigError(_sdk_message(error))
     if isinstance(error, KSeFAuthenticationExpiredError):
@@ -350,6 +367,37 @@ def _sdk_message(error: KSeFException) -> str:
     """
 
     return str(error.args[0]) if error.args else str(error)
+
+
+# One malformed field can reject every item in a list; the first few explain it.
+_MAX_REJECTED_FIELDS = 8
+
+
+def _response_validation_details(error: KSeFResponseValidationError) -> tuple[str, ...]:
+    """Name the response fields the SDK model rejected.
+
+    ``KSeFResponseValidationError`` says only ``Invalid response payload``. Pydantic
+    knows which field broke: the SDK hands it over through ``errors()`` when it
+    attached it, and keeps it as the raised error's cause otherwise.
+    """
+
+    errors = list(error.errors())
+    cause = error.__cause__
+    if not errors and isinstance(cause, ValidationError):
+        errors = list(cause.errors())
+    if not errors:
+        return (f"Exception: {type(error).__name__}: {error}",)
+    shown = errors[:_MAX_REJECTED_FIELDS]
+    details = [
+        "{}: {}".format(
+            ".".join(str(part) for part in item.get("loc", ())) or "body",
+            item.get("msg", "rejected"),
+        )
+        for item in shown
+    ]
+    if len(errors) > len(shown):
+        details.append(f"... and {len(errors) - len(shown)} more.")
+    return (*details, f"Rejected fields: {len(errors)}.")
 
 
 def _from_api_error(

@@ -42,12 +42,42 @@ def test_iso_datetime_parser_requires_an_offset_when_asked() -> None:
     )
     assert parsed.utcoffset() == timedelta(hours=2)
 
-    for value in ("2026-03-01T12:00:00", "2026-03-01", "01.03.2026", "01-03-2026"):
+    for value in ("2026-03-01T12:00:00",):
         with pytest.raises(ValueError, match="--x must include a UTC offset"):
             parse_iso_datetime(value, option_name="--x", require_offset=True)
 
     with pytest.raises(ValueError, match="--x must be a date like"):
         parse_iso_datetime("next-month", option_name="--x", require_offset=True)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2026-03-01", datetime(2026, 3, 1, tzinfo=UTC)),
+        ("01.03.2026", datetime(2026, 3, 1, tzinfo=UTC)),
+        ("1-3-2026", datetime(2026, 3, 1, tzinfo=UTC)),
+    ],
+)
+def test_iso_datetime_parser_reads_a_bare_date_as_midnight_utc(
+    value, expected
+) -> None:
+    """A date with no time of day names one instant, so offset-strict options take it."""
+
+    parsed = parse_iso_datetime(value, option_name="--x", require_offset=True)
+
+    assert parsed == expected
+    assert parsed.tzinfo is UTC
+
+
+def test_iso_datetime_parser_offset_hint_names_the_bare_date_default() -> None:
+    with pytest.raises(ValueError) as error:
+        parse_iso_datetime("2026-03-01T12:00:00", option_name="--x", require_offset=True)
+
+    assert str(error.value) == (
+        "--x must include a UTC offset, e.g. 2026-03-01T12:00:00Z or "
+        "2026-03-01T12:00:00+02:00. A date with no time of day, such as "
+        "2026-03-01, names one instant already: midnight UTC."
+    )
 
 
 @pytest.mark.parametrize(

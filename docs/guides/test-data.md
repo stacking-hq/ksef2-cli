@@ -210,10 +210,12 @@ updated: yes
 
 `--serial-number` is 16 hexadecimal characters, which is what `certificates list`
 and `certificates retrieve` report for a certificate you hold; the CLI rejects a
-serial KSeF could never accept. `--valid-to` must be an ISO 8601 datetime with a UTC
-offset, because the endpoint acts on one instant and a naive timestamp names none.
-The command exists to make a certificate run out soon, so you can watch what your
-renewal path does. Do not plan on lengthening a validity with it.
+serial KSeF could never accept. `--valid-to` takes an ISO 8601 datetime with a UTC
+offset, because the endpoint acts on one instant and a naive timestamp names none; a
+date with no time of day, such as `2026-03-01`, is that day at midnight UTC. A
+datetime without an offset is rejected before anything is sent. The command exists to
+make a certificate run out soon, so you can watch what your renewal path does. Do not
+plan on lengthening a validity with it.
 
 ## Related pages
 

@@ -503,7 +503,10 @@ def testdata_update_certificate_valid_to(
         str,
         typer.Option(
             "--valid-to",
-            help="ISO 8601 datetime with a UTC offset, e.g. 2026-03-01T12:00:00Z.",
+            help=(
+                "ISO 8601 datetime with a UTC offset, e.g. 2026-03-01T12:00:00Z, "
+                "or a date, which is midnight UTC."
+            ),
         ),
     ],
 ) -> None:

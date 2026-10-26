@@ -66,13 +66,19 @@ def collective_list(
     ctx: typer.Context,
     created_from: Annotated[
         str,
-        typer.Option("--date-from", help="Creation start, ISO datetime/date."),
+        typer.Option(
+            "--date-from",
+            help="Creation start, ISO 8601 datetime or date; a date is midnight UTC.",
+        ),
     ],
     created_to: Annotated[
         str | None,
         typer.Option(
             "--date-to",
-            help="Creation end, ISO datetime/date. Defaults to now.",
+            help=(
+                "Creation end, ISO 8601 datetime or date; a date is midnight UTC. "
+                "Defaults to now."
+            ),
         ),
     ] = None,
     identifier_number: Annotated[
@@ -101,11 +107,13 @@ def collective_list(
     def operation() -> list[CollectiveIdentifierSummary]:
         filters = CollectiveIdentifiersQuery(
             date_created_from=parse_iso_datetime(
-                created_from, option_name="--date-from"
+                created_from, option_name="--date-from", require_offset=True
             ),
             date_created_to=datetime.now(UTC)
             if created_to is None
-            else parse_iso_datetime(created_to, option_name="--date-to"),
+            else parse_iso_datetime(
+                created_to, option_name="--date-to", require_offset=True
+            ),
             collective_identifier_number=identifier_number,
             invoice_count_from=invoice_count_min,
             invoice_count_to=invoice_count_max,
