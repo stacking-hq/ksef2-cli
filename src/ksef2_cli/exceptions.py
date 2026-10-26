@@ -55,6 +55,23 @@ PDF_SYSTEM_LIBS_HINT = (
     "On Linux, WeasyPrint needs system libraries: libpango-1.0-0, libharfbuzz0b, "
     "libpangoft2-1.0-0, and libharfbuzz-subset0."
 )
+PDF_MACOS_LIBS_HINT = (
+    "On macOS, install WeasyPrint's libraries with Homebrew: brew install pango. If "
+    "they are installed and the load still fails, run the command through the dyld "
+    "fallback path: DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib ksef2 ... "
+    "(/usr/local/lib on Intel Macs)."
+)
+
+
+def pdf_system_libs_hint() -> str:
+    """The native-library hint for the platform this command runs on.
+
+    The Linux package names mean nothing on macOS, where the usual fix is Homebrew plus
+    a dyld fallback path, so each platform gets the hint its user can act on.
+    """
+
+    return PDF_MACOS_LIBS_HINT if sys.platform == "darwin" else PDF_SYSTEM_LIBS_HINT
+
 
 SECRET_OPTIONS = {
     "--key-password",

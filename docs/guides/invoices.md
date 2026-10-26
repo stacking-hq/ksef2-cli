@@ -158,6 +158,11 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
 | `--pdf-dir DIR` | Where the PDFs go. Defaults to `--out-dir`, so the PDFs sit beside their XML. |
 | `--paper-size` | `a4`, `a4-landscape`, `a3`, `a3-landscape`, `letter`, or `letter-landscape`. Omit to keep the stylesheet paper, normally A4 landscape. |
 
+Each PDF carries the verification QR KSeF publishes for the invoice, built from the
+KSeF number the package's own `_metadata.json` reports for it. That manifest is
+downloaded with the invoices but is never rendered, and an invoice the manifest does
+not describe is still rendered, without a QR.
+
 PDF rendering uses WeasyPrint, which arrives through the optional `pdf` extra, so
 install the CLI as `ksef2-cli[pdf]` before running this command. Without the extra
 the command names the install command and stops; every other command keeps

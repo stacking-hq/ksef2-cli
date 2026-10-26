@@ -377,6 +377,7 @@ Render invoice XML to HTML, and optionally to PDF.
 | `--out`, `-o` | FILE | - | - | Where to write HTML. Defaults to stdout when --pdf is not used. |
 | `--pdf` | FILE | - | - | Also write PDF here. Needs the optional ksef2[pdf] dependencies. |
 | `--code-lookups`, `--no-code-lookups` | - | false | - | Let the bundled stylesheet read local files and URLs so coded values print as names. Use it only with invoice XML you trust. |
+| `--ksef-number` | TEXT | - | - | With --pdf: the accepted KSeF number of this invoice. It prints under a verification QR for the selected --env. Omit it for a draft PDF. |
 
 ## `invoices`
 
