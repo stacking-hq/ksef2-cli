@@ -46,18 +46,8 @@ behavior.
 
 ## Install
 
-The 1.0 line runs on the published `ksef2` SDK and needs Python 3.12 or newer. SDK
-1.0.0 is on PyPI, so a checkout resolves it from the index with no source override:
-
-```bash
-git clone https://github.com/stacking-hq/ksef2-cli
-cd ksef2-cli
-uv sync
-uv run ksef2 --help
-```
-
-The CLI's own 1.0.0 package is not on PyPI yet, where the latest release is still
-0.0.1, so `uv tool install` and `pipx install` hand you the older 0.x CLI:
+KSeF2 CLI 1.0 requires Python 3.12 or newer and the published `ksef2` SDK 1.1 or
+newer, below 2.0. Install the CLI from PyPI:
 
 ```bash
 uv tool install ksef2-cli
@@ -69,16 +59,15 @@ or:
 pipx install ksef2-cli
 ```
 
-The 1.0 behavior described in these pages needs a checkout until the CLI release
-lands. An installed package exposes two equivalent executables:
+The package exposes two equivalent executables:
 
 ```bash
 ksef2 --help
 ksef2-cli --help
 ```
 
-Package metadata requires the `ksef2` SDK `>=1.0,<2`, so the built wheel refuses the
-older 0.22.x SDK. `tests/unit/test_release_metadata.py` fails if the project version,
+Package metadata requires the `ksef2` SDK `>=1.1,<2`, including fixes for certificate
+retrieval and offline PDF code lookups. `tests/unit/test_release_metadata.py` fails if the project version,
 those bounds, `ksef2_cli.__version__`, or the locked SDK drift apart.
 
 Check what you are running, CLI and SDK together:
@@ -89,7 +78,7 @@ ksef2 --version
 
 ```text
 ksef2-cli 1.0.0
-ksef2 1.0.0
+ksef2 1.1.0
 ```
 
 `--version` is read before the local config file, so it answers even with a broken

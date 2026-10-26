@@ -92,12 +92,10 @@ uv run ksef2 fa3 render --in invoice.xml --pdf invoice.pdf \
   --ksef-number 5252222222-20260409-ABCDEF123456-AB
 ```
 
-`--code-lookups` lets the bundled stylesheet read local files and URLs so coded
-values, such as VAT codes, print as names instead of codes. That means the
-stylesheet reads what the invoice XML asks it to read, so enable it only for
-invoice XML you trust. The stylesheet asks for its code lists by URL, so a list it
-cannot reach fails the render; the error quotes what the stylesheet reported, and
-`--no-code-lookups` renders the same invoice with coded values as codes.
+`--code-lookups` resolves country, tax-office, and currency codes using the SDK's
+bundled official lists. Network access and writes stay blocked. An unknown lookup
+URI fails the render with details identifying the unresolved URI.
+`--no-code-lookups` keeps coded values as codes.
 
 ## Related pages
 
