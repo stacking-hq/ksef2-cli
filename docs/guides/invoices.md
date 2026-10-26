@@ -246,6 +246,12 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
 as pages, and `--out` holds one file. `--offline` and `--max-part-size` belong to
 this mode and fail with `--mode online`.
 
+Both commands resume the batch session from the state inside the receipt, which is
+why the file is credential material. A receipt written by a CLI version that stored
+only the session reference cannot resume it, and reports that instead: finish the
+job with `batch status` or `batch upo` and `--state-file`, or send the invoices
+again.
+
 To hold the session state yourself, prepare the package once and upload it more than
 once, or recover an upload KSeF rejected, use [Batch sessions](batch-sessions.md).
 

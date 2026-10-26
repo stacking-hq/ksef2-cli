@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from ksef2 import KSeFInvoiceRejectedError, KSeFSessionError
+from ksef2 import KSeFInvoiceRejectedError, KSeFSessionError, KSeFValidationError
 
 from conftest import (
     FakeService,
@@ -20,6 +20,7 @@ from conftest import (
     plain,
 )
 from ksef2.models import (
+    BatchSessionResumeState,
     ExportResumeState,
     ExportStatusInfo,
     FormSchema,
@@ -27,6 +28,7 @@ from ksef2.models import (
     InvoicePackage,
     InvoiceStatusInfo,
     PackagePart,
+    PartUploadRequest,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
     StatusInfo,
@@ -162,6 +164,25 @@ def _invoice_processing_status(
             code=200 if ksef_number else 150,
             description="ready" if ksef_number else "processing",
         ),
+    )
+
+
+def _batch_state_with_upload() -> BatchSessionResumeState:
+    """Batch resume state as a live session reports it, presigned upload included."""
+
+    return BatchSessionResumeState.from_encoded(
+        reference_number="batch-ref",
+        aes_key=b"aes-key-32-bytes" * 2,
+        iv=b"iv-16-bytes!!!!!",
+        form_code=FormSchema.FA3,
+        part_upload_requests=[
+            PartUploadRequest(
+                ordinal_number=1,
+                method="PUT",
+                url="https://example.invalid/part/1",
+                headers={"Content-Type": "application/octet-stream"},
+            )
+        ],
     )
 
 
@@ -716,15 +737,18 @@ def test_invoices_send_batch_wait_downloads_upo_and_writes_receipt(
     second = tmp_path / "b.xml"
     first.write_text("<a/>", encoding="utf-8")
     second.write_text("<b/>", encoding="utf-8")
-    submitted = FakeService(
-        resume_state=batch_state(), wait=_batch_processing_status()
-    )
+    state = _batch_state_with_upload()
+    submitted = FakeService(resume_state=state, wait=_batch_processing_status())
     # `submit()` hands back the closed session; UPO pages come from a reopened one.
     upo_session = FakeService(download_upo=[b"<batch-upo/>"])
+    reopened: list[Any] = []
     runtime = fake_runtime(
         auth=SimpleNamespace(
             batch=FakeService(submit=submitted),
-            batch_session=lambda **kwargs: upo_session,
+            batch_session=lambda **kwargs: (
+                reopened.append(kwargs["state"]),
+                upo_session,
+            )[1],
         )
     )
     receipt_file = tmp_path / "batch-receipt.json"
@@ -763,6 +787,26 @@ def test_invoices_send_batch_wait_downloads_upo_and_writes_receipt(
     )
     assert receipt.batch is not None
     assert receipt.batch.session_reference == "batch-ref"
+
+    # The reopened session resumes from the session state: the SDK reads a bare
+    # reference number as malformed JSON and rejects the whole download.
+    assert reopened == [state]
+    assert receipt.batch.session_state == state
+
+    # ``model_dump`` masks the key material and drops the upload instructions, so the
+    # receipt has to carry the SDK's own credential export to stay resumable.
+    saved_state = json.loads(receipt_file.read_text(encoding="utf-8"))["batch"][
+        "session_state"
+    ]
+    assert saved_state["aes_key"] != "**********"
+    assert saved_state["part_upload_requests"][0]["url"] == (
+        "https://example.invalid/part/1"
+    )
+    assert BatchSessionResumeState.from_json(json.dumps(saved_state)) == state
+    # What the receipt used to hold instead, the bare reference number, is what the
+    # SDK reads as malformed JSON and rejects the whole session with.
+    with pytest.raises(KSeFValidationError, match="Invalid JSON"):
+        _ = BatchSessionResumeState.from_json("batch-ref")
 
     # Pages pair with the status' UPO references by position, so a session that
     # returns a different number of pages fails instead of writing a wrong UPO.
@@ -823,14 +867,20 @@ def test_invoices_status_and_upo_from_batch_receipt(runner, tmp_path) -> None:
     )
 
     # Status polling and UPO pages both come from a session client reopened from
-    # the receipt's reference number.
+    # the resume state the receipt stored.
     receipt_session = FakeService(
         wait=_batch_processing_status(),
         get_status=_batch_processing_status(),
         download_upo=[b"<batch-upo/>"],
     )
+    reopened: list[Any] = []
     runtime = fake_runtime(
-        auth=SimpleNamespace(batch_session=lambda **kwargs: receipt_session)
+        auth=SimpleNamespace(
+            batch_session=lambda **kwargs: (
+                reopened.append(kwargs["state"]),
+                receipt_session,
+            )[1]
+        )
     )
     status = payload(
         runner.invoke(
@@ -858,6 +908,104 @@ def test_invoices_status_and_upo_from_batch_receipt(runner, tmp_path) -> None:
         )
     )
     assert upo["upo_files"][0]["path"] == str(upo_dir / "batch-batch-ref-upo-1.xml")
+
+    # `--wait` polls the reopened session for a fresh status instead of trusting the
+    # one the receipt recorded.
+    waited_dir = tmp_path / "waited-upos"
+    waited = payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "invoices",
+                "upo",
+                "--receipt",
+                str(receipt_file),
+                "--upo-dir",
+                str(waited_dir),
+                "--wait",
+            ),
+            obj=runtime,
+        )
+    )
+    assert waited["upo_files"][0]["path"] == str(
+        waited_dir / "batch-batch-ref-upo-1.xml"
+    )
+    # Every continuation resumes the session from its state, never its bare reference:
+    # the status poll, one download per upo run, plus the fresh status the `--wait`
+    # run polled before downloading.
+    assert [type(state) for state in reopened] == [BatchSessionResumeState] * 4
+    assert {state.reference_number for state in reopened} == {"batch-ref"}
+
+
+def test_invoices_status_and_upo_reject_legacy_batch_receipt(
+    runner, tmp_path
+) -> None:
+    """A receipt that stored only the session reference cannot resume the session."""
+
+    invoice = tmp_path / "invoice.xml"
+    invoice.write_text("<invoice/>", encoding="utf-8")
+    receipt_file = tmp_path / "batch-receipt.json"
+    sent = payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "invoices",
+                "send",
+                str(invoice),
+                "--mode",
+                "batch",
+                "--receipt",
+                str(receipt_file),
+            ),
+            obj=fake_runtime(
+                auth=SimpleNamespace(
+                    batch=FakeService(submit=FakeService(resume_state=batch_state()))
+                )
+            ),
+        )
+    )
+    assert sent["batch"]["session_reference"] == "batch-ref"
+
+    # Rewrite it the way older CLI versions wrote it: the reference number only.
+    legacy = json.loads(receipt_file.read_text(encoding="utf-8"))
+    del legacy["batch"]["session_state"]
+    receipt_file.write_text(json.dumps(legacy), encoding="utf-8")
+
+    opened: list[Any] = []
+    runtime = fake_runtime(
+        auth=SimpleNamespace(
+            batch_session=lambda **kwargs: (
+                opened.append(kwargs["state"]),
+                FakeService(get_status=_batch_processing_status()),
+            )[1]
+        )
+    )
+
+    status = runner.invoke(
+        app, cli_args("invoices", "status", "--receipt", str(receipt_file)), obj=runtime
+    )
+    upo = runner.invoke(
+        app,
+        cli_args(
+            "invoices",
+            "upo",
+            "--receipt",
+            str(receipt_file),
+            "--upo-dir",
+            str(tmp_path / "upos"),
+        ),
+        obj=runtime,
+    )
+
+    assert status.exit_code == 1
+    assert upo.exit_code == 1
+    # The bare reference is never handed to the SDK, which would report its own
+    # JSON parse error instead of what the user should do next.
+    assert opened == []
+    for output in (plain(status.output), plain(upo.output)):
+        assert "cannot be resumed" in output
+        assert "batch-ref" in output
+        assert "--state-file" in output
 
 
 def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
