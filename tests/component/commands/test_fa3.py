@@ -12,10 +12,12 @@ from typing import Any
 import pytest
 from conftest import cli_args, payload, plain
 from ksef2 import Environment
-from ksef2.renderers import InvoicePDFExporter
 from ksef2.fa3 import InvoiceBuilder
-from ksef2_cli.app import app
+from ksef2.renderers import InvoicePDFExporter
+from typer.testing import CliRunner
+
 from ksef2_cli import runtime
+from ksef2_cli.app import app
 
 DRAFT: dict[str, Any] = {
     "header": {"system_info": "ksef2-cli test"},
@@ -245,7 +247,13 @@ class FakePdfExporter:
         self.page_size = page_size
         self.enable_code_lookups = enable_code_lookups
 
-    def export_to_file(self, invoice_xml_path: Path, output_pdf_path: Path) -> Path:
+    def export_to_file(
+        self,
+        invoice_xml_path: Path,
+        output_pdf_path: Path,
+        *,
+        ksef_number: str | None = None,
+    ) -> Path:
         output_pdf_path.parent.mkdir(parents=True, exist_ok=True)
         output_pdf_path.write_bytes(b"%PDF-1.4 fake")
         return output_pdf_path
@@ -304,6 +312,121 @@ def test_render_pdf_passes_environment_to_sdk_constructor(
     assert environments == [
         Environment.PRODUCTION if environment is None else Environment.DEMO
     ]
+
+
+def test_render_pdf_passes_ksef_number_to_the_exporter(
+    runner, invoice_file, tmp_path, monkeypatch
+) -> None:
+    """`--ksef-number` is what makes the SDK draw the verification QR in the PDF."""
+
+    numbers: list[str | None] = []
+
+    class RecordingExporter(FakePdfExporter):
+        def export_to_file(
+            self,
+            invoice_xml_path: Path,
+            output_pdf_path: Path,
+            *,
+            ksef_number: str | None = None,
+        ) -> Path:
+            inspect.signature(InvoicePDFExporter.export_to_file).bind(
+                self, invoice_xml_path, output_pdf_path, ksef_number=ksef_number
+            )
+            numbers.append(ksef_number)
+            return super().export_to_file(
+                invoice_xml_path, output_pdf_path, ksef_number=ksef_number
+            )
+
+    monkeypatch.setattr(runtime, "InvoicePDFExporter", RecordingExporter)
+    pdf = tmp_path / "invoice.pdf"
+    number = "5261040828-20260101-ABCDEF123456-AB"
+
+    without = runner.invoke(
+        app,
+        cli_args(
+            "fa3", "render", "--in", str(invoice_file), "--pdf", str(pdf)
+        ),
+    )
+    with_number = runner.invoke(
+        app,
+        cli_args(
+            "fa3",
+            "render",
+            "--in",
+            str(invoice_file),
+            "--pdf",
+            str(pdf),
+            "--ksef-number",
+            number,
+        ),
+    )
+
+    assert payload(without) is not None
+    assert payload(with_number) is not None
+    assert numbers == [None, number]
+
+
+def test_render_ksef_number_without_pdf_is_a_usage_error(
+    runner, invoice_file, tmp_path
+) -> None:
+    """The QR lives in the PDF, so a number with no --pdf is a mistake, not a no-op."""
+
+    result = runner.invoke(
+        app,
+        cli_args(
+            "fa3",
+            "render",
+            "--in",
+            str(invoice_file),
+            "--out",
+            str(tmp_path / "invoice.html"),
+            "--ksef-number",
+            "5252222222-20260409-ABCDEF123456-AB",
+        ),
+    )
+
+    assert result.exit_code == 2
+    assert "--ksef-number needs --pdf" in plain(result.output)
+    assert not (tmp_path / "invoice.html").exists()
+
+
+def test_render_pdf_keeps_dependency_noise_off_stdout(
+    invoice_file, tmp_path, monkeypatch
+) -> None:
+    """WeasyPrint's own import banner must not land on the stream carrying results.
+
+    Under --json stdout stays machine-readable, so the banner and the JSON error both
+    belong on stderr.
+    """
+
+    def noisy_missing_libraries(*_args: object, **_kwargs: object) -> None:
+        # What WeasyPrint itself does when its native libraries will not load.
+        print("WeasyPrint could not import some external libraries.")
+        raise OSError("cannot load library 'libgobject-2.0-0'")
+
+    monkeypatch.setattr(runtime, "InvoicePDFExporter", noisy_missing_libraries)
+
+    result = CliRunner(mix_stderr=False).invoke(
+        app,
+        cli_args(
+            "fa3",
+            "render",
+            "--in",
+            str(invoice_file),
+            "--pdf",
+            str(tmp_path / "out.pdf"),
+        ),
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "could not import some external libraries" in result.stderr
+    reported = next(
+        json.loads(line)
+        for line in result.stderr.splitlines()
+        if line.startswith("{")
+    )
+    assert reported["error"]["type"] == "MissingOptionalDependencyError"
 
 
 def test_render_pdf_names_the_missing_extra(

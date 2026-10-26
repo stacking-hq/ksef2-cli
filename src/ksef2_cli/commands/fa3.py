@@ -14,6 +14,7 @@ from ksef2.fa3 import InvoiceBuilder, parse_invoice_xml
 from ksef2.renderers import InvoiceXSLTRenderer
 
 from ksef2_cli.context import get_settings, run_command
+from ksef2_cli.exceptions import UsageError
 from ksef2_cli.io import write_text_file
 from ksef2_cli.results import SavedFile
 from ksef2_cli.runtime import create_pdf_exporter
@@ -161,10 +162,22 @@ def fa3_render(
             ),
         ),
     ] = False,
+    ksef_number: Annotated[
+        str | None,
+        typer.Option(
+            "--ksef-number",
+            help=(
+                "With --pdf: the accepted KSeF number of this invoice. It prints under "
+                "a verification QR for the selected --env. Omit it for a draft PDF."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Render invoice XML to HTML, and optionally to PDF."""
 
     def operation() -> object:
+        if ksef_number is not None and pdf is None:
+            raise UsageError("--ksef-number needs --pdf: only the PDF carries the QR.")
         # The exporter is built first so a missing optional extra fails before the
         # command has written anything the user has to clean up.
         exporter = (
@@ -185,7 +198,9 @@ def fa3_render(
             html = renderer.render_from_string(invoice_file.read_text("utf-8"))
             saved.append(_write(out, html))
         if exporter is not None and pdf is not None:
-            target = exporter.export_to_file(invoice_file, pdf)
+            target = exporter.export_to_file(
+                invoice_file, pdf, ksef_number=ksef_number
+            )
             saved.append(SavedFile(path=target, size=target.stat().st_size))
         return saved[0] if len(saved) == 1 else saved
 

@@ -156,12 +156,19 @@ def read_model(ctx: typer.Context, path: Path, model_type: type[ModelT]) -> Mode
 
 
 def render_invoice_pdf(
-    ctx: typer.Context, invoice_xml_path: Path, *, page_size: PDFPageSize | None = None
+    ctx: typer.Context,
+    invoice_xml_path: Path,
+    *,
+    page_size: PDFPageSize | None = None,
+    ksef_number: str | None = None,
 ) -> bytes:
     """Render invoice XML to PDF, using a runtime fake when supplied by tests."""
 
     return render_runtime_invoice_pdf(
-        get_settings(ctx), invoice_xml_path, page_size=page_size
+        get_settings(ctx),
+        invoice_xml_path,
+        page_size=page_size,
+        ksef_number=ksef_number,
     )
 
 

@@ -339,15 +339,19 @@ def invoices_export_pdf(
             handle_file=handle_file,
         )
 
-    # The renderer carries the paper size, so the workflow only hands it XML paths.
+    # The renderer carries the paper size, so the workflow only hands it XML paths and
+    # the accepted KSeF number each PDF needs for its verification QR.
     pdf_page_size = paper_size.pdf_page_size if paper_size else None
     run_authenticated_command(
         ctx,
         lambda auth: export_invoices_to_pdf(
             auth,
             load_input(),
-            lambda invoice_xml_path: render_invoice_pdf(
-                ctx, invoice_xml_path, page_size=pdf_page_size
+            lambda invoice_xml_path, ksef_number: render_invoice_pdf(
+                ctx,
+                invoice_xml_path,
+                page_size=pdf_page_size,
+                ksef_number=ksef_number,
             ),
         ),
         validate=load_input,

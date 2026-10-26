@@ -1,13 +1,13 @@
 """Shared invoice workflows used by CLI and TUI adapters."""
 
 import base64
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Self, cast
 
 from ksef2 import KSeFInvoiceRejectedError, KSeFSessionError
-from ksef2.clients import AuthenticatedClient, OnlineSessionClient
+from ksef2.clients import AuthenticatedClient, ExportedInvoices, OnlineSessionClient
 from ksef2.models import (
     BatchSessionResumeState,
     CurrencyCodes,
@@ -92,6 +92,12 @@ def _invoice_upo_path(upo_dir: Path, invoice_path: Path) -> Path:
 
 def _batch_upo_path(upo_dir: Path, session_reference: str, index: int) -> Path:
     return upo_dir / _safe_filename(f"batch-{session_reference}-upo-{index}", ".xml")
+
+
+# A decrypted export package holds one `<ksef_number>.xml` per invoice plus this
+# manifest. The manifest is not invoice XML, and rendering it fails the SDK's
+# Faktura root check.
+EXPORT_METADATA_FILE_NAME = "_metadata.json"
 
 
 class InvoiceFilterInput(BaseModel):
@@ -594,9 +600,15 @@ def fetch_invoice_export(
     )
 
 
-def download_invoice_export(
+def _download_export_package(
     auth: AuthenticatedClient, inputs: InvoiceExportDownloadInput
-) -> FocusedResult[ExportPaths, str]:
+) -> tuple[ExportPaths, ExportedInvoices]:
+    """Schedule, wait for, and decrypt one export package into ``inputs.output_dir``.
+
+    The saved ``ExportedInvoices`` comes back too: its ``metadata``, read from the
+    package's own manifest, is the only authoritative list of the KSeF numbers inside.
+    """
+
     filters = build_invoices_filter(inputs)
     job = auth.invoices.export(
         filters=filters,
@@ -612,36 +624,72 @@ def download_invoice_export(
             state.to_json(indent=2),
             file_mode=SECRET_MODEL_FILE_MODE,
         )
-    paths = job.wait(
+    exported = job.wait(
         timeout=inputs.timeout,
         poll_interval=inputs.poll_interval,
-    ).save(inputs.output_dir)
-    return FocusedResult(
-        payload=ExportPaths(
+    )
+    paths = exported.save(inputs.output_dir)
+    return (
+        ExportPaths(
             reference_number=job.reference_number,
             handle_file=inputs.handle_file,
             paths=paths,
         ),
-        items=[str(path) for path in paths],
+        exported,
     )
+
+
+def download_invoice_export(
+    auth: AuthenticatedClient, inputs: InvoiceExportDownloadInput
+) -> FocusedResult[ExportPaths, str]:
+    downloaded, _exported = _download_export_package(auth, inputs)
+    return FocusedResult(
+        payload=downloaded,
+        items=[str(path) for path in downloaded.paths],
+    )
+
+
+def _export_invoice_files(
+    paths: Sequence[Path], metadata: Sequence[InvoiceMetadata] | None
+) -> list[tuple[Path, str | None]]:
+    """Pair the invoice XML in a decrypted package with the KSeF number to render.
+
+    KSeF writes each invoice as ``<ksef_number>.xml`` and lists the same numbers in
+    ``_metadata.json``, so a number reaches the renderer only when the manifest repeats
+    it: an invoice the manifest does not describe still renders, just without the
+    verification QR, and neither the manifest nor any other non-invoice artifact is
+    handed to the PDF renderer.
+    """
+
+    reported = {item.ksef_number for item in metadata or ()}
+    files: list[tuple[Path, str | None]] = []
+    for path in paths:
+        if path.suffix.lower() != ".xml" or path.name == EXPORT_METADATA_FILE_NAME:
+            continue
+        number = path.stem if path.stem in reported else None
+        files.append((path, number))
+    return files
 
 
 def export_invoices_to_pdf(
     auth: AuthenticatedClient,
     inputs: InvoiceExportPdfInput,
-    render_pdf: Callable[[Path], bytes],
+    render_pdf: Callable[[Path, str | None], bytes],
 ) -> FocusedResult[InvoicePdfExport, SavedFile]:
     """Download an invoice export package and render every invoice in it to PDF.
 
     ``render_pdf`` comes from the caller because WeasyPrint ships as an optional extra,
-    so this workflow must not import the exporter itself.
+    so this workflow must not import the exporter itself. It takes the invoice XML and
+    the KSeF number the renderer needs for the verification QR, or ``None`` when the
+    package manifest does not report one for that file.
     """
 
-    downloaded = download_invoice_export(auth, inputs)
+    downloaded, exported = _download_export_package(auth, inputs)
+    invoice_files = _export_invoice_files(downloaded.paths, exported.metadata)
 
     pdfs: list[SavedFile] = []
-    for invoice_xml_path in downloaded.payload.paths:
-        content = render_pdf(invoice_xml_path)
+    for invoice_xml_path, ksef_number in invoice_files:
+        content = render_pdf(invoice_xml_path, ksef_number)
         target = inputs.pdf_directory / _safe_filename(
             f"{invoice_xml_path.stem}.pdf", ".pdf"
         )
@@ -651,10 +699,10 @@ def export_invoices_to_pdf(
 
     return FocusedResult(
         payload=InvoicePdfExport(
-            reference_number=downloaded.payload.reference_number,
+            reference_number=downloaded.reference_number,
             pdfs=pdfs,
-            invoice_xml_files=downloaded.payload.paths,
-            handle_file=downloaded.payload.handle_file,
+            invoice_xml_files=[path for path, _number in invoice_files],
+            handle_file=downloaded.handle_file,
         ),
         items=pdfs,
     )

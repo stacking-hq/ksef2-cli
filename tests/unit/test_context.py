@@ -290,7 +290,7 @@ def test_render_invoice_pdf_passes_environment_to_sdk_constructor(monkeypatch) -
             inspect.signature(InvoicePDFExporter.__init__).bind(self, *args, **kwargs)
             environments.append(kwargs["verification_environment"])
 
-        def export_from_path(self, path):
+        def export_from_path(self, path, *, ksef_number=None):
             assert path == Path("invoice.xml")
             return b"%PDF-1.4"
 
@@ -299,3 +299,33 @@ def test_render_invoice_pdf_passes_environment_to_sdk_constructor(monkeypatch) -
 
     assert runtime.render_invoice_pdf(settings_obj, Path("invoice.xml")) == b"%PDF-1.4"
     assert environments == [settings_obj.environment]
+
+
+def test_render_invoice_pdf_passes_ksef_number_for_the_verification_qr(
+    monkeypatch,
+) -> None:
+    """The SDK draws the verification QR only when handed the accepted KSeF number."""
+
+    rendered: list[tuple[Path, str | None]] = []
+
+    class SignatureCheckedExporter:
+        def __init__(self, *args, **kwargs):
+            inspect.signature(InvoicePDFExporter.__init__).bind(self, *args, **kwargs)
+
+        def export_from_path(self, path, *, ksef_number=None):
+            inspect.signature(InvoicePDFExporter.export_from_path).bind(
+                self, path, ksef_number=ksef_number
+            )
+            rendered.append((path, ksef_number))
+            return b"%PDF-1.4"
+
+    monkeypatch.setattr(runtime, "InvoicePDFExporter", SignatureCheckedExporter)
+    number = "5261040828-20260101-ABCDEF123456-AB"
+
+    assert (
+        runtime.render_invoice_pdf(
+            settings(), Path("invoice.xml"), ksef_number=number
+        )
+        == b"%PDF-1.4"
+    )
+    assert rendered == [(Path("invoice.xml"), number)]

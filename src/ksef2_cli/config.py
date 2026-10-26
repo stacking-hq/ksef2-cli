@@ -118,7 +118,11 @@ class PemCredentialsLoader(Protocol):
 
 class InvoicePdfRenderer(Protocol):
     def __call__(
-        self, invoice_xml_path: Path, *, page_size: PDFPageSize | None
+        self,
+        invoice_xml_path: Path,
+        *,
+        page_size: PDFPageSize | None,
+        ksef_number: str | None = None,
     ) -> bytes: ...
 
 

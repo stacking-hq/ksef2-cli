@@ -37,6 +37,7 @@ from ksef2 import (
 from ksef2.models import InvoiceStatusInfo, SessionInvoiceStatusResponse
 from rich.console import Console
 
+from ksef2_cli import exceptions as exceptions_module
 from ksef2_cli.exceptions import (
     AuthenticationConfigError,
     CliError,
@@ -45,6 +46,7 @@ from ksef2_cli.exceptions import (
     UnexpectedCliError,
     UsageError,
     error_from_exception,
+    pdf_system_libs_hint,
     redact_argv,
     render_cli_error,
 )
@@ -469,3 +471,20 @@ def test_usage_error_defaults_to_two_and_preserves_explicit_override() -> None:
     assert UsageError("Invalid input").exit_code == 2
     assert UsageError("Explicit status", exit_code=1).exit_code == 1
     assert CliError("Runtime failure").exit_code == 1
+
+
+@pytest.mark.parametrize(
+    "platform,needle",
+    [
+        ("linux", "libpango-1.0-0"),
+        ("darwin", "DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib"),
+    ],
+)
+def test_pdf_library_hint_names_the_running_platform(
+    monkeypatch, platform: str, needle: str
+) -> None:
+    """Homebrew and dyld mean nothing on Linux, apt names nothing on macOS."""
+
+    monkeypatch.setattr(exceptions_module.sys, "platform", platform)
+
+    assert needle in pdf_system_libs_hint()
