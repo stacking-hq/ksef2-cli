@@ -103,5 +103,4 @@ uv build
 Then install the built package into a clean environment that can only reach the index,
 and run `ksef2 --version`. That proves the release against the published SDK instead of
 a checkout. Merge the verified release into `main`, then push the matching
-`v<version>` tag. The Publish workflow tests, builds, publishes to PyPI, and
-dispatches the documentation deployment.
+`v<version>` tag. The Publish workflow tests, builds, and publishes to PyPI.
