@@ -7,7 +7,7 @@ from typing import Annotated, cast
 
 import typer
 from cryptography.hazmat.primitives import serialization
-from ksef2 import Client, Environment
+from ksef2 import Client, Environment, KSeFValidationError
 from ksef2.models import (
     AuthContextIdentifier,
     AuthContextIdentifierTypeEnum,
@@ -503,7 +503,10 @@ def testdata_update_certificate_valid_to(
         str,
         typer.Option(
             "--valid-to",
-            help="ISO 8601 datetime with a UTC offset, e.g. 2026-03-01T12:00:00Z.",
+            help=(
+                "ISO 8601 datetime with a UTC offset, e.g. 2026-03-01T12:00:00Z, "
+                "or a date, which is midnight UTC."
+            ),
         ),
     ],
 ) -> None:
@@ -533,7 +536,7 @@ def _validated_serial_number(value: str) -> str:
     """Return the serial number, rejecting one KSeF could never accept."""
     try:
         return validate_certificate_serial_number(value)
-    except ValidationError:
+    except (ValidationError, KSeFValidationError) as exc:
         raise ValueError(
             "--serial-number must be 16 hexadecimal characters, e.g. ABCDEF1234567890."
-        ) from None
+        ) from exc

@@ -369,6 +369,8 @@ def invoices_export_pdf(
     def prepare() -> None:
         nonlocal exporter
         load_input()
+        if only_metadata:
+            return
         settings = get_settings(ctx)
         if not (
             settings.runtime_overrides
@@ -378,17 +380,22 @@ def invoices_export_pdf(
                 environment=settings.environment, page_size=pdf_page_size
             )
 
-    # The renderer carries the paper size, so the workflow only hands it XML paths.
+    # Each PDF receives its accepted KSeF number for the verification QR.
     pdf_page_size = paper_size.pdf_page_size if paper_size else None
     run_authenticated_command(
         ctx,
         lambda auth: export_invoices_to_pdf(
             auth,
             load_input(),
-            lambda invoice_xml_path: (
-                exporter.export_from_path(invoice_xml_path)
+            lambda invoice_xml_path, ksef_number: (
+                exporter.export_from_path(invoice_xml_path, ksef_number=ksef_number)
                 if exporter is not None
-                else render_invoice_pdf(ctx, invoice_xml_path, page_size=pdf_page_size)
+                else render_invoice_pdf(
+                    ctx,
+                    invoice_xml_path,
+                    page_size=pdf_page_size,
+                    ksef_number=ksef_number,
+                )
             ),
         ),
         validate=prepare,

@@ -232,33 +232,49 @@ uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
 
 Success is written to stdout: the text form, or one JSON document in `--json` mode.
 Nothing else is written there, so `ksef2 --json ... > out.json` captures exactly one
-value. `--verbose` adds a traceback, and only for an error the CLI treats as a bug.
+value.
 
 Command errors go to stderr and leave stdout empty. Check the exit code before
 parsing stdout. A completed `invoices send` with rejected items writes its result
 to stdout and exits 1. For command errors, text mode prints human lines and
 `--json` mode prints one object:
 
+```bash
+uv run ksef2 --json auth login --token 2>error.json
+```
+
 ```json
 {
   "error": {
-    "code": "RemoteServiceError",
-    "message": "KSeF rate limit exceeded",
-    "ksef_code": null,
-    "trace_id": null
+    "type": "RemoteServiceError",
+    "title": "KSeF rejected the request",
+    "message": "KSeF rejected the request.",
+    "details": [],
+    "hints": [],
+    "exit_code": 1,
+    "ksef": {
+      "status_code": 400,
+      "exception_code": 21405,
+      "message": "Validation error",
+      "ksef_code": 21405,
+      "trace_id": "0f6c…"
+    }
   }
 }
 ```
 
 | Key | Content |
 | --- | --- |
-| `code` | The CLI error class, such as `RemoteServiceError`, `AuthenticationConfigError`, `ConfigError`, or `FileCliError`; `USAGE_ERROR` when the command line itself was rejected. |
+| `type` | The CLI error class, such as `RemoteServiceError`, `AuthenticationConfigError`, `ConfigError`, or `FileCliError`; `UsageError` when the command line itself was rejected. |
+| `title` | The short summary the CLI chose for this failure. |
 | `message` | One human-readable sentence about the failure. |
-| `ksef_code` | KSeF's own numeric code, or `null` when KSeF never answered. |
-| `trace_id` | KSeF's trace ID for the request, or `null`. Give this number when you report an incident. |
+| `details`, `hints`, `exit_code` | Always present. The two lists are empty when the CLI has nothing to add. |
+| `ksef` | Present when KSeF answered. Carries that service's `status_code`, `exception_code`, and `message`, plus `ksef_code`, `trace_id`, `details`, or `response` when the CLI has them. Quote `trace_id` when you report an incident. |
+| `report_url` | Present on an error the CLI treats as a bug. |
+| `traceback` | Present with `--verbose`, and only for such an error. |
 
-An HTTP failure adds `status_code`. `details` and `hints` appear only when the CLI has
-them, so treat all three optional keys as absent rather than empty.
+Any secret the CLI recognized on the command line or in its secret environment
+variables is replaced with `<redacted>` inside the payload before it is encoded.
 
 ### Exit codes
 

@@ -54,7 +54,9 @@ uv run ksef2 fa3 inspect --in invoice.xml
 
 Text output prints one line each for `header`, `seller`, `buyer`, and `body`, so
 you can check a counterparty, the invoice number, or a single row's computed
-amounts. Add `--json` for the whole parsed invoice as one object:
+amounts. A section too wide for the terminal continues on the indented lines below
+its name, so nothing is cut short: `COLUMNS=80` wraps to 80 columns in a pipe as
+well as in a terminal. Add `--json` for the whole parsed invoice as one object:
 
 ```bash
 uv run ksef2 --json fa3 inspect --in invoice.xml | jq '.body.rows[0]'
@@ -78,12 +80,24 @@ uv run ksef2 fa3 render --in invoice.xml --out invoice.html --pdf invoice.pdf
 Without those dependencies the command checks for them first and exits `1`
 naming the extra, so neither the HTML nor a half-written PDF appears. See
 [PDF rendering](../getting-started/installation.md#pdf-rendering) for the system
-libraries WeasyPrint needs.
+libraries WeasyPrint needs, including the `DYLD_FALLBACK_LIBRARY_PATH` a macOS
+checkout often needs on top of Homebrew.
+
+`--ksef-number` adds the verification QR KSeF publishes for an accepted invoice: the
+number is printed under the code, which links to the KSeF verification page for the
+selected `--env`. Leave it out for a draft, whose PDF has no QR.
+
+```bash
+uv run ksef2 fa3 render --in invoice.xml --pdf invoice.pdf \
+  --ksef-number 5252222222-20260409-ABCDEF123456-AB
+```
 
 `--code-lookups` lets the bundled stylesheet read local files and URLs so coded
 values, such as VAT codes, print as names instead of codes. That means the
 stylesheet reads what the invoice XML asks it to read, so enable it only for
-invoice XML you trust.
+invoice XML you trust. The stylesheet asks for its code lists by URL, so a list it
+cannot reach fails the render; the error quotes what the stylesheet reported, and
+`--no-code-lookups` renders the same invoice with coded values as codes.
 
 ## Related pages
 

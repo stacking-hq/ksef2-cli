@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from ksef2.models import (
+    BatchSessionResumeState,
     ExportResumeState,
     OnlineSessionResumeState,
     SessionInvoiceStatusResponse,
@@ -62,9 +63,14 @@ class BatchSessionStatus(CliResult):
 
 
 class BatchInvoiceReceipt(CliResult):
-    """Resumable receipt for one submitted batch session."""
+    """Resumable receipt for one submitted batch session.
+
+    ``session_state`` retains upload recovery credentials. Reference-only status and
+    UPO reads also work for older receipts that carry only ``session_reference``.
+    """
 
     session_reference: str
+    session_state: BatchSessionResumeState | None = None
     files: list[Path]
     status: BatchSessionStatus | None = None
     upo_files: list[Path] = Field(default_factory=list)
@@ -80,18 +86,24 @@ class InvoiceWorkflowReceipt(CliResult):
     batch: BatchInvoiceReceipt | None = None
 
     def to_resumable_json(self) -> str:
-        """Serialize the receipt so its online session can still be resumed.
+        """Serialize the receipt so its session can still be resumed.
 
-        ``model_dump_json`` masks the resume state's AES key and IV, which would save a
-        receipt that can no longer resume its session, so the state is exported through
-        the SDK's own credential export. The result is credential material: write it to a
-        protected file only, never to command output.
+        ``model_dump_json`` masks the resume state's AES key and IV, and drops the batch
+        upload instructions, which would save a receipt that can no longer resume its
+        session, so each state is exported through the SDK's own credential export. The
+        result is credential material: write it to a protected file only, never to
+        command output.
         """
         data = self.model_dump(mode="json", by_alias=True, exclude_none=True)
         if self.online is not None:
             data["online"] = {
                 **data["online"],
                 "session_state": self.online.session_state.to_dict(mode="json"),
+            }
+        if self.batch is not None and self.batch.session_state is not None:
+            data["batch"] = {
+                **data["batch"],
+                "session_state": self.batch.session_state.to_dict(mode="json"),
             }
         return json.dumps(data, indent=2)
 

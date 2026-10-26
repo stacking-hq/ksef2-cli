@@ -64,7 +64,7 @@ question:
 
 ```bash
 uv run ksef2 --profile prod-token invoices status --receipt invoice-receipt.json --wait
-uv run ksef2 --profile prod-token batch status --reference "$BATCH_REFERENCE" --wait
+uv run ksef2 --profile prod-token batch status --state-file batch-state.json --wait
 uv run ksef2 --profile prod-token online invoice-status \
   --state-file online-state.json --invoice-reference "$INVOICE_REFERENCE" --wait
 ```
@@ -72,7 +72,9 @@ uv run ksef2 --profile prod-token online invoice-status \
 A rejected invoice reports a status code of 400 or above, while an accepted one has
 a `ksef_number`. A `--timeout` that expires is not a rejection either: it only
 means KSeF had not finished inside your deadline, so the references stay valid and
-you ask again later.
+you ask again later. `batch status` is the one command here that needs the session
+state file rather than a reference: see
+[Batch sessions](batch-sessions.md#read-status-and-per-invoice-results).
 
 ## Find sessions after a restart
 

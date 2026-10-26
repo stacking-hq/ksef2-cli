@@ -88,7 +88,7 @@ def test_online_conflicting_close_choices_fail_locally(runner, tmp_path):
     result = runner.invoke(
         app, cli_args("online", "send", str(invoice), "--close", "--keep-open")
     )
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "Use either --close or --keep-open" in plain(result.output)
 
 
@@ -110,7 +110,7 @@ def test_encoding_rejected_before_authentication(
     invoice = tmp_path / "invoice.xml"
     invoice.write_bytes(content)
     result = runner.invoke(app, cli_args(*command, str(invoice)))
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert label in plain(result.output)
     assert "authentication" not in plain(result.output).lower()
     assert invoice.read_bytes() == content
@@ -166,7 +166,7 @@ def test_invalid_dates_show_values_and_zone_before_auth(runner, command):
             "2026-02-01T12:00:00+02:00",
         ),
     )
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     output = plain(result.output)
     assert "--date-from=2026-02-02T00:00:00 [Europe/Warsaw]" in output
     assert "--date-to=2026-02-01T12:00:00+02:00" in output
@@ -263,7 +263,7 @@ def test_download_accepts_positional_and_existing_option(runner, tmp_path, use_o
 )
 def test_missing_or_conflicting_aliases_fail_locally(runner, command):
     result = runner.invoke(app, cli_args(*command))
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "Provide one" in plain(result.output)
 
 
@@ -304,3 +304,83 @@ def test_missing_invoice_message_survives_terminal_wrapping(runner, tmp_path, wi
     )
     assert result.exit_code == 2
     assert "does not exist" in plain(result.output)
+
+
+def test_export_pdf_preflight_preserves_manifest_ksef_numbers(
+    runner, tmp_path, monkeypatch
+):
+    from ksef2_cli import invoice_workflows
+    from ksef2_cli.commands.invoices import export
+    from ksef2_cli.commands.invoices.models import ExportPaths
+
+    number = "5261040828-20260102-ABCDEF123456-AB"
+    invoice = tmp_path / f"{number}.xml"
+    unknown = tmp_path / "draft.xml"
+    metadata = tmp_path / "_metadata.json"
+    calls = []
+    constructors = []
+
+    def render(path, *, ksef_number):
+        calls.append((path, ksef_number))
+        return b"%PDF-1.4 test"
+
+    def create(**kwargs):
+        constructors.append(kwargs)
+        return SimpleNamespace(export_from_path=render)
+
+    monkeypatch.setattr(export, "create_pdf_exporter", create)
+    monkeypatch.setattr(
+        invoice_workflows,
+        "_download_export_package",
+        lambda auth, inputs: (
+            ExportPaths(reference_number="export-ref", paths=[invoice, metadata, unknown]),
+            SimpleNamespace(metadata=[SimpleNamespace(ksef_number=number)]),
+        ),
+    )
+    result = runner.invoke(
+        app,
+        cli_args(
+            "invoices", "export-pdf", "--date-from", "2026-01-01",
+            "--date-to", "2026-01-02", "--out-dir", str(tmp_path),
+        ),
+        obj=fake_runtime(auth=SimpleNamespace()),
+    )
+    data = payload(result)
+    assert len(constructors) == 1
+    assert calls == [(invoice, number), (unknown, None)]
+    assert data["invoice_xml_files"] == [str(invoice), str(unknown)]
+    assert invoice.with_suffix(".pdf").read_bytes() == b"%PDF-1.4 test"
+    assert unknown.with_suffix(".pdf").read_bytes() == b"%PDF-1.4 test"
+
+
+def test_metadata_only_pdf_export_needs_no_pdf_dependencies(
+    runner, tmp_path, monkeypatch
+):
+    from ksef2_cli import invoice_workflows
+    from ksef2_cli.commands.invoices import export
+    from ksef2_cli.commands.invoices.models import ExportPaths
+
+    def unavailable(**kwargs):
+        pytest.fail("Metadata-only exports must not initialize a PDF exporter")
+
+    monkeypatch.setattr(export, "create_pdf_exporter", unavailable)
+    monkeypatch.setattr(
+        invoice_workflows,
+        "_download_export_package",
+        lambda auth, inputs: (
+            ExportPaths(reference_number="export-ref", paths=[tmp_path / "_metadata.json"]),
+            SimpleNamespace(metadata=[]),
+        ),
+    )
+    result = runner.invoke(
+        app,
+        cli_args(
+            "invoices", "export-pdf", "--date-from", "2026-01-01",
+            "--date-to", "2026-01-02", "--out-dir", str(tmp_path), "--only-metadata",
+        ),
+        obj=fake_runtime(auth=SimpleNamespace()),
+    )
+    data = payload(result)
+    assert data["pdfs"] == []
+    assert data["invoice_xml_files"] == []
+    assert not list(tmp_path.glob("*.pdf"))

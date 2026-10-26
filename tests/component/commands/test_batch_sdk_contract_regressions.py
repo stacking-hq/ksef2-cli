@@ -129,6 +129,9 @@ def test_interrupted_wait_preserves_reference(runner, tmp_path, monkeypatch, hig
     assert "00000000-0000-0000-0000-000000000001" in result.output
     data = json.loads(saved.read_text())
     assert (data["batch"]["session_reference"] if high_level else data["reference_number"]) == "00000000-0000-0000-0000-000000000001"
+    if high_level:
+        assert data["batch"]["session_state"]["reference_number"] == data["batch"]["session_reference"]
+        assert data["batch"]["session_state"]["aes_key"] != "**********"
     assert len([1 for method, path, _ in transport.calls if method == "POST" and path == "/sessions/batch"]) == 1
 
 
@@ -151,7 +154,8 @@ def test_upload_retry_does_not_upload_to_processing_session(runner, tmp_path):
     ("status", []), ("status", ["--wait"]),
     ("upo", ["--wait"]),
 ])
-def test_batch_receipt_reference_contract(runner, tmp_path, command, extra):
+@pytest.mark.parametrize("legacy", [False, True])
+def test_batch_receipt_reference_contract(runner, tmp_path, command, extra, legacy):
     """Cross-owner contract: receipt commands must not invent resume crypto state."""
     from ksef2_cli.commands.invoices.models import BatchInvoiceReceipt, InvoiceWorkflowReceipt
 
@@ -160,6 +164,7 @@ def test_batch_receipt_reference_contract(runner, tmp_path, command, extra):
         mode="batch", submitted_files=[],
         batch=BatchInvoiceReceipt(
             session_reference="00000000-0000-0000-0000-000000000001", files=[],
+            session_state=None if legacy else batch_state("00000000-0000-0000-0000-000000000001"),
         ),
     ).to_resumable_json())
     transport = ContractTransport()

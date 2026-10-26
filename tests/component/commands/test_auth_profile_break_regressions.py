@@ -160,7 +160,7 @@ def test_delete_checks_existence_and_handles_eof_and_y_alias(runner, tmp_path):
     assert "not defined" in plain(missing.output)
     assert "Delete profile" not in missing.output
     eof = runner.invoke(app, [*args, "local"])
-    assert eof.exit_code == 1
+    assert eof.exit_code == 2
     assert "--yes" in plain(eof.output)
     assert "local" in path.read_text()
     assert runner.invoke(app, [*args, "local", "-y"]).exit_code == 0
@@ -204,8 +204,9 @@ def test_login_masks_both_tokens_but_saves_resumable_state(runner, tmp_path, jso
     assert (
         "private-access" not in result.output and "private-refresh" not in result.output
     )
-    assert "--save-state" in result.output
-    assert "**********" in result.output
+    assert str(path) in result.output
+    assert "private-…cess" in result.output
+    assert "private-…resh" in result.output
     assert json.loads(path.read_text())["access_token"] == "private-access"
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
@@ -244,7 +245,7 @@ def test_refresh_real_sdk_from_state_and_explicit_token(runner, tmp_path):
         assert result.exit_code == 0, result.output
         assert requests[-1].headers["Authorization"] == f"Bearer {expected}"
         assert "new-private-access" not in result.output
-        assert payload(result)["access_token"]["token"] == "**********"
+        assert payload(result)["access_token"] == "new-priv…cess"
     saved = json.loads(path.read_text())
     assert saved["access_token"] == "new-private-access"
     assert saved["refresh_token"] == "saved-refresh"

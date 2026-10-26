@@ -69,9 +69,10 @@ def register() -> None:
         ]
         for index, row in enumerate(body.rows, 1):
             lines.append(
-                format_row(
+                format_status_line(
+                    f"item={index}",
+                    "",
                     (
-                        ("item", index),
                         ("name", row.name),
                         ("quantity", row.quantity),
                         ("unit", row.unit_of_measure),

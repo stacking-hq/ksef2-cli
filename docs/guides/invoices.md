@@ -23,6 +23,11 @@ uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
   --all
 ```
 
+`invoices metadata --page-size 12` returns one page of up to 12 items.
+Add `--all` to fetch every page, with up to 12 items per API request.
+`--all` requires `--page-offset` to be 0, its default. A nonzero offset
+selects a single page and cannot be combined with `--all`.
+
 `invoices metadata`, `invoices export`, `invoices export-download`, and
 `invoices export-pdf` accept the same filters, so a query you tuned against
 metadata replays unchanged on an export:
@@ -34,6 +39,11 @@ metadata replays unchanged on an export:
   `--currency`, `--invoicing-mode`
 - Money: `--amount-type` with `--amount-min` and `--amount-max`
 - Flags: `--role`, `--attachment yes|no`, `--self-invoicing yes|no`
+
+Date options also accept day-first `DD.MM.YYYY` or `DD-MM-YYYY` dates, with one or
+two digits for the day and month. A value with no offset here is wall-clock time in
+`Europe/Warsaw`, which is how the SDK reads it, so a bare `2026-01-01` is that day at
+midnight Polish time. Write the `Z` or `+HH:MM` form when the window has to mean UTC.
 
 `--restrict-hwm` (short for `--restrict-to-permanent-storage-hwm-date`) restricts
 the result set to the permanent-storage high-water mark, so repeated requests
@@ -50,6 +60,25 @@ uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   --ksef-number "$KSEF_NUMBER" \
   --out invoice.xml
 ```
+
+Without `--out`, the command saves `NUMBER.xml` in the current directory, where
+`NUMBER` is the KSeF number. Characters unsafe for filenames are replaced with
+underscores. Use `--out PATH` or the local `-o PATH` to choose a file. File downloads
+print the saved path and byte count, or the existing JSON result with `--json`.
+
+Use `--out -` or the local `-o -` to pipe the original XML bytes to another command:
+
+```bash
+uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+  invoices download --ksef-number "$KSEF_NUMBER" --out - \
+  | xmllint --format -
+```
+
+Stdout contains exactly the downloaded bytes, preserving their encoding with no
+added newline or summary. This mode creates no file. Errors and any progress stay
+on stderr. Do not combine `--out -` with global `--json`, `--output json`, or
+`-o json`. The command rejects that combination with exit code 2 before
+authentication or download, with a JSON error on stderr and empty stdout.
 
 Add `--wait` when the invoice may not be ready yet:
 
@@ -130,6 +159,11 @@ uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
 | `--out-dir DIR` | Where the decrypted invoice XML goes. Default `downloads`. |
 | `--pdf-dir DIR` | Where the PDFs go. Defaults to `--out-dir`, so the PDFs sit beside their XML. |
 | `--paper-size` | `a4`, `a4-landscape`, `a3`, `a3-landscape`, `letter`, or `letter-landscape`. Omit to keep the stylesheet paper, normally A4 landscape. |
+
+Each PDF carries the verification QR KSeF publishes for the invoice, built from the
+KSeF number the package's own `_metadata.json` reports for it. That manifest is
+downloaded with the invoices but is never rendered, and an invoice the manifest does
+not describe is still rendered, without a QR.
 
 PDF rendering uses WeasyPrint, which arrives through the optional `pdf` extra, so
 install the CLI as `ksef2-cli[pdf]` before running this command. Without the extra
@@ -262,6 +296,12 @@ uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
 `invoices upo` needs `--upo-dir` for a batch receipt: KSeF returns its confirmation
 as pages, and `--out` holds one file. `--offline` and `--max-part-size` belong to
 this mode and fail with `--mode online`.
+
+Both commands resume the batch session from the state inside the receipt, which is
+why the file is credential material. A receipt written by a CLI version that stored
+only the session reference cannot resume it, and reports that instead: finish the
+job with `batch status` or `batch upo` and `--state-file`, or send the invoices
+again.
 
 To hold the session state yourself, prepare the package once and upload it more than
 once, or recover an upload KSeF rejected, use [Batch sessions](batch-sessions.md).

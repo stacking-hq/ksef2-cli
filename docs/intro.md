@@ -21,9 +21,10 @@ instead of production.
 
 Output is split by outcome. Success goes to stdout, as plain text or as one JSON
 document with `--json`. Failure goes to stderr with nothing on stdout, and in JSON
-mode it is one object: `{"error": {"code": ..., "message": ..., "ksef_code": ...,
-"trace_id": ...}}`. Exit codes are `0` for success, `1` for a runtime failure, `2` for
-a usage failure, and `130` for Ctrl-C. See
+mode it is one object: `{"error": {"type": ..., "title": ..., "message": ...,
+"details": [...], "hints": [...], "exit_code": ..., "ksef": {"ksef_code": ...,
+"trace_id": ..., "status_code": ...}}}`. Exit codes are `0` for success, `1` for a
+runtime failure, `2` for a usage failure, and `130` for Ctrl-C. See
 [Output modes](guides/configuration.md#output-modes).
 
 Files the CLI writes to continue a workflow, meaning auth state, session state,
@@ -78,3 +79,20 @@ The command groups mirror the SDK domains:
 - `testdata`
 - `config`
 - `profile`
+
+## List output
+
+List and record-query commands show plain-text tables. Identifiers remain complete,
+while long names and descriptions may end in `…`. Narrow terminals may hide
+optional columns; redirected output uses a 120-column layout. Empty lists print
+`No results.`. Datetime headers mark UTC, dates use `YYYY-MM-DD`, and amounts use
+two decimal places. Available pagination metadata appears below the table.
+
+Use `--json` before the command group to get all fields and unchanged SDK values,
+including nulls. For example, `ksef2 --profile test-company --json tokens list`.
+
+Single records are not tables, so they keep every character: a value wider than the
+terminal moves onto the indented lines under its name instead of being cut. A terminal
+states its own width, and redirected output takes it from `COLUMNS`, so
+`COLUMNS=80 ksef2 fa3 inspect --in faktura.xml` wraps to 80 columns. Output with no
+width stated stays one field per line.

@@ -213,8 +213,10 @@ def test_permission_list_items_render_in_default_text_mode(runner, tmp_path) -> 
     )
 
     assert result.exit_code == 0, result.output
-    assert "role: vat_group_unit" in result.output
-    assert "description: VAT group" in result.output
+    assert result.output == (
+        "ROLE            PARENT  DESCRIPTION  STARTED (UTC)\n"
+        "vat_group_unit          VAT group    2026-01-01 00:00:00\n"
+    )
 
 
 def test_permission_grant_waits_for_the_final_status(runner) -> None:
@@ -279,7 +281,7 @@ def test_permission_grant_person_entity_and_authorization(runner) -> None:
         ),
         obj=runtime,
     )
-    assert missing.exit_code == 1
+    assert missing.exit_code == 2
     assert "At least one --permission" in missing.output
 
     assert payload(

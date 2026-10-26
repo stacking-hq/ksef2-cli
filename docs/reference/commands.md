@@ -67,6 +67,7 @@ Authenticate and show masked tokens. Use --save-state to retain credentials.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
+| `--show-tokens` | - | false | - | Print the raw access and refresh tokens. They are bearer credentials; keep them out of logs. |
 | `--save-state` | FILE | - | - | Write resumable auth state to this file. It holds bearer tokens in plain text. |
 
 ### `auth logout`
@@ -86,6 +87,7 @@ Refresh access using saved state or an explicit refresh token; mask output.
 | `--refresh-token` | TEXT | - | KSEF2_REFRESH_TOKEN | Refresh token. Prefer --auth-state to avoid tokens in process arguments. |
 | `--auth-state`, `--state-file` | FILE | - | - | Saved auth state to reuse. Defaults to the global --auth-state. |
 | `--save-state` | FILE | - | - | Write resumable auth state to this file. It holds bearer tokens in plain text. |
+| `--show-tokens` | - | false | - | Print the raw access and refresh tokens. They are bearer credentials; keep them out of logs. |
 
 ### `auth resume`
 
@@ -94,6 +96,7 @@ Reuse saved auth state, refreshing the access token when it expired.
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
 | `--state-file`, `--auth-state` | FILE | - | - | Saved auth state to reuse. Defaults to the global --auth-state. |
+| `--show-tokens` | - | false | - | Print the raw access and refresh tokens. They are bearer credentials; keep them out of logs. |
 | `--save-state` | FILE | - | - | Write the resumed state, including any refreshed access token. |
 
 ## `batch`
@@ -102,10 +105,12 @@ Reuse saved auth state, refreshing the access token when it expired.
 
 List invoices submitted in a batch session.
 
+Read by reference, or reopen using the state saved by batch submit.
+
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
 | `--reference` | TEXT | - | - | Batch session reference number; use instead of --state-file. |
-| `--state-file` | FILE | - | - | - |
+| `--state-file` | FILE | - | - | Batch session state written by batch submit --state-file. |
 | `--page-size` | INTEGER RANGE | 10 | - | - |
 | `--continuation-token` | TEXT | - | - | - |
 | `--failed` | - | false | - | List failed invoices only. |
@@ -133,10 +138,12 @@ as protected as a credential file.
 
 Fetch or wait for batch session status.
 
+Read by reference, or reopen using the state saved by batch submit.
+
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
 | `--reference` | TEXT | - | - | Batch session reference number; use instead of --state-file. |
-| `--state-file` | FILE | - | - | - |
+| `--state-file` | FILE | - | - | Batch session state written by batch submit --state-file. |
 | `--wait` | - | false | - | Wait for completion. |
 | `--timeout` | FLOAT RANGE | 120.0 | - | - |
 | `--poll-interval` | FLOAT RANGE | 2.0 | - | - |
@@ -182,12 +189,15 @@ invoices nor a new package.
 
 Download a collective UPO page for a batch session.
 
+KSeF answers this one by session number, so either handle works and no session is
+reopened.
+
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
 | `--upo-reference` | TEXT | required | - | - |
 | `--out`, `-o` | FILE | required | - | - |
 | `--reference` | TEXT | - | - | Batch session reference number; use instead of --state-file. |
-| `--state-file` | FILE | - | - | - |
+| `--state-file` | FILE | - | - | Batch session state. Only its reference number is used here. |
 
 ## `certificates`
 
@@ -234,8 +244,8 @@ Query certificates.
 | `--type` | [authentication\|offline] | - | - | - |
 | `--status` | [active\|blocked\|revoked\|expired] | - | - | - |
 | `--expires-after` | TEXT | - | - | ISO datetime. |
-| `--page-size` | INTEGER RANGE | 10 | - | - |
-| `--page-offset` | INTEGER RANGE | 0 | - | - |
+| `--page-size` | INTEGER RANGE | 10 | - | Items per API request, including with --all. |
+| `--page-offset` | INTEGER RANGE | 0 | - | Offset for a single page; must be 0 with --all. |
 | `--all` | - | false | - | Fetch all pages. |
 
 ### `certificates retrieve`
@@ -275,8 +285,8 @@ Query collective identifiers visible in the current context.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--date-from` | TEXT | required | - | Creation start, ISO datetime/date. |
-| `--date-to` | TEXT | - | - | Creation end, ISO datetime/date. Defaults to now. |
+| `--date-from` | TEXT | required | - | Creation start, ISO 8601 datetime or date; a date is midnight UTC. |
+| `--date-to` | TEXT | - | - | Creation end, ISO 8601 datetime or date; a date is midnight UTC. Defaults to now. |
 | `--number` | TEXT | - | - | Exact identifier number. |
 | `--invoice-count-min` | INTEGER RANGE | - | - | Minimum grouped invoices. |
 | `--invoice-count-max` | INTEGER RANGE | - | - | Maximum grouped invoices. |
@@ -380,6 +390,7 @@ Render invoice XML to HTML, and optionally to PDF.
 | `--out`, `-o` | FILE | - | - | Where to write HTML. Defaults to stdout when --pdf is not used. |
 | `--pdf` | FILE | - | - | Also write PDF here. Needs the optional ksef2[pdf] dependencies. |
 | `--code-lookups`, `--no-code-lookups` | - | false | - | Let the bundled stylesheet read local files and URLs so coded values print as names. Use it only with invoice XML you trust. |
+| `--ksef-number` | TEXT | - | - | With --pdf: the accepted KSeF number of this invoice. It prints under a verification QR for the selected --env. Omit it for a draft PDF. |
 
 ## `invoices`
 
@@ -392,7 +403,7 @@ Download processed invoice XML by KSeF number.
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
 | `--ksef-number` | TEXT | - | - | KSeF invoice number. Alternative to the positional number. |
-| `--out`, `-o` | FILE | - | - | Target XML file. |
+| `--out`, `-o` | FILE | - | - | Target XML file (default: NUMBER.xml in the current directory). Use - for raw XML bytes on stdout; diagnostics stay on stderr. Incompatible with global JSON output. |
 | `--wait` | - | false | - | Poll until the invoice can be downloaded. |
 | `--timeout` | FLOAT RANGE | 120.0 | - | Maximum wait in seconds. |
 | `--poll-interval` | FLOAT RANGE | 2.0 | - | Seconds between status checks. |
@@ -546,8 +557,8 @@ Query invoice metadata.
 | `--invoicing-mode` | [online\|offline] | - | - | online or offline. |
 | `--attachment` | TEXT | - | - | Filter by attachment presence: yes or no. |
 | `--self-invoicing` | TEXT | - | - | Filter by self-invoicing flag: yes or no. |
-| `--page-size` | INTEGER RANGE | 10 | - | - |
-| `--page-offset` | INTEGER RANGE | 0 | - | - |
+| `--page-size` | INTEGER RANGE | 10 | - | Items per API request, including with --all. |
+| `--page-offset` | INTEGER RANGE | 0 | - | Offset for a single page; must be 0 with --all. |
 | `--sort-order` | [asc\|desc] | asc | - | asc or desc. |
 | `--all` | - | false | - | Fetch all metadata items. |
 
@@ -723,8 +734,8 @@ List PEPPOL providers.
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
 | `--all` | - | false | - | Fetch all pages. |
-| `--page-size` | INTEGER RANGE | 10 | - | - |
-| `--page-offset` | INTEGER RANGE | 0 | - | - |
+| `--page-size` | INTEGER RANGE | 10 | - | Items per API request, including with --all. |
+| `--page-offset` | INTEGER RANGE | 0 | - | Offset for a single page; must be 0 with --all. |
 
 ## `permissions`
 
@@ -740,8 +751,8 @@ List roles assigned to the authenticated entity.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--page-size` | INTEGER RANGE | 10 | - | - |
-| `--page-offset` | INTEGER RANGE | 0 | - | - |
+| `--page-size` | INTEGER RANGE | 10 | - | Items per API request, including with --all. |
+| `--page-offset` | INTEGER RANGE | 0 | - | Offset for a single page; must be 0 with --all. |
 | `--all` | - | false | - | Fetch all pages. |
 
 ### `permissions grant-authorization`
@@ -858,8 +869,8 @@ Run a permission query from a JSON payload.
 | --- | --- | --- | --- | --- |
 | `KIND:{entities|persons|authorizations|personal|eu-entities|subordinate-entities|subunits}` | - | required | - | entities, persons, authorizations, personal, eu-entities, subordinate-entities, or subunits. |
 | `--payload` | FILE | required | - | JSON payload for the SDK query model. |
-| `--page-size` | INTEGER RANGE | 10 | - | - |
-| `--page-offset` | INTEGER RANGE | 0 | - | - |
+| `--page-size` | INTEGER RANGE | 10 | - | Items per API request, including with --all. |
+| `--page-offset` | INTEGER RANGE | 0 | - | Offset for a single page; must be 0 with --all. |
 | `--all` | - | false | - | Fetch all pages. |
 
 ### `permissions revoke-authorization`
@@ -1126,7 +1137,7 @@ Shorten the validity of a TEST-environment certificate.
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
 | `--serial-number` | TEXT | required | - | 16 hexadecimal characters, e.g. ABCDEF1234567890. |
-| `--valid-to` | TEXT | required | - | ISO 8601 datetime with a UTC offset, e.g. 2026-03-01T12:00:00Z. |
+| `--valid-to` | TEXT | required | - | ISO 8601 datetime with a UTC offset, e.g. 2026-03-01T12:00:00Z, or a date, which is midnight UTC. |
 
 ## `tokens`
 

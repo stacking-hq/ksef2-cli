@@ -74,7 +74,7 @@ def test_collective_generate_requires_invoices(runner) -> None:
 
     result = runner.invoke(app, cli_args("collective", "generate"), obj=runtime)
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "at least one --invoice" in result.output
 
 
@@ -153,6 +153,45 @@ def test_collective_list_defaults_creation_end_to_now(runner) -> None:
     assert filters.date_created_to > filters.date_created_from
 
 
+def test_collective_list_reads_a_bare_date_as_midnight_utc(runner) -> None:
+    """KSeF needs one instant, so a date-only filter must reach it timezone-aware."""
+
+    service, runtime = _runtime(list=FakePager([]))
+
+    for date_from in ("2026-10-20", "20.10.2026", "20-10-2026"):
+        assert (
+            payload(
+                runner.invoke(
+                    app,
+                    cli_args("collective", "list", "--date-from", date_from),
+                    obj=runtime,
+                )
+            )
+            == []
+        )
+
+    filters = [call[1][0] for call in service.calls if call[0] == "list"]
+    assert len(filters) == 3
+    for item in filters:
+        assert item.date_created_from == datetime(2026, 10, 20, tzinfo=UTC)
+        assert item.date_created_from.tzinfo is UTC
+        assert item.date_created_to.tzinfo is UTC
+
+
+def test_collective_list_rejects_a_naive_datetime(runner) -> None:
+    _service, runtime = _runtime(list=FakePager([]))
+
+    result = runner.invoke(
+        app,
+        cli_args("collective", "list", "--date-from", "2026-10-20T08:00:00"),
+        obj=runtime,
+    )
+
+    assert result.exit_code == 2
+    assert "--date-from must include a UTC offset" in result.output
+    assert "midnight UTC" in result.output
+
+
 def test_collective_list_rejects_invalid_dates(runner) -> None:
     _service, runtime = _runtime(list=FakePager([]))
 
@@ -164,8 +203,8 @@ def test_collective_list_rejects_invalid_dates(runner) -> None:
         obj=runtime,
     )
 
-    assert result.exit_code == 1
-    assert "--date-to must be an ISO 8601 date or datetime" in result.output
+    assert result.exit_code == 2
+    assert "--date-to must be a date like" in result.output
 
 
 def test_collective_list_for_invoice(runner) -> None:
@@ -229,7 +268,7 @@ def test_collective_list_invoices_caps_identifier_numbers(runner) -> None:
         obj=runtime,
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "at most 10 collective" in result.output
 
 
@@ -247,8 +286,10 @@ def test_collective_list_invoices_renders_text_rows(runner) -> None:
     )
 
     assert result.exit_code == 0
-    assert "ksef_number=KSEF-1" in result.output
-    assert "hidden=no" in result.output
+    assert result.output == (
+        "KSEF NUMBER  PAYMENT  DESCRIPTION  HIDDEN\n"
+        "KSEF-1                             no\n"
+    )
 
 
 def test_collective_commands_render_text_rows(runner) -> None:
@@ -289,6 +330,7 @@ def test_collective_commands_render_text_rows(runner) -> None:
     )
 
     assert generated.output.strip() == "collective_identifier_number: CID-1"
-    assert "identifier=CID-1" in listed.output
-    assert "invoices=2" in listed.output
-    assert "current_context=no" in references.output
+    assert listed.output.startswith("IDENTIFIER  CREATED (UTC)")
+    assert "CID-1       2026-01-02 03:04:00" in listed.output
+    assert listed.output.splitlines()[1].split()[-2:] == ["2", "yes"]
+    assert references.output.splitlines()[1].endswith("no")

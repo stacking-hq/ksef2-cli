@@ -5,7 +5,7 @@
 | Branch | SDK it runs on | Use it for |
 | --- | --- | --- |
 | `main` | `ksef2` 0.22.x from PyPI | Fixes for the released 0.x CLI line. |
-| `next` | `ksef2` 1.0 from the SDK's release branch | Everything on the ksef2 1.0 API. |
+| `next` | `ksef2` 1.0 from PyPI | Everything on the ksef2 1.0 API. |
 
 Open 1.0 work as a pull request into `next`.
 
@@ -15,20 +15,13 @@ outside it, including the 0.22.x SDK `main` installs today, and
 `tests/unit/test_release_metadata.py` fails if the project version, the declared
 bounds, `ksef2_cli.__version__`, or the locked SDK drift apart.
 
-The ksef2 1.0 release is not on PyPI yet (tracked in `stacking-hq/ksef2#147`), so
-`>=1.0,<2` cannot be satisfied from an index. Development resolves it through a
-temporary `[tool.uv.sources]` entry that installs ksef2 from
-`https://github.com/stacking-hq/ksef2` `chore/08-release-1-0-0`, and `uv.lock` pins
-the exact SDK commit. That table is uv-only config and never reaches the wheel, so
-the override does not weaken what a published package requires. Until the SDK ships:
-
-- do not describe a published 1.0 release, and do not write install instructions that
-  imply `pip install ksef2-cli` resolves an SDK satisfying `>=1.0,<2`;
-- work from a checkout, and say so when a doc or issue comment needs the 1.0 API.
+ksef2 1.0.0 has been on PyPI since 2026-10-26, so `uv sync` resolves the SDK from the
+index. There is no `[tool.uv.sources]` override, and re-adding one needs a reason as
+strong as the SDK release it replaced:
 
 ```bash
 uv sync --all-groups
-grep -A2 '^name = "ksef2"$' uv.lock   # which SDK commit you are on
+grep -A2 '^name = "ksef2"$' uv.lock   # which SDK version you are on
 ```
 
 `uv.lock` is what makes a development install reproducible. If you change it, refresh
@@ -48,6 +41,10 @@ uv run --with-editable ../ksef2 pytest -q
 The SDK's own docs describe the 1.0 API: `docs/en/reference/public-api.md`
 (stable imports and the deprecated-to-replacement table) and
 `docs/en/reference/migration-1-0.md` in the SDK repository.
+
+The CLI is the half still unpublished. PyPI carries ksef2-cli 0.0.1, not 1.0.0, so a
+doc, an issue comment, or a PR description that needs the 1.0 API says "from a
+checkout" and never implies `pip install ksef2-cli` gives you 1.0.
 
 Check what a command actually resolved, CLI and SDK together:
 
@@ -99,6 +96,16 @@ commit on every pull request into `next` and reports drift without blocking.
 
 ## Release day
 
-When ksef2 1.0.0 is on PyPI, in one commit on `next`: delete the
-`[tool.uv.sources]` table and run `uv lock -P ksef2`. The `>=1.0,<2` specifiers in
-`dependencies` and in the `pdf` extra need no change; they are already final.
+The SDK half is done: ksef2 1.0.0 is on PyPI, `pyproject.toml` has no source override,
+and the `>=1.0,<2` specifiers in `dependencies` and in the `pdf` extra need no change.
+What is left is publishing ksef2-cli 1.0.0 itself. Before the tag, on `next`:
+
+```bash
+uv lock -P ksef2                      # the SDK entry resolves from PyPI
+grep -A2 '^name = "ksef2"$' uv.lock   # 1.0.x, from the registry
+uv build
+```
+
+Then install the built package into a clean environment that can only reach the index,
+and run `ksef2 --version`. That proves the release against the published SDK instead of
+a checkout.

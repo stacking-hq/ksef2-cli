@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 from typing import Never
 
+from ksef2 import KSeFValidationError
 from ksef2.models import (
     BatchEncryptionData,
     BatchFileInfo,
@@ -244,7 +245,7 @@ def read_prepared_batch(directory: Path) -> PreparedBatch:
             encryption=BatchEncryptionData(**manifest.encryption),
             parts=parts,
         )
-    except (ValidationError, TypeError) as error:
+    except (ValidationError, KSeFValidationError, TypeError) as error:
         _fail(
             f"{manifest_path} does not hold complete batch encryption material.",
             (str(error), _recreate_hint(directory)),

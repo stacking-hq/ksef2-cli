@@ -60,9 +60,14 @@ uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
 
 `--date-from` is required and filters on creation time; `--date-to` defaults to
 now, so a date-only `--date-from` with no `--date-to` means "from that day until
-now". Narrow further with `--number` for one exact identifier, `--invoice-count-min`
-and `--invoice-count-max` for the group size, and `--current-context yes` for
-identifiers created in this context or `no` for the rest.
+now". KSeF wants one unambiguous instant for both bounds. A date with no time of
+day, written `2026-03-01` or `01.03.2026`, is that day at midnight UTC, and a
+datetime has to carry an offset, so `2026-03-01T08:00:00Z` or
+`2026-03-01T08:00:00+01:00` are accepted while `2026-03-01T08:00:00` is rejected
+before anything is sent. Narrow further with `--number` for one exact identifier,
+`--invoice-count-min` and `--invoice-count-max` for the group size, and
+`--current-context yes` for identifiers created in this context or `no` for the
+rest.
 
 ## Follow the grouping
 

@@ -46,6 +46,19 @@ behavior.
 
 ## Install
 
+The 1.0 line runs on the published `ksef2` SDK and needs Python 3.12 or newer. SDK
+1.0.0 is on PyPI, so a checkout resolves it from the index with no source override:
+
+```bash
+git clone https://github.com/stacking-hq/ksef2-cli
+cd ksef2-cli
+uv sync
+uv run ksef2 --help
+```
+
+The CLI's own 1.0.0 package is not on PyPI yet, where the latest release is still
+0.0.1, so `uv tool install` and `pipx install` hand you the older 0.x CLI:
+
 ```bash
 uv tool install ksef2-cli
 ```
@@ -56,24 +69,17 @@ or:
 pipx install ksef2-cli
 ```
 
-The package exposes two equivalent executables:
+The 1.0 behavior described in these pages needs a checkout until the CLI release
+lands. An installed package exposes two equivalent executables:
 
 ```bash
 ksef2 --help
 ksef2-cli --help
 ```
 
-Requires Python 3.12 or newer.
-
-This line is version 1.0.0, and its package metadata requires the `ksef2` SDK
-`>=1.0,<2`: the built wheel refuses any older SDK, including the 0.22.x releases that
-are all an index offers today. The SDK's own 1.0 release is still tracked in
-[`stacking-hq/ksef2#147`](https://github.com/stacking-hq/ksef2/issues/147), so nothing
-here claims a matching SDK, or this CLI version, is installable from an index. Until
-both are published, `uv tool install` and `pipx install` hand you the older 0.x CLI, and
-the 1.0 behavior described in these pages needs a checkout, where `uv sync` resolves the
-SDK from the development override described in
-[`CONTRIBUTING.md`](CONTRIBUTING.md).
+Package metadata requires the `ksef2` SDK `>=1.0,<2`, so the built wheel refuses the
+older 0.22.x SDK. `tests/unit/test_release_metadata.py` fails if the project version,
+those bounds, `ksef2_cli.__version__`, or the locked SDK drift apart.
 
 Check what you are running, CLI and SDK together:
 
@@ -134,10 +140,13 @@ Supported direct authentication methods:
 - `--p12` for PKCS#12/PFX XAdES credentials
 - `--auth-state` to reuse state saved by `auth login --save-state`
 
-`auth login` never prints a token value. Text output prints `access_token: **********`
-and JSON output prints `"token": "**********"`, each with its expiry time, so nothing
-useful survives a log, a shell transcript, or a pasted issue comment. When a later
-command needs the credential, save it rather than capturing the output.
+`auth login`, `auth resume`, and `auth refresh` mask both token values in text and in
+JSON output. Each line shows a short prefix and suffix of the token next to its expiry
+time, so a log, a shell transcript, or a pasted issue comment keeps nothing reusable.
+`--show-tokens` prints the raw bearer tokens instead, and a command that also uses
+`--save-state` stays masked even under `--show-tokens`, because the file is where the
+credential belongs. When a later command needs the credential, save it rather than
+capturing the output.
 
 Saving auth state lets later commands skip a fresh KSeF login:
 
@@ -205,6 +214,13 @@ ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   batch submit --prepared batch-parts --state-file batch-state.json
 ```
 
+List and record-query commands print aligned plain-text tables with uppercase
+headers and one row per record. Empty lists print `No results.`. Identifiers stay
+complete; long names and descriptions may end in `…`, and optional columns may
+disappear on narrow terminals. Datetime columns use UTC, dates use `YYYY-MM-DD`,
+and amounts use two decimal places. Redirected output uses a 120-column layout.
+Pagination metadata, when returned by the command, appears below the table.
+
 An online receipt carries the session AES key and IV in plain text, exactly as a session
 state file does; a batch receipt holds the session reference and the file names. Every
 one of them is written with mode `0600`, and every one of them is a credential for as
@@ -221,7 +237,8 @@ still inside the session, so read the saved receipt or state file, or ask with
 `invoices status`, `online list`, or `batch status`, before sending the file a second
 time.
 
-Use `--json` before the command group when output is consumed by scripts.
+Use `--json` before the command group for all fields or when scripts consume the
+output. JSON retains the SDK fields, values, and nulls.
 
 ## Output and exit codes
 
@@ -230,16 +247,18 @@ A successful command writes to stdout: plain text by default, one JSON document 
 `--json` mode, leaving stdout empty. A completed `invoices send` can instead
 return a result on stdout with rejected invoice items and exit 1.
 
-An error envelope looks like this:
+In `--json` mode that object carries one `error`:
 
 ```json
-{"error": {"code": "RemoteServiceError", "message": "...", "ksef_code": 21405, "trace_id": "..."}}
+{"error": {"type": "RemoteServiceError", "title": "KSeF rejected the request", "message": "...", "details": [], "hints": [], "exit_code": 1, "ksef": {"status_code": 400, "ksef_code": 21405, "trace_id": "..."}}}
 ```
 
-`code` names the CLI error class, or `USAGE_ERROR` for a rejected command line;
-`ksef_code` and `trace_id` are KSeF's own numbers and are `null` when the failure
-never reached KSeF. API errors add `status_code`, and both `details` and `hints`
-appear when the CLI has them.
+`type` names the CLI error class and `title` gives the short summary. `details`,
+`hints`, and `exit_code` are always present. The `ksef` object appears when KSeF
+answered, and holds that service's `status_code`, `ksef_code`, and `trace_id`; quote
+the trace ID when you report an incident. `report_url` appears on an unexpected CLI
+error, and `traceback` appears with `--verbose`. A rejected command line reports
+`"type": "UsageError"` with `"exit_code": 2`.
 
 | Exit code | Meaning |
 | --- | --- |
@@ -269,9 +288,9 @@ uv run python -m coverage run -m pytest -q
 uv run python scripts/validate_docs_frontmatter.py docs/
 ```
 
-While the SDK's 1.0 release is unpublished, `uv sync` installs the SDK from the
-development override in `pyproject.toml`; see
-[`CONTRIBUTING.md`](CONTRIBUTING.md).
+`uv sync` installs the published `ksef2` SDK from PyPI, and `uv.lock` pins the exact
+version. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the checks that keep the two in
+step.
 
 The CLI command domains live under `src/ksef2_cli/commands/`. Source
 documentation lives under `docs/`.

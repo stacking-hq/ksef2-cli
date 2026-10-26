@@ -94,7 +94,9 @@ DEPRECATED_SERVICE_METHODS = frozenset(
 
 # (path relative to src/ksef2_cli, "owner.method") -> number of call sites.
 # The SDK's session-client replacement needs encryption state. Reference-only CLI
-# reads must retain these public service APIs until the SDK offers a replacement
+# reads must retain these public service APIs: published SDK 1.0.0 exposes only
+# download_upo and historical session browsing on invoice_sessions. Keep this
+# exception until the SDK offers a status/list replacement
 # that accepts a reference without inventing keys or parsing it as JSON state.
 PENDING_MIGRATION: dict[tuple[str, str], int] = {
     ("commands/invoices/receipts.py", "batch.get_status"): 2,

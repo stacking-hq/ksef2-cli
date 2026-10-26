@@ -1,15 +1,6 @@
-"""Pin the release metadata contract for the ksef2 1.0 line.
-
-The published wheel must refuse any SDK outside ``>=1.0,<2`` even while
-development installs ksef2 from the SDK's 1.0 release branch through the
-``[tool.uv.sources]`` override (ksef2 1.0.0 is not on PyPI yet, see
-stacking-hq/ksef2#147). These tests keep the project version, the declared
-SDK bounds, the in-package ``__version__``, and the locked SDK version from
-drifting apart. No network access.
-"""
+"""Release metadata stays compatible with the published SDK 1.x line."""
 
 import re
-import sys
 import tomllib
 from pathlib import Path
 
@@ -77,31 +68,13 @@ def test_locked_cli_version_matches_project(pyproject: dict, uv_lock: dict) -> N
 
 
 def test_locked_sdk_satisfies_declared_bounds(uv_lock: dict) -> None:
-    # Guards against a `uv lock` run silently downgrading the SDK below 1.0
-    # (the only ksef2 on PyPI while the 1.0 release is unpublished is 0.22.2).
     locked = [p for p in uv_lock["package"] if p["name"] == "ksef2"]
     assert len(locked) == 1
     version = _as_tuple(locked[0]["version"])
     assert (1, 0) <= version < (2, 0), f"locked ksef2 {locked[0]['version']} breaks {EXPECTED_SDK_SPECIFIER}"
 
 
-def test_git_source_override_is_documented_when_present(pyproject: dict) -> None:
-    override = pyproject.get("tool", {}).get("uv", {}).get("sources", {}).get("ksef2")
-    if override is None:
-        pytest.skip("no development source override; ksef2 resolves from PyPI")
-    assert "git" in override, "expected the ksef2 dev override to pin a git source"
-    lines = PYPROJECT.read_text(encoding="utf-8").splitlines()
-    header = lines.index("[tool.uv.sources]")
-    comments: list[str] = []
-    for line in reversed(lines[:header]):
-        stripped = line.strip()
-        if stripped.startswith("#"):
-            comments.append(stripped)
-        elif not stripped:
-            continue
-        else:
-            break
-    annotated = " ".join(comments).upper()
-    assert "DEVELOPMENT OVERRIDE" in annotated or "RELEASE BLOCKER" in annotated, (
-        "the [tool.uv.sources] ksef2 override must carry a clear dev-override comment"
-    )
+def test_sdk_resolves_from_pypi(pyproject: dict, uv_lock: dict) -> None:
+    assert "ksef2" not in pyproject.get("tool", {}).get("uv", {}).get("sources", {})
+    sdk = next(package for package in uv_lock["package"] if package["name"] == "ksef2")
+    assert sdk["source"] == {"registry": "https://pypi.org/simple"}

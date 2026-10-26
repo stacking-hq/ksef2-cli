@@ -7,10 +7,12 @@ description: Install or run KSeF2 CLI with uv and inspect the available command 
 
 KSeF2 CLI requires Python 3.12 or newer.
 
-This 1.0 line depends on the `ksef2` SDK `>=1.0,<2`. The SDK's 1.0 release is not on
-PyPI yet, so install and run from a checkout until it is. `CONTRIBUTING.md` in the
-repository explains the development override that makes `uv sync` resolve the SDK,
-and why no published 1.0 package should be assumed.
+This 1.0 line depends on the `ksef2` SDK `>=1.0,<2`, and that SDK resolves from PyPI:
+ksef2 1.0.0 published there on 2026-10-26. The CLI's own 1.0.0 package is not on PyPI
+yet, where the latest release is still 0.0.1, so run the 1.0 line from a checkout. A
+`uv tool install` or `pipx install` of `ksef2-cli` still gives you the 0.x CLI. See
+`CONTRIBUTING.md` for the checks that keep the project version, the declared bounds,
+and the locked SDK in step.
 
 For local development from a checkout, use `uv`:
 
@@ -19,7 +21,7 @@ uv sync
 uv run ksef2 --help
 ```
 
-For an installed package, use either executable:
+For an installed 0.x package, use either executable:
 
 ```bash
 ksef2 --help
@@ -107,6 +109,18 @@ On Linux, WeasyPrint also needs system libraries:
 ```bash
 sudo apt-get install libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 libharfbuzz-subset0
 ```
+
+On macOS it needs the same libraries from Homebrew. If they are installed and the load
+still fails, hand the dynamic loader the Homebrew directory with each PDF command:
+
+```bash
+brew install pango
+DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib uv run ksef2 fa3 render --in invoice.xml --pdf invoice.pdf
+```
+
+`/usr/local/lib` is the equivalent path on Intel Macs. Both PDF commands report the
+install command, and on macOS the fallback path above, when the dependencies are
+missing; every other command keeps working without them.
 
 Without the extra the CLI still installs and every other command runs; the two PDF
 commands report the install command above instead of rendering.

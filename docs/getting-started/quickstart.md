@@ -32,16 +32,17 @@ uv run ksef2 profile create test-company \
   --test-cert
 ```
 
-Authenticate with that profile and print the token expiry times:
+Authenticate with that profile and print masked tokens and their expiry times:
 
 ```bash
 uv run ksef2 --profile test-company --json auth login
 ```
 
-Neither token value is in that output. Text mode prints `access_token: **********`
-and JSON mode prints `"token": "**********"`, each with its `valid_until`, so there is
-nothing to scrub from a log and nothing to reuse. To keep the credential for later
-commands, save it:
+Each token comes back shortened to a prefix and a suffix next to its expiry time, so a
+log or a pasted comment keeps nothing reusable. `--show-tokens` prints the raw bearer
+tokens instead, and a command that saves state stays masked even under that flag.
+
+To keep the credential for later commands, save it:
 
 ```bash
 uv run ksef2 --profile test-company --json auth login --save-state ksef2-auth.json
@@ -135,13 +136,14 @@ A successful command writes to stdout: plain text by default, one JSON document 
 In JSON mode a command error is one object:
 
 ```json
-{"error": {"code": "RemoteServiceError", "message": "...", "ksef_code": 21405, "trace_id": "..."}}
+{"error": {"type": "RemoteServiceError", "title": "KSeF rejected the request", "message": "...", "details": [], "hints": [], "exit_code": 1, "ksef": {"status_code": 400, "ksef_code": 21405, "trace_id": "..."}}}
 ```
 
-`code` names the CLI error class, or `USAGE_ERROR` when the command line itself was
-rejected. `ksef_code` and `trace_id` are KSeF's own numbers, and both are `null` when
-the request never reached KSeF. API failures add `status_code`; `details` and `hints`
-are present only when the CLI has them.
+`type` names the CLI error class and `title` gives the short summary. `details`,
+`hints`, and `exit_code` are always present. The `ksef` object appears only when KSeF
+answered and carries that service's `status_code`, `ksef_code`, and `trace_id`. An
+unexpected CLI error adds `report_url`, and `--verbose` adds `traceback`. A rejected
+command line reports `"type": "UsageError"` with `"exit_code": 2`.
 
 | Exit code | Meaning |
 | --- | --- |

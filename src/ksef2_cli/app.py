@@ -8,6 +8,9 @@ from typing import Annotated, Any, Sequence
 
 import click
 import typer
+from click.core import ParameterSource
+from typer.main import get_command
+
 from ksef2 import KSeFException
 from ksef2.models import ContextIdentifierTypeEnum
 from rich.console import Console
@@ -36,12 +39,15 @@ from ksef2_cli.commands import (
 )
 from ksef2_cli.commands.invoices.group import app as invoices_app
 from ksef2_cli.config import (
+    AUTH_ENV_VARS,
     EnvironmentName,
     OutputMode,
     RuntimeOverrides,
     resolve_settings,
 )
-from ksef2_cli.exceptions import CliError, error_from_exception, render_cli_error
+from ksef2_cli.exceptions import UsageError, error_from_exception, render_cli_error
+
+_raw_argv: ContextVar[tuple[str, ...] | None] = ContextVar("raw_argv", default=None)
 
 _json_requested: ContextVar[bool] = ContextVar("json_requested", default=False)
 
@@ -69,6 +75,7 @@ class CliGroup(TyperGroup):
         **extra: Any,
     ) -> Any:
         arguments = list(sys.argv[1:] if args is None else args)
+        argv_token = _raw_argv.set(tuple(arguments))
         # Parse root options without callbacks or type conversion, so parse errors
         # still use the requested output mode. Click handles values and -ojson.
         context = click.Context(self, resilient_parsing=True)
@@ -88,7 +95,7 @@ class CliGroup(TyperGroup):
                     exc.show()
                 else:
                     render_cli_error(
-                        CliError(exc.format_message(), exit_code=exc.exit_code),
+                        UsageError(exc.format_message(), exit_code=exc.exit_code),
                         console=Console(stderr=True),
                     )
                 result = exc.exit_code
@@ -101,6 +108,7 @@ class CliGroup(TyperGroup):
             return result
         finally:
             _json_requested.reset(token)
+            _raw_argv.reset(argv_token)
 
 
 def _show_version(value: bool) -> None:
@@ -322,10 +330,59 @@ def root(
             poll_interval=poll_interval,
             auth_timeout=auth_timeout,
             runtime_overrides=runtime_overrides,
+            auth_env_params=frozenset(
+                name
+                for name in AUTH_ENV_VARS
+                if context.get_parameter_source(name) is ParameterSource.ENVIRONMENT
+            ),
         )
     except (OSError, ValueError, KSeFException) as exc:
         raise typer.BadParameter(str(exc), param_hint="--config") from exc
 
 
+def _requests_json(argv: list[str]) -> bool:
+    """Read global output flags without mistaking option values for commands."""
+    parameters = {
+        option: parameter
+        for parameter in get_command(app).params
+        for option in parameter.opts
+    }
+    json_output = False
+    output = None
+    index = 0
+    while index < len(argv):
+        argument = argv[index]
+        if not argument.startswith("-") or argument == "--":
+            break
+        option, separator, value = argument.partition("=")
+        parameter = parameters.get(option)
+        if parameter is not None and not parameter.is_flag and not separator:
+            index += 1
+            value = argv[index] if index < len(argv) else ""
+        if option == "--json":
+            json_output = True
+        elif option in {"--output", "-o"}:
+            output = value
+        index += 1
+    return json_output or output == "json"
+
+
 def main() -> None:
-    app()
+    if not _requests_json(sys.argv[1:]):
+        app()
+        return
+
+    from ksef2_cli.exceptions import error_from_exception, UsageError, render_cli_error
+    from ksef2_cli.renderers import console
+
+    try:
+        exit_code = app(standalone_mode=False)
+    except (click.Abort, KeyboardInterrupt, EOFError) as exc:
+        error = error_from_exception(exc)
+        render_cli_error(error, console=console, json_output=True)
+        raise SystemExit(error.exit_code) from exc
+    except click.ClickException as exc:
+        error = UsageError(exc.format_message(), exit_code=exc.exit_code)
+        render_cli_error(error, console=console, json_output=True)
+        raise SystemExit(exc.exit_code) from exc
+    raise SystemExit(exit_code)

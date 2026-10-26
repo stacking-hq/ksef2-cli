@@ -91,3 +91,29 @@ recovery after interruption. Bug-report URLs redact home and virtualenv paths.
 
 No issue was closed, no PR or release was published, and no live invoice,
 permission, token or certificate was created or modified.
+
+## Follow-up, 2026-10-26: the SDK is published
+
+ksef2 1.0.0 is on PyPI, so B1's condition cleared. `pyproject.toml` no longer carries
+`[tool.uv.sources]`, and `uv.lock` resolves ksef2 1.0.0 from `https://pypi.org/simple`.
+`uv sync` needs nothing but the index, and the `>=1.0,<2` bounds in `dependencies` and
+in the `pdf` extra are unchanged, exactly as B1 predicted.
+
+What that does not clear: ksef2-cli itself is still 0.0.1 on PyPI. `uv tool install`
+and `pipx install` hand out the 0.x CLI, so `README.md`,
+`docs/getting-started/installation.md`, and `CONTRIBUTING.md` describe 1.0 as something
+you run from a checkout, and `CONTRIBUTING.md` now states the remaining release step as
+publishing the CLI and proving it in an index-only environment.
+
+The same pass merged `next` at `e63113e`, which brought the table renderer and the
+`--show-tokens` opt-in for `auth login`, `auth resume`, and `auth refresh`. The
+masked-output prose in D4 and D5 still holds as behavior: output masks tokens unless
+you ask otherwise. The docs now name the opt-in instead of describing masking as the
+only answer, and the JSON error prose follows `next`'s envelope (`type`, `title`,
+`message`, `details`, `hints`, `exit_code`, and a `ksef` object holding `ksef_code`,
+`trace_id`, and `status_code`) rather than the flat envelope this branch documented on
+2026-10-25.
+
+Nothing in this follow-up ran against PyPI or live KSeF. It records the metadata and
+document state after the merge; the test numbers above still describe the 2026-10-25
+run.

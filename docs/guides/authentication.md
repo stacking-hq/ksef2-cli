@@ -167,8 +167,9 @@ and lands in your shell history, so prefer the file. The two sources are exclusi
 and the check runs before any request is sent.
 
 The answer is masked in both output modes, the same way `auth login` masks it: the new
-access token reads `**********` in text and in JSON, with its `valid_until` beside it,
-which is why `--save-state FILE` exists to keep the refreshed value. With `--auth-state`
+access token shows only its first eight and last four characters beside its
+`valid_until`, unless you pass `--show-tokens`. `--save-state FILE` is how a script
+keeps the refreshed value without printing it. With `--auth-state`
 and no `--save-state`, the refreshed state replaces the source file in place. A copy
 written anywhere else needs that same state file, because only it still carries the
 refresh token and its expiry; `--save-state` without `--auth-state` stops with an error
@@ -183,10 +184,13 @@ uv run ksef2 --env production --auth-state "$XDG_RUNTIME_DIR/ksef2-auth.json" --
 
 ## Reuse a saved authentication
 
-`auth login` reports expiries and masks both token values in both output modes: text
-prints `access_token: **********` and `refresh_token: **********`, and JSON prints
-`"token": "**********"` inside each object. The masked fields are the whole answer, so
-a captured login output is useless as a credential.
+`auth login` reports expiries and masks both token values in both output modes. Each
+token field keeps only its first eight and last four characters, beside
+`access_token_valid_until` and `refresh_token_valid_until`. The masked fields are the
+whole answer by default, so a captured login output is useless as a credential.
+`--show-tokens` prints the raw bearer tokens instead. Treat that flag the way you would
+treat a token on a command line: it puts a credential in your terminal scrollback, your
+transcript, and any log you pipe the command into.
 
 `auth login --save-state` is what keeps the credential. It writes the SDK authentication
 resume state, which holds the access and refresh tokens as **plain-text bearer tokens**
@@ -210,9 +214,12 @@ refresh token is still valid:
 uv run ksef2 --env production --json auth resume --state-file "$XDG_RUNTIME_DIR/ksef2-auth.json"
 ```
 
-Like `auth login`, `auth resume` masks both token values in text and in JSON and
-reports only the expiries, so use `--save-state` when a script needs the refreshed
-state. Written back to the file it read, it keeps mode `0600`.
+`auth login`, `auth resume`, and `auth refresh` mask tokens in text and in JSON. Use
+`--show-tokens` to print raw values, or `--save-state FILE` on login and resume to keep
+reusable credentials. With `--save-state`, the output stays masked even under
+`--show-tokens`, and it adds the `state_file` it wrote. `auth resume` behaves like `auth
+login` in every other respect, and when it writes back to the file it read, that file
+keeps mode `0600`.
 
 Any other command can reuse the same state by pointing the global `--auth-state`
 option, or `KSEF2_AUTH_STATE`, at it instead of naming an authentication method:

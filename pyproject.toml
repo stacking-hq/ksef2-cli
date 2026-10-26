@@ -32,14 +32,6 @@ Documentation = "https://docs.stacking.me/cli/intro/"
 Repository = "https://github.com/stacking-hq/ksef2-cli"
 Issues = "https://github.com/stacking-hq/ksef2-cli/issues"
 
-# DEVELOPMENT OVERRIDE - RELEASE BLOCKER: publish SDK 1.0 to PyPI first
-# (stacking-hq/ksef2#147). Checked 2026-10-25: PyPI only has SDK <=0.22.2.
-# This uv-only source does not enter wheel metadata; pip correctly refuses
-# incompatible SDK versions. After SDK publication, remove this table and run
-# `uv lock -P ksef2`. The >=1.0,<2 dependency bounds are already final.
-[tool.uv.sources]
-ksef2 = { git = "https://github.com/stacking-hq/ksef2.git", branch = "chore/08-release-1-0-0" }
-
 [dependency-groups]
 dev = [
     "coverage>=7.14,<8",

@@ -102,7 +102,7 @@ def test_stdin_validation_before_auth(runner, mode, content, label):
         input=content,
         obj=runtime,
     )
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert label in json.loads(result.output)["error"]["message"]
 
 
@@ -115,7 +115,7 @@ def test_duplicate_stdin_and_missing_file_fail_locally(runner, tmp_path, mode):
     duplicate = runner.invoke(
         app, cli_args("invoices", "send", "-", "-", "--mode", mode), obj=runtime
     )
-    assert duplicate.exit_code == 1
+    assert duplicate.exit_code == 2
     assert "only once" in json.loads(duplicate.output)["error"]["message"]
     missing = runner.invoke(
         app,

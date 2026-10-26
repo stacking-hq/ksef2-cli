@@ -25,6 +25,9 @@ uv run ksef2 --env production peppol providers
 
 ## Page through the register
 
+`--page-size` sets the number of items per API request, including with `--all`.
+`--all` requires `--page-offset` to be 0, its default, and rejects a nonzero offset.
+
 The first page holds 10 providers. `--page-size` accepts 10 to 100,
 `--page-offset` skips records, and `--all` walks every page in one command:
 

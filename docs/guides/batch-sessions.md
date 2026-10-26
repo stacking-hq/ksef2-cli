@@ -144,18 +144,32 @@ the session rejected, as distinct from the parts its storage refused.
 
 ## Read status and per-invoice results
 
-Status and listing accept exactly one handle, `--reference` or `--state-file`:
+Status and listing accept either handle: `--reference` with the session number, or
+`--state-file` with the file `batch submit --state-file` wrote. Pass exactly one. Both
+stops with `Use either --reference or --state-file, not both.` and neither stops with
+`Provide --reference or --state-file.`, both before any request is sent.
+
+The number alone is enough here, because KSeF answers a session status and an invoice
+page by session number:
 
 ```bash
 uv run ksef2 --profile prod-token \
   batch status --reference "$BATCH_REFERENCE" --wait
 
 uv run ksef2 --profile prod-token \
-  batch list --state-file batch-state.json --page-size 100
+  batch list --reference "$BATCH_REFERENCE" --page-size 100
 
 uv run ksef2 --profile prod-token \
   batch list --state-file batch-state.json --failed
 ```
+
+That is why the interrupted `submit` above tells you to run `batch status --reference
+REFERENCE`: a lost state file does not blind you to what KSeF holds. `--state-file` does
+more than read by number. It carries the session AES key and IV, so the command reopens
+the session and asks through it instead of calling the service API, which is the form to
+use when the file is already to hand. Keep it with the batch until KSeF has finished with
+it: reopening needs those keys, and the `state` line the commands print is the same
+session with its keys masked, so it is not a way back.
 
 `batch status` reads the same summary as `submit --wait` and can wait on the same
 terms (`--wait`, `--timeout` 120, `--poll-interval` 2). Its counters are the
@@ -183,7 +197,9 @@ uv run ksef2 --profile prod-token \
   --out batch-upo-1.xml
 ```
 
-`--upo-reference` and `--out` are required, plus one session handle. A session UPO
+`--upo-reference` and `--out` are required, plus one session handle, and here the
+two handles really are interchangeable: the request goes to KSeF with the session
+number, whichever of `--reference` and `--state-file` supplied it. A session UPO
 page exists only after the session is closed and processed, and the command never
 waits: run `batch status --wait` first. If KSeF has not produced the page yet, the
 command exits `1` under the heading `KSeF has not finished processing yet` and
@@ -193,7 +209,9 @@ rather than the reference.
 
 `invoices upo --upo-dir` downloads every page of a batch in one call when you have
 a receipt, and `sessions upo --upo-reference` reads one page from a fresh login
-without any session state. See [Sessions and UPO](sessions-and-upo.md).
+without any session state. Only the session number is needed for either, which is
+also what `sessions invoice-list --type batch --reference` reads a summary row from
+when the state file is gone. See [Sessions and UPO](sessions-and-upo.md).
 
 ## Offline invoicing mode
 

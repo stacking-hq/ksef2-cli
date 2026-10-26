@@ -1,5 +1,7 @@
 """Typer adapters for SDK-backed command execution."""
 
+import json
+import os
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -11,8 +13,13 @@ from ksef2.clients import AuthenticatedClient
 from ksef2.renderers import PDFPageSize
 from pydantic import BaseModel
 
-from ksef2_cli.config import AuthenticatedRuntime, Settings
-from ksef2_cli.exceptions import CliError, error_from_exception, render_cli_error
+from ksef2_cli.config import AuthenticatedRuntime, OutputMode, Settings
+from ksef2_cli.exceptions import (
+    SECRET_OPTIONS,
+    CliError,
+    error_from_exception,
+    render_cli_error,
+)
 from ksef2_cli.renderers import console, render
 from ksef2_cli.runtime import (
     authenticate_client as authenticate_runtime_client,
@@ -91,6 +98,7 @@ def run_command(
 ) -> None:
     """Run command work with consistent error formatting and result rendering."""
 
+    result: object = None
     try:
         result = operation()
         if render_result:
@@ -100,13 +108,26 @@ def run_command(
             if exit_code:
                 raise typer.Exit(exit_code)
     except CliError as exc:
-        render_cli_error(exc, console=console, verbose=get_settings(ctx).verbose)
+        render_cli_error(
+            exc,
+            console=console,
+            verbose=get_settings(ctx).verbose,
+            json_output=get_settings(ctx).output is OutputMode.json,
+            secrets=(*_secret_values(ctx), *_result_secrets(result)),
+        )
         raise typer.Exit(exc.exit_code) from exc
     except typer.Exit:
         raise
     except Exception as exc:
         error = error_from_exception(exc)
-        render_cli_error(error, console=console, verbose=get_settings(ctx).verbose)
+        render_cli_error(
+            error,
+            console=console,
+            verbose=get_settings(ctx).verbose,
+            json_output=get_settings(ctx).output is OutputMode.json,
+            source=exc,
+            secrets=(*_secret_values(ctx), *_result_secrets(result)),
+        )
         raise typer.Exit(error.exit_code) from exc
 
 
@@ -137,10 +158,55 @@ def read_model(ctx: typer.Context, path: Path, model_type: type[ModelT]) -> Mode
 
 
 def render_invoice_pdf(
-    ctx: typer.Context, invoice_xml_path: Path, *, page_size: PDFPageSize | None = None
+    ctx: typer.Context,
+    invoice_xml_path: Path,
+    *,
+    page_size: PDFPageSize | None = None,
+    ksef_number: str | None = None,
 ) -> bytes:
     """Render invoice XML to PDF, using a runtime fake when supplied by tests."""
 
     return render_runtime_invoice_pdf(
-        get_settings(ctx), invoice_xml_path, page_size=page_size
+        get_settings(ctx),
+        invoice_xml_path,
+        page_size=page_size,
+        ksef_number=ksef_number,
+    )
+
+
+def _secret_values(ctx: typer.Context) -> tuple[str, ...]:
+    settings = get_settings(ctx)
+    values = [settings.token, settings.key_password, settings.p12_password]
+    if settings.profile:
+        auth = settings.profile.auth
+        for name in (auth.token_env, auth.key_password_env, auth.p12_password_env):
+            if name:
+                values.append(os.environ.get(name))
+    for name, value in getattr(ctx, "params", {}).items():
+        if "--" + name.replace("_", "-") in SECRET_OPTIONS and isinstance(value, str):
+            values.append(value)
+    for path in (settings.auth_state, ctx.params.get("state_file")):
+        if isinstance(path, (str, Path)):
+            try:
+                state = json.loads(Path(path).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(state, dict):
+                values.extend(
+                    value
+                    for name in ("access_token", "refresh_token")
+                    if isinstance(value := state.get(name), str)
+                )
+    return tuple(value for value in values if value)
+
+
+def _result_secrets(result: object) -> tuple[str, ...]:
+    from ksef2_cli.results import AuthTokenOutput
+
+    if not isinstance(result, AuthTokenOutput):
+        return ()
+    return tuple(
+        credential.token
+        for name in ("access_token", "refresh_token")
+        if (credential := getattr(result.tokens, name, None)) is not None
     )

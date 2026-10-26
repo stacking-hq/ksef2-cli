@@ -2,12 +2,13 @@
 
 import json
 import re
+import os
 import sys
 import traceback
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Iterable, Sequence
-from urllib.parse import urlencode
+from urllib.parse import quote, quote_plus, urlencode
 
 import click
 from ksef2 import (
@@ -36,6 +37,7 @@ from ksef2 import (
     KSeFPermissionOperationFailedError,
     KSeFPermissionOperationTimeoutError,
     KSeFRateLimitError,
+    KSeFResponseValidationError,
     KSeFTokenStatusTimeoutError,
     KSeFUnsupportedEnvironmentError,
     KSeFValidationError,
@@ -58,6 +60,23 @@ PDF_SYSTEM_LIBS_HINT = (
     "On Linux, WeasyPrint needs system libraries: libpango-1.0-0, libharfbuzz0b, "
     "libpangoft2-1.0-0, and libharfbuzz-subset0."
 )
+PDF_MACOS_LIBS_HINT = (
+    "On macOS, install WeasyPrint's libraries with Homebrew: brew install pango. If "
+    "they are installed and the load still fails, run the command through the dyld "
+    "fallback path: DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib ksef2 ... "
+    "(/usr/local/lib on Intel Macs)."
+)
+
+
+def pdf_system_libs_hint() -> str:
+    """The native-library hint for the platform this command runs on.
+
+    The Linux package names mean nothing on macOS, where the usual fix is Homebrew plus
+    a dyld fallback path, so each platform gets the hint its user can act on.
+    """
+
+    return PDF_MACOS_LIBS_HINT if sys.platform == "darwin" else PDF_SYSTEM_LIBS_HINT
+
 
 SECRET_OPTIONS = {
     "--key-password",
@@ -127,8 +146,33 @@ class CliError(Exception):
         self.show_traceback = show_traceback
 
 
+class Aborted(CliError):
+    """The user interrupted the command."""
+
+
 class UsageError(CliError):
     """The command is valid, but the user supplied incomplete or conflicting input."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        title: str = "Command failed",
+        details: Iterable[str] = (),
+        hints: Iterable[str] = (),
+        exit_code: int = 2,
+        reportable: bool = False,
+        show_traceback: bool = False,
+    ) -> None:
+        super().__init__(
+            message,
+            title=title,
+            details=details,
+            hints=hints,
+            exit_code=exit_code,
+            reportable=reportable,
+            show_traceback=show_traceback,
+        )
 
 
 class ConfigError(CliError):
@@ -224,11 +268,11 @@ class UnexpectedCliError(CliError):
 def error_from_exception(error: Exception) -> CliError:
     """Map common Python exceptions into the CLI error hierarchy."""
 
-    if isinstance(error, click.Abort):
-        interrupted = isinstance(
+    if isinstance(error, (click.Abort, KeyboardInterrupt, EOFError)):
+        interrupted = isinstance(error, KeyboardInterrupt) or isinstance(
             error.__cause__ or error.__context__, KeyboardInterrupt
         )
-        return CliError(
+        return Aborted(
             "Interrupted." if interrupted else "Aborted.",
             exit_code=130 if interrupted else 1,
         )
@@ -242,7 +286,22 @@ def error_from_exception(error: Exception) -> CliError:
     if isinstance(error, _USAGE_SDK_ERRORS):
         return UsageError(_sdk_message(error))
     if isinstance(error, KSeFInvoiceRenderingError):
-        return UsageError(_sdk_message(error))
+        return _from_rendering_error(error)
+    if isinstance(error, KSeFResponseValidationError):
+        # Subclass of KSeFValidationError: the remote payload, not local config.
+        return RemoteServiceError(
+            "KSeF answered with a body the installed SDK could not read.",
+            title="KSeF response could not be parsed",
+            details=_response_validation_details(error),
+            hints=(
+                "Update the CLI together with the SDK it installs, whose response "
+                'models follow the KSeF schema: uv tool upgrade "ksef2-cli".',
+                "Re-run with --verbose to capture the SDK traceback, and report the "
+                f"field errors above at {BUG_REPORT_URL} when they point at a "
+                "response KSeF should have returned.",
+            ),
+            show_traceback=True,
+        )
     if isinstance(error, KSeFValidationError):
         validation = error.validation_error
         if isinstance(validation, ValidationError):
@@ -323,6 +382,33 @@ def error_from_exception(error: Exception) -> CliError:
     return UnexpectedCliError(error)
 
 
+# The bundled FA(3) stylesheet reads its code lists from the network when code
+# lookups are on, so libxslt reports an unreachable list as a transform failure.
+_UNRESOLVED_URI = "Cannot resolve URI"
+
+
+def _from_rendering_error(error: KSeFInvoiceRenderingError) -> CliError:
+    """Keep the stylesheet's own reason visible on a rendering failure.
+
+    The SDK message names only the transformation step, so a run that asked for code
+    lookups fails with no clue that a code list is what could not be read.
+    """
+
+    cause = error.__cause__
+    if cause is None:
+        return UsageError(_sdk_message(error))
+    reason = " ".join(str(cause).split())
+    hints: tuple[str, ...] = ()
+    if _UNRESOLVED_URI in reason:
+        hints = (
+            "Re-run without code lookups: the stylesheet then prints coded values as "
+            "codes and reads no code list from the network.",
+        )
+    return UsageError(
+        _sdk_message(error), details=(f"Stylesheet error: {reason}",), hints=hints
+    )
+
+
 def _sdk_message(error: KSeFException) -> str:
     """Return the SDK message without the ``Hint:`` line ``str(error)`` appends.
 
@@ -331,6 +417,37 @@ def _sdk_message(error: KSeFException) -> str:
     """
 
     return _without_validation_urls(str(error.args[0]) if error.args else str(error))
+
+
+# One malformed field can reject every item in a list; the first few explain it.
+_MAX_REJECTED_FIELDS = 8
+
+
+def _response_validation_details(error: KSeFResponseValidationError) -> tuple[str, ...]:
+    """Name the response fields the SDK model rejected.
+
+    ``KSeFResponseValidationError`` says only ``Invalid response payload``. Pydantic
+    knows which field broke: the SDK hands it over through ``errors()`` when it
+    attached it, and keeps it as the raised error's cause otherwise.
+    """
+
+    errors = list(error.errors())
+    cause = error.__cause__
+    if not errors and isinstance(cause, ValidationError):
+        errors = list(cause.errors())
+    if not errors:
+        return (f"Exception: {type(error).__name__}: {error}",)
+    shown = errors[:_MAX_REJECTED_FIELDS]
+    details = [
+        "{}: {}".format(
+            ".".join(str(part) for part in item.get("loc", ())) or "body",
+            item.get("msg", "rejected"),
+        )
+        for item in shown
+    ]
+    if len(errors) > len(shown):
+        details.append(f"... and {len(errors) - len(shown)} more.")
+    return (*details, f"Rejected fields: {len(errors)}.")
 
 
 def _from_api_error(
@@ -367,33 +484,111 @@ def _from_api_error(
 
 
 def render_cli_error(
-    error: CliError, *, console: Console, verbose: bool = False
+    error: CliError,
+    *,
+    console: Console,
+    verbose: bool = False,
+    json_output: bool = False,
+    source: Exception | None = None,
+    secrets: Iterable[str] = (),
 ) -> None:
-    """Render a concise, actionable error message."""
+    """Render errors on stderr, with one JSON envelope in JSON mode.
 
-    from ksef2_cli.app import _json_requested
+    JSON retains the typed error fields and nested SDK metadata, plus stable
+    code, ksef_code, and trace_id fields. Usage errors use code USAGE_ERROR.
+    Credentials and local home/virtualenv paths are redacted in every mode.
+    """
+
+    from ksef2_cli.app import _json_requested, _raw_argv
 
     ctx = click.get_current_context(silent=True)
     settings = ctx.find_root().obj if ctx is not None else None
-    output = getattr(settings, "output", None)
-    if _json_requested.get() or output == "json":
-        payload = {
+    json_output = (
+        json_output
+        or _json_requested.get()
+        or getattr(settings, "output", None) == "json"
+    )
+    command = _raw_argv.get()
+    if command is None:
+        command = error.command if isinstance(error, UnexpectedCliError) else sys.argv
+    secret_values = set(secrets)
+    for original, redacted in zip(command, redact_argv(command)):
+        if original != redacted:
+            secret_values.add(
+                original if redacted == "<redacted>" else original.partition("=")[2]
+            )
+    for option in SECRET_OPTIONS:
+        value = os.environ.get("KSEF2_" + option[2:].replace("-", "_").upper())
+        if value:
+            secret_values.add(value)
+
+    def redact(value: object) -> object:
+        if isinstance(value, str):
+            for secret in sorted(filter(None, secret_values), key=len, reverse=True):
+                for form in {secret, quote(secret, safe=""), quote_plus(secret)}:
+                    value = value.replace(form, "<redacted>")
+            return redact_local_paths(value)
+        if isinstance(value, list):
+            return [redact(item) for item in value]
+        if isinstance(value, dict):
+            return {key: redact(item) for key, item in value.items()}
+        return value
+
+    if json_output:
+        payload: dict[str, object] = {
             "code": "USAGE_ERROR" if error.exit_code == 2 else error.code,
+            "ksef_code": error.ksef_code,
+            "trace_id": error.trace_id,
+            "type": type(error).__name__,
+            "title": error.title,
             "message": error.message,
-            "ksef_code": getattr(error, "ksef_code", None),
-            "trace_id": getattr(error, "trace_id", None),
+            "details": list(error.details),
+            "hints": list(error.hints),
+            "exit_code": error.exit_code,
         }
         if error.status_code is not None:
             payload["status_code"] = error.status_code
-        if error.details:
-            payload["details"] = list(error.details)
-        if error.hints:
-            payload["hints"] = list(error.hints)
-        click.echo(json.dumps({"error": payload}, ensure_ascii=False), err=True)
+        if isinstance(source, KSeFApiError):
+            ksef: dict[str, object] = {
+                "status_code": source.status_code,
+                "exception_code": source.exception_code.value,
+                "message": _sdk_message(source),
+            }
+            for name in ("ksef_code", "trace_id", "details"):
+                value = getattr(source, name)
+                if value is not None and value != [] and value != "":
+                    ksef[name] = value
+            if source.response is not None:
+                ksef["response"] = source.response.model_dump(mode="json")
+            payload["ksef"] = ksef
+        if error.reportable and isinstance(error, UnexpectedCliError):
+            payload["report_url"] = error.report_url()
+        if verbose and error.show_traceback:
+            original = error.error if isinstance(error, UnexpectedCliError) else error
+            payload["traceback"] = "".join(traceback.format_exception(original))
+
+        print(
+            json.dumps(
+                {
+                    "error": {
+                        key: value if key in {"type", "exit_code"} else redact(value)
+                        for key, value in payload.items()
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
         return
 
     if verbose and error.show_traceback:
-        console.print_exception()
+        original = source or (
+            error.error if isinstance(error, UnexpectedCliError) else error
+        )
+        console.print(
+            escape(str(redact("".join(traceback.format_exception(original)))))
+        )
 
     message = error.message
     details = error.details
@@ -415,17 +610,17 @@ def render_cli_error(
         )
     if details:
         for detail in details:
-            console.print(escape(detail))
+            console.print(escape(str(redact(detail))))
 
     if error.hints:
         console.print("[bold]Try:[/]")
         for hint in error.hints:
-            console.print(f"  - {escape(hint)}")
+            console.print(f"  - {escape(str(redact(hint)))}")
 
     if error.reportable and isinstance(error, UnexpectedCliError):
-        console.print(f"Report: {error.report_url()}")
+        console.print(f"Report: {redact(error.report_url())}")
 
-    console.print(f"[red]Error:[/] {escape(message)}")
+    console.print(f"[red]Error:[/] {escape(str(redact(message)))}")
 
 
 def redact_argv(argv: Sequence[str]) -> tuple[str, ...]:
@@ -471,7 +666,12 @@ def _package_version() -> str:
         return "unknown"
 
 
-def format_validation_error(error: ValidationError) -> str:
+def format_validation_error(error: ValidationError | KSeFValidationError) -> str:
+    if isinstance(error, KSeFValidationError):
+        if isinstance(error.validation_error, ValidationError):
+            error = error.validation_error
+        else:
+            return _sdk_message(error)
     return "\n".join(
         f"{'.'.join(map(str, item['loc'])) or 'value'}: {item['msg']}"
         for item in error.errors(include_url=False, include_input=False)

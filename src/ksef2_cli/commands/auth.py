@@ -5,7 +5,7 @@ from typing import Annotated
 
 import typer
 from ksef2 import Client
-from ksef2.models import AuthenticationResumeState, AuthTokens
+from ksef2.models import AuthenticationResumeState
 from pydantic import SecretStr
 
 from ksef2_cli.context import (
@@ -15,12 +15,7 @@ from ksef2_cli.context import (
     run_command,
     use_client,
 )
-from ksef2_cli.renderers.rows.auth import (
-    MaskedAuthTokens,
-    MaskedRefreshedToken,
-    MaskedTokenCredentials,
-)
-from ksef2_cli.results import AuthStateRemoved
+from ksef2_cli.results import AuthStateRemoved, AuthTokenOutput
 from ksef2_cli.runtime import (
     fail,
     read_resume_state,
@@ -36,12 +31,19 @@ app = typer.Typer(
 _SAVE_STATE_HELP = (
     "Write resumable auth state to this file. It holds bearer tokens in plain text."
 )
+_SHOW_TOKENS_HELP = (
+    "Print the raw access and refresh tokens. "
+    "They are bearer credentials; keep them out of logs."
+)
 _STATE_FILE_HELP = "Saved auth state to reuse. Defaults to the global --auth-state."
 
 
 @app.command("login")
 def auth_login(
     ctx: typer.Context,
+    show_tokens: Annotated[
+        bool, typer.Option("--show-tokens", help=_SHOW_TOKENS_HELP)
+    ] = False,
     save_state: Annotated[
         Path | None,
         typer.Option("--save-state", dir_okay=False, help=_SAVE_STATE_HELP),
@@ -49,11 +51,13 @@ def auth_login(
 ) -> None:
     """Authenticate and show masked tokens. Use --save-state to retain credentials."""
 
-    def command(client: Client) -> MaskedAuthTokens:
+    def command(client: Client) -> AuthTokenOutput:
         state = authenticate_client(ctx, client).resume_state()
         if save_state is not None:
             _ = save_resume_state(save_state, state)
-        return _masked_tokens(state.to_tokens())
+        return AuthTokenOutput(
+            tokens=state.to_tokens(), show_tokens=show_tokens, state_file=save_state
+        )
 
     run_client_command(ctx, command)
 
@@ -71,6 +75,9 @@ def auth_resume(
             help=_STATE_FILE_HELP,
         ),
     ] = None,
+    show_tokens: Annotated[
+        bool, typer.Option("--show-tokens", help=_SHOW_TOKENS_HELP)
+    ] = False,
     save_state: Annotated[
         Path | None,
         typer.Option(
@@ -82,7 +89,7 @@ def auth_resume(
 ) -> None:
     """Reuse saved auth state, refreshing the access token when it expired."""
 
-    def command(client: Client) -> MaskedAuthTokens:
+    def command(client: Client) -> AuthTokenOutput:
         source = state_file or get_settings(ctx).auth_state
         if source is None:
             fail("Provide --state-file, --auth-state, or KSEF2_AUTH_STATE.")
@@ -92,7 +99,9 @@ def auth_resume(
         # rehydrates one; the SDK keeps refreshing its access token on later requests.
         resume_authentication(client, state)
         _ = save_resume_state(save_state or source, state)
-        return _masked_tokens(state.to_tokens())
+        return AuthTokenOutput(
+            tokens=state.to_tokens(), show_tokens=show_tokens, state_file=save_state
+        )
 
     run_client_command(ctx, command)
 
@@ -148,7 +157,10 @@ def auth_refresh(
     state_file: Annotated[
         Path | None,
         typer.Option(
-            "--auth-state", "--state-file", exists=True, dir_okay=False,
+            "--auth-state",
+            "--state-file",
+            exists=True,
+            dir_okay=False,
             help=_STATE_FILE_HELP,
         ),
     ] = None,
@@ -156,10 +168,13 @@ def auth_refresh(
         Path | None,
         typer.Option("--save-state", dir_okay=False, help=_SAVE_STATE_HELP),
     ] = None,
+    show_tokens: Annotated[
+        bool, typer.Option("--show-tokens", help=_SHOW_TOKENS_HELP)
+    ] = False,
 ) -> None:
     """Refresh access using saved state or an explicit refresh token; mask output."""
 
-    def command(client: Client) -> MaskedRefreshedToken:
+    def command(client: Client) -> AuthTokenOutput:
         source = state_file or get_settings(ctx).auth_state
         if source is not None and refresh_token is not None:
             fail("Provide only one of --auth-state and --refresh-token.")
@@ -180,17 +195,8 @@ def auth_refresh(
             )
             assert source is not None
             _ = save_resume_state(save_state or source, updated)
-        return MaskedRefreshedToken(
-            access_token=MaskedTokenCredentials(
-                valid_until=refreshed.access_token.valid_until
-            )
+        return AuthTokenOutput(
+            tokens=refreshed, show_tokens=show_tokens, state_file=save_state
         )
 
     run_client_command(ctx, command)
-
-
-def _masked_tokens(tokens: AuthTokens) -> MaskedAuthTokens:
-    return MaskedAuthTokens(
-        access_token=MaskedTokenCredentials(valid_until=tokens.access_token.valid_until),
-        refresh_token=MaskedTokenCredentials(valid_until=tokens.refresh_token.valid_until),
-    )

@@ -11,7 +11,7 @@ from conftest import (
     fake_runtime,
     payload,
 )
-from ksef2.models import SubjectLimits, TokenInfo, RefreshedToken
+from ksef2.models import RefreshedToken, SubjectLimits, TokenCredentials, TokenInfo
 from ksef2.profiles import (
     CliProfileConfig,
     ProfileAuthConfig,
@@ -38,11 +38,11 @@ def test_auth_login_uses_configured_auth_method(runner) -> None:
         obj=fake_runtime(client=fake_client),
     )
 
-    # Reports retain expiries and mask bearer credentials.
     assert payload(result) == {
-        "access_token": {"token": "**********", "valid_until": "2026-02-01T00:00:00Z"},
-        "refresh_token": {"token": "**********", "valid_until": "2026-02-02T00:00:00Z"},
-        "hint": "Use auth login --save-state FILE to retain resumable credentials.",
+        "access_token": "access-t…oken",
+        "access_token_valid_until": "2026-02-01T00:00:00Z",
+        "refresh_token": "refresh-…oken",
+        "refresh_token_valid_until": "2026-02-02T00:00:00Z",
     }
     assert fake_client.entered == 1
 
@@ -78,7 +78,12 @@ def test_auth_login_uses_active_profile(runner, tmp_path) -> None:
         obj=fake_runtime(client=fake_client),
     )
 
-    assert set(payload(result)) == {"access_token", "refresh_token", "hint"}
+    assert set(payload(result)) == {
+        "access_token",
+        "access_token_valid_until",
+        "refresh_token",
+        "refresh_token_valid_until",
+    }
     method, args, kwargs = auth.calls[-1]
     assert method == "with_profile"
     assert args == ("demo",)
@@ -88,13 +93,12 @@ def test_auth_login_uses_active_profile(runner, tmp_path) -> None:
 
 
 def test_auth_refresh_requires_and_uses_refresh_token(runner) -> None:
-    client = FakeClient(
-        authentication=FakeService(
-            refresh=RefreshedToken(
-                access_token={"token": "new", "valid_until": "2026-02-01T00:00:00Z"}
-            )
+    refreshed = RefreshedToken(
+        access_token=TokenCredentials(
+            token="new-access-token", valid_until=datetime(2026, 2, 1, tzinfo=UTC)
         )
     )
+    client = FakeClient(authentication=FakeService(refresh=refreshed))
 
     missing = runner.invoke(
         app, cli_args("auth", "refresh"), obj=fake_runtime(client=client)
@@ -109,17 +113,12 @@ def test_auth_refresh_requires_and_uses_refresh_token(runner) -> None:
     )
 
     assert payload(result) == {
-        "access_token": {"token": "**********", "valid_until": "2026-02-01T00:00:00Z"}
+        "access_token": "new-acce…oken",
+        "access_token_valid_until": "2026-02-01T00:00:00Z",
     }
     assert client.authentication.called("refresh")["refresh_token"] == "refresh"
 
-    env_client = FakeClient(
-        authentication=FakeService(
-            refresh=RefreshedToken(
-                access_token={"token": "new", "valid_until": "2026-02-01T00:00:00Z"}
-            )
-        )
-    )
+    env_client = FakeClient(authentication=FakeService(refresh=refreshed))
     result = runner.invoke(
         app,
         cli_args("auth", "refresh"),
@@ -128,7 +127,8 @@ def test_auth_refresh_requires_and_uses_refresh_token(runner) -> None:
     )
 
     assert payload(result) == {
-        "access_token": {"token": "**********", "valid_until": "2026-02-01T00:00:00Z"}
+        "access_token": "new-acce…oken",
+        "access_token_valid_until": "2026-02-01T00:00:00Z",
     }
     assert (
         env_client.authentication.called("refresh")["refresh_token"]
@@ -245,7 +245,7 @@ def test_tokens_commands(runner) -> None:
     missing = runner.invoke(
         app, cli_args("tokens", "generate", "--description", "demo"), obj=runtime
     )
-    assert missing.exit_code == 1
+    assert missing.exit_code == 2
     assert "At least one --permission" in missing.output
 
     assert payload(
@@ -347,15 +347,17 @@ def test_tokens_list_text_mode_renders_token_rows(runner) -> None:
 
     first_page = runner.invoke(app, ["--no-config", "tokens", "list"], obj=runtime)
     assert [line.split()[0] for line in first_page.output.splitlines()] == [
-        "reference_number=t1"
+        "REFERENCE",
+        "t1",
     ]
 
     all_pages = runner.invoke(
         app, ["--no-config", "tokens", "list", "--all"], obj=runtime
     )
     assert [line.split()[0] for line in all_pages.output.splitlines()] == [
-        "reference_number=t1",
-        "reference_number=t2",
+        "REFERENCE",
+        "t1",
+        "t2",
     ]
 
 
@@ -390,7 +392,7 @@ def test_sessions_commands(runner) -> None:
         cli_args("sessions", "auth-list", "--continuation-token", "ct"),
         obj=runtime,
     )
-    assert cursor.exit_code == 1
+    assert cursor.exit_code == 2
     assert "--continuation-token" in cursor.output
 
     assert payload(
@@ -478,5 +480,5 @@ def test_sessions_invoice_list_date_filters(runner) -> None:
         ),
         obj=runtime,
     )
-    assert bad_date.exit_code == 1
-    assert "--closed-from must be an ISO 8601" in bad_date.output
+    assert bad_date.exit_code == 2
+    assert "--closed-from must be a date like" in bad_date.output

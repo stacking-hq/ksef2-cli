@@ -7,8 +7,9 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from rich.cells import cell_len
 
-from ksef2 import KSeFInvoiceRejectedError, KSeFSessionError
+from ksef2 import KSeFInvoiceRejectedError, KSeFSessionError, KSeFValidationError
 
 from conftest import (
     FakeService,
@@ -20,13 +21,16 @@ from conftest import (
     plain,
 )
 from ksef2.models import (
+    BatchSessionResumeState,
     ExportResumeState,
     ExportStatusInfo,
     FormSchema,
     InvoiceExportStatusResponse,
+    InvoiceMetadata,
     InvoicePackage,
     InvoiceStatusInfo,
     PackagePart,
+    PartUploadRequest,
     SessionInvoiceStatusResponse,
     SessionInvoicesResponse,
     SessionStatusResponse,
@@ -39,6 +43,7 @@ from ksef2.renderers import PDFPageSize
 from ksef2_cli.app import app
 from ksef2_cli.commands.invoices.models import InvoiceWorkflowReceipt
 from ksef2_cli.config import RuntimeOverrides
+from ksef2_cli.invoice_workflows import EXPORT_METADATA_FILE_NAME
 
 
 class FakeSession(FakeService):
@@ -82,12 +87,14 @@ class FakeExportJob(FakeService):
 class FakeExported:
     """Stand-in for ``ExportedInvoices``, the result of ``ExportJob.wait()``.
 
-    ``save()`` writes a stub invoice XML for each name it was built with, the way
-    extracting a real package into ``directory`` would.
+    ``save()`` writes a stub file for each name it was built with, the way extracting a
+    real package into ``directory`` would, and ``metadata`` is the invoice list the real
+    class reads back from the package's ``_metadata.json``.
     """
 
-    def __init__(self, *names: str) -> None:
+    def __init__(self, *names: str, metadata: list[Any] | None = None) -> None:
         self._names = list(names)
+        self.metadata = metadata
 
     def save(self, directory: Path) -> list[Path]:
         target = Path(directory)
@@ -163,6 +170,25 @@ def _invoice_processing_status(
             code=200 if ksef_number else 150,
             description="ready" if ksef_number else "processing",
         ),
+    )
+
+
+def _batch_state_with_upload() -> BatchSessionResumeState:
+    """Batch resume state as a live session reports it, presigned upload included."""
+
+    return BatchSessionResumeState.from_encoded(
+        reference_number="batch-ref",
+        aes_key=b"aes-key-32-bytes" * 2,
+        iv=b"iv-16-bytes!!!!!",
+        form_code=FormSchema.FA3,
+        part_upload_requests=[
+            PartUploadRequest(
+                ordinal_number=1,
+                method="PUT",
+                url="https://example.invalid/part/1",
+                headers={"Content-Type": "application/octet-stream"},
+            )
+        ],
     )
 
 
@@ -264,8 +290,8 @@ def test_invoices_metadata_parses_date_options(runner) -> None:
         cli_args("invoices", "metadata", "--date-from", "yesterday"),
         obj=runtime,
     )
-    assert bad_date.exit_code == 1
-    assert "must be an ISO 8601" in bad_date.output
+    assert bad_date.exit_code == 2
+    assert "must be a date like" in bad_date.output
 
     reversed_range = runner.invoke(
         app,
@@ -279,10 +305,33 @@ def test_invoices_metadata_parses_date_options(runner) -> None:
         ),
         obj=runtime,
     )
-    assert reversed_range.exit_code == 1
+    assert reversed_range.exit_code == 2
     assert "date_from must be less than or equal to date_to" in plain(
         reversed_range.output
     )
+
+
+def test_invoices_metadata_polish_dates_match_iso_filters(runner) -> None:
+    service = FakeService(search=lambda **kwargs: FakeSearch([]))
+    runtime = fake_runtime(auth=type("Auth", (), {"invoices": service})())
+
+    for date_from, date_to in (
+        ("01.10.2026", "15.10.2026"),
+        ("2026-10-01", "2026-10-15"),
+    ):
+        result = runner.invoke(
+            app,
+            cli_args(
+                "invoices", "metadata", "--date-from", date_from, "--date-to", date_to
+            ),
+            obj=runtime,
+        )
+        assert payload(result) == {"invoices": []}
+
+    filters = [kwargs["filters"] for name, _, kwargs in service.calls if name == "search"]
+    assert len(filters) == 2
+    assert filters[0].date_from == filters[1].date_from
+    assert filters[0].date_to == filters[1].date_to
 
 
 def test_invoice_download_writes_xml(runner, tmp_path) -> None:
@@ -443,7 +492,7 @@ def test_invoices_send_online_directory_without_xml_errors(runner, tmp_path) -> 
         obj=runtime,
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "No XML invoice files found" in result.output
 
 
@@ -470,7 +519,7 @@ def test_invoices_send_online_multiple_files_require_receipt_dir(
         obj=runtime,
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert (
         "Use --receipt-dir when writing receipts for multiple files." in result.output
     )
@@ -563,6 +612,57 @@ def test_invoices_send_online_wait_marks_failed_status_from_session(
     assert receipt.online.status == rejected
     assert receipt_file.stat().st_mode & 0o777 == 0o600
     assert [name for name, _, _ in submission.calls] == ["wait"]
+
+
+def test_invoices_status_plain_text_fits_the_declared_width(runner, tmp_path) -> None:
+    # The record behind `invoices status` is identifiers and a receipt path, and none
+    # of them can be shortened to fit a terminal.
+    receipts = tmp_path / "receipts" / "with-a-name-long-enough-to-overflow-a-line"
+    receipts.mkdir(parents=True)
+    receipt_file = receipts / "invoice-workflow-receipt.json"
+    invoice = tmp_path / "invoice.xml"
+    invoice.write_text("<invoice/>", encoding="utf-8")
+    reference = "5926ad107b01e605f9ebb4cbca0080fea655114b8ca67168543dc7ca3bb2eeee"
+    _ = receipt_file.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "mode": "online",
+                "submitted_files": [str(invoice)],
+                "online": {
+                    "file": str(invoice),
+                    "session_state": online_state().to_dict(mode="json"),
+                    "invoice_reference": reference,
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    submission = FakeSubmission(
+        reference,
+        get_status=_invoice_processing_status(
+            reference_number=reference, ksef_number="ksef-612701234567-2411BF0003"
+        ),
+    )
+    session = FakeSession(
+        submission=lambda **kwargs: submission,
+        close=KSeFSessionError("status must not close the resumed session"),
+    )
+    runtime = fake_runtime(auth=FakeService(online_session=session))
+
+    result = runner.invoke(
+        app,
+        ["--no-config", "invoices", "status", "--receipt", str(receipt_file)],
+        obj=runtime,
+        env={"COLUMNS": "80", "NO_COLOR": "1", "FORCE_COLOR": None},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert max(cell_len(line) for line in result.output.splitlines()) <= 80
+    # The identifiers arrive whole, spread over the lines the width allowed.
+    assert reference in "".join(result.output.split())
+    assert "ksef-612701234567-2411BF0003" in "".join(result.output.split())
 
 
 @pytest.mark.parametrize("wait_for_upo", [False, True])
@@ -694,8 +794,9 @@ def test_invoices_send_batch_wait_downloads_upo_and_writes_receipt(
     second = tmp_path / "b.xml"
     first.write_text("<a/>", encoding="utf-8")
     second.write_text("<b/>", encoding="utf-8")
+    state = _batch_state_with_upload()
     submitted = FakeService(
-        resume_state=batch_state(), wait=_batch_processing_status(),
+        resume_state=state, wait=_batch_processing_status(),
         list_invoices=SessionInvoicesResponse(invoices=[]),
     )
     upo_session = FakeService(download_upo=b"<batch-upo/>")
@@ -742,6 +843,12 @@ def test_invoices_send_batch_wait_downloads_upo_and_writes_receipt(
     assert receipt.batch is not None
     assert receipt.batch.session_reference == "batch-ref"
 
+    assert receipt.batch.session_state == state
+    saved_state = json.loads(receipt_file.read_text())["batch"]["session_state"]
+    assert BatchSessionResumeState.from_json(json.dumps(saved_state)) == state
+    assert saved_state["part_upload_requests"][0]["url"] == "https://example.invalid/part/1"
+    assert state.aes_key.get_secret_value() not in json.dumps(sent)
+
     assert upo_session.calls == [
         ("download_upo", ("batch-ref",), {"upo_reference_number": "upo-page-1"})
     ]
@@ -774,7 +881,9 @@ def test_invoices_send_batch_wait_downloads_upo_and_writes_receipt(
         ),
         obj=failed_download_runtime,
     )
-    assert failed.exit_code == 1
+    # The SDK reports the refused download as a ValueError, which the CLI maps to a
+    # usage error and its exit code.
+    assert failed.exit_code == 2, failed.output
     assert "upo-page-1" in failed.output
 
 
@@ -848,6 +957,91 @@ def test_invoices_status_and_upo_from_batch_receipt(runner, tmp_path) -> None:
     assert invoice_sessions.calls == [
         ("download_upo", ("batch-ref",), {"upo_reference_number": "upo-page-1"})
     ]
+
+    # `--wait` polls for a fresh status instead of trusting the cached one.
+    waited_dir = tmp_path / "waited-upos"
+    waited = payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "invoices",
+                "upo",
+                "--receipt",
+                str(receipt_file),
+                "--upo-dir",
+                str(waited_dir),
+                "--wait",
+            ),
+            obj=runtime,
+        )
+    )
+    assert waited["upo_files"][0]["path"] == str(
+        waited_dir / "batch-batch-ref-upo-1.xml"
+    )
+    assert len(batch.calls) == 2
+    assert batch.calls[-1][0] == "wait_for_completion"
+
+
+def test_invoices_status_and_upo_support_legacy_batch_receipt(
+    runner, tmp_path
+) -> None:
+    """Old receipts still support reference reads without reopening a session."""
+
+    invoice = tmp_path / "invoice.xml"
+    invoice.write_text("<invoice/>", encoding="utf-8")
+    receipt_file = tmp_path / "batch-receipt.json"
+    sent = payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "invoices",
+                "send",
+                str(invoice),
+                "--mode",
+                "batch",
+                "--receipt",
+                str(receipt_file),
+            ),
+            obj=fake_runtime(
+                auth=SimpleNamespace(
+                    batch=FakeService(submit=FakeService(resume_state=batch_state()))
+                )
+            ),
+        )
+    )
+    assert sent["batch"]["session_reference"] == "batch-ref"
+
+    # Rewrite it the way older CLI versions wrote it: the reference number only.
+    legacy = json.loads(receipt_file.read_text(encoding="utf-8"))
+    del legacy["batch"]["session_state"]
+    receipt_file.write_text(json.dumps(legacy), encoding="utf-8")
+
+    batch = FakeService(get_status=_batch_processing_status())
+    invoice_sessions = FakeService(download_upo=b"<legacy-upo/>")
+    runtime = fake_runtime(auth=SimpleNamespace(
+        batch=batch, invoice_sessions=invoice_sessions,
+    ))
+
+    status = runner.invoke(
+        app, cli_args("invoices", "status", "--receipt", str(receipt_file)), obj=runtime
+    )
+    upo = runner.invoke(
+        app,
+        cli_args(
+            "invoices",
+            "upo",
+            "--receipt",
+            str(receipt_file),
+            "--upo-dir",
+            str(tmp_path / "upos"),
+        ),
+        obj=runtime,
+    )
+
+    assert status.exit_code == 0, status.output
+    assert upo.exit_code == 0, upo.output
+    assert (tmp_path / "upos" / "batch-batch-ref-upo-1.xml").read_bytes() == b"<legacy-upo/>"
+    assert batch.called("get_status")["session"] == "batch-ref"
 
 
 def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:
@@ -1028,7 +1222,7 @@ _INVOICE_FILTER_ARGS = (
     "--invoice-number",
     "FA/1/2026",
     "--ksef-number",
-    "ksef-1",
+    "5261040828-20260101-ABCDEF123456-AB",
     "--amount-min",
     "10",
     "--amount-max",
@@ -1096,7 +1290,7 @@ def test_invoice_export_sends_metadata_filters(runner, tmp_path) -> None:
     )
     runtime = fake_runtime(
         auth=type("Auth", (), {"invoices": service})(),
-        invoice_pdf_renderer=lambda _path, *, page_size: b"%PDF-1.4",
+        invoice_pdf_renderer=lambda _path, *, page_size, ksef_number=None: b"%PDF-1.4",
     )
 
     export = payload(
@@ -1162,7 +1356,7 @@ def test_invoice_export_sends_metadata_filters(runner, tmp_path) -> None:
         assert filters.seller_nip == "5261040828"
         assert filters.buyer_nip == "5261040555"
         assert filters.invoice_number == "FA/1/2026"
-        assert filters.ksef_number == "ksef-1"
+        assert filters.ksef_number == "5261040828-20260101-ABCDEF123456-AB"
         assert filters.amount_min == 10.0
         assert filters.amount_max == 100.0
         assert filters.invoice_schema is FormSchema.FA3
@@ -1249,19 +1443,59 @@ def test_invoice_export_redacts_stdout(runner, tmp_path, json_output, save_handl
         assert (handle_file.stat().st_mode & 0o777) == 0o600
 
 
+# A KSeF number, as the export manifest and the invoice file name both report it.
+_INVOICE_KSEF_ONE = "5261040828-20260101-ABCDEF123456-AB"
+
+
+def _export_metadata(ksef_numbers: list[str]) -> list[InvoiceMetadata]:
+    """The invoice list a package's ``_metadata.json`` reports for these KSeF numbers."""
+
+    return [
+        InvoiceMetadata(
+            ksef_number=ksef_number,
+            invoice_number="FV/1/2026",
+            issue_date="2026-01-01",
+            invoicing_date=datetime(2026, 1, 1, tzinfo=UTC),
+            acquisition_date=datetime(2026, 1, 1, tzinfo=UTC),
+            permanent_storage_date=datetime(2026, 1, 1, tzinfo=UTC),
+            seller={"nip": "5261040828"},
+            buyer={"identifier": {"type": "nip", "value": "5261040555"}},
+            net_amount=100.0,
+            gross_amount=123.0,
+            vat_amount=23.0,
+            currency="PLN",
+            invoicing_mode="online",
+            invoice_type="vat",
+            form_code_system="FA (3)",
+            form_code_version="1-0E",
+            form_code_value="FA",
+            is_self_invoicing=False,
+            has_attachment=False,
+            invoice_hash="hash",
+        )
+        for ksef_number in ksef_numbers
+    ]
+
+
 def _export_pdf_runtime(
     *, with_fake_renderer: bool = True
-) -> tuple[RuntimeOverrides, list[tuple[Path, PDFPageSize | None]]]:
+) -> tuple[RuntimeOverrides, list[tuple[Path, PDFPageSize | None, str | None]]]:
     """Runtime whose export writes two invoice XML files and whose PDF renderer is a spy.
 
-    ``with_fake_renderer=False`` leaves the real exporter path in place so a test can
-    exercise the missing-extra error.
+    The fake reports no manifest metadata, so these invoices render without a KSeF
+    number. ``with_fake_renderer=False`` leaves the real exporter path in place so a
+    test can exercise the missing-extra error.
     """
 
-    rendered: list[tuple[Path, PDFPageSize | None]] = []
+    rendered: list[tuple[Path, PDFPageSize | None, str | None]] = []
 
-    def fake_render(invoice_xml_path: Path, *, page_size: PDFPageSize | None) -> bytes:
-        rendered.append((invoice_xml_path, page_size))
+    def fake_render(
+        invoice_xml_path: Path,
+        *,
+        page_size: PDFPageSize | None,
+        ksef_number: str | None = None,
+    ) -> bytes:
+        rendered.append((invoice_xml_path, page_size, ksef_number))
         return b"%PDF-1.4 " + invoice_xml_path.name.encode()
 
     service = FakeService(
@@ -1317,8 +1551,8 @@ def test_invoices_export_pdf_renders_each_downloaded_invoice(runner, tmp_path) -
     # The renderer must be handed the decrypted XML, not the encrypted package, and
     # each PDF must be built for the paper size the command asked for.
     assert rendered == [
-        (out_dir / "invoice-one.xml", PDFPageSize.A3_LANDSCAPE),
-        (out_dir / "invoice-two.xml", PDFPageSize.A3_LANDSCAPE),
+        (out_dir / "invoice-one.xml", PDFPageSize.A3_LANDSCAPE, None),
+        (out_dir / "invoice-two.xml", PDFPageSize.A3_LANDSCAPE, None),
     ]
 
 
@@ -1351,7 +1585,79 @@ def test_invoices_export_pdf_defaults_to_the_out_dir(runner, tmp_path) -> None:
     # Without --handle-file there is no handle to report, so the key stays out of the JSON.
     assert "handle_file" not in data
     # Without --paper-size the stylesheet decides the paper, so nothing is overridden.
-    assert [page_size for _, page_size in rendered] == [None, None]
+    assert [page_size for _, page_size, _number in rendered] == [None, None]
+
+
+def test_invoices_export_pdf_renders_invoices_and_passes_their_ksef_numbers(
+    runner, tmp_path
+) -> None:
+    """A package holds `_metadata.json` beside the invoices, and only invoices render.
+
+    The manifest is KSeF's own listing, not invoice XML: feeding it to the renderer used
+    to abort the whole command with a Faktura root-element error after the first PDF.
+    """
+
+    rendered: list[tuple[Path, str | None]] = []
+    service = FakeService(
+        export=lambda **_kwargs: FakeExportJob(
+            _export_state(),
+            get_status=_export_status(_invoice_package()),
+            wait=FakeExported(
+                f"{_INVOICE_KSEF_ONE}.xml",
+                EXPORT_METADATA_FILE_NAME,
+                "invoice-without-a-number.xml",
+                metadata=_export_metadata([_INVOICE_KSEF_ONE]),
+            ),
+        )
+    )
+
+    def fake_render(
+        invoice_xml_path: Path,
+        *,
+        page_size: PDFPageSize | None,
+        ksef_number: str | None = None,
+    ) -> bytes:
+        rendered.append((invoice_xml_path, ksef_number))
+        return b"%PDF-1.4"
+
+    runtime = fake_runtime(
+        auth=type("Auth", (), {"invoices": service})(),
+        invoice_pdf_renderer=fake_render,
+    )
+    out_dir = tmp_path / "xml"
+
+    data = payload(
+        runner.invoke(
+            app,
+            cli_args(
+                "invoices",
+                "export-pdf",
+                "--date-from",
+                "2026-01-01T00:00:00Z",
+                "--date-to",
+                "2026-01-02T00:00:00Z",
+                "--out-dir",
+                str(out_dir),
+            ),
+            obj=runtime,
+        )
+    )
+
+    # The manifest is still downloaded and an invoice the manifest does not describe is
+    # still rendered, but only the manifest never reaches the renderer.
+    assert (out_dir / EXPORT_METADATA_FILE_NAME).exists()
+    assert rendered == [
+        (out_dir / f"{_INVOICE_KSEF_ONE}.xml", _INVOICE_KSEF_ONE),
+        (out_dir / "invoice-without-a-number.xml", None),
+    ]
+    assert data["invoice_xml_files"] == [
+        str(out_dir / f"{_INVOICE_KSEF_ONE}.xml"),
+        str(out_dir / "invoice-without-a-number.xml"),
+    ]
+    assert [pdf["path"] for pdf in data["pdfs"]] == [
+        str(out_dir / f"{_INVOICE_KSEF_ONE}.pdf"),
+        str(out_dir / "invoice-without-a-number.pdf"),
+    ]
 
 
 def test_invoices_export_pdf_saves_a_readable_handle_privately(runner, tmp_path) -> None:
@@ -1433,3 +1739,57 @@ def test_invoices_export_pdf_reports_a_missing_pdf_extra(
     )
     assert 'ksef2-cli[pdf]' in plain(result.output)
     assert "issues/new" not in result.output
+
+
+@pytest.mark.parametrize(
+    "option,field",
+    [("--attachment", "has_attachment"), ("--self-invoicing", "is_self_invoicing")],
+)
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("yes", True), ("true", True), ("1", True), ("y", True), ("on", True),
+        ("no", False), ("false", False), ("0", False), ("n", False), ("off", False),
+    ],
+)
+def test_metadata_boolean_aliases_reach_search(runner, option, field, value, expected):
+    service = FakeService(search=FakeSearch([]))
+    result = runner.invoke(
+        app,
+        cli_args(
+            "invoices", "metadata", "--date-from", "2026-10-20",
+            "--date-to", "2026-10-21", option, value,
+        ),
+        obj=fake_runtime(auth=SimpleNamespace(invoices=service)),
+    )
+    assert payload(result) == {"invoices": []}
+    assert getattr(service.called("search")["filters"], field) is expected
+
+
+@pytest.mark.parametrize(
+    "code,message",
+    [(150, "UPO is not ready."), (450, "Invoice processing failed:")],
+)
+def test_invoice_upo_operational_errors_keep_exit_one(runner, tmp_path, code, message):
+    receipt_file = tmp_path / "receipt.json"
+    receipt_file.write_text("{}", encoding="utf-8")
+    status = _invoice_processing_status(ksef_number=None)
+    status.status.code = code
+    receipt = SimpleNamespace(
+        mode="online",
+        online=SimpleNamespace(status=status, invoice_reference="invoice-ref"),
+    )
+    service = FakeService()
+    result = runner.invoke(
+        app,
+        cli_args(
+            "invoices", "upo", "--receipt", str(receipt_file),
+            "--out", str(tmp_path / "upo.xml"),
+        ),
+        obj=fake_runtime(auth=service, model_reader=lambda *_: receipt),
+    )
+    assert result.exit_code == 1
+    error = json.loads(result.output)["error"]
+    assert error["exit_code"] == 1
+    assert message in error["message"]
+    assert service.calls == []

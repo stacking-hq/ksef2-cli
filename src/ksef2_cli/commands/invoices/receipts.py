@@ -13,6 +13,7 @@ from ksef2_cli.commands.invoices.models import (
     InvoiceWorkflowReceipt,
 )
 from ksef2_cli.context import read_model, run_authenticated, run_command
+from ksef2_cli.exceptions import UsageError
 from ksef2_cli.invoice_workflows import download_batch_upos
 from ksef2_cli.io import SECRET_MODEL_FILE_MODE, write_bytes_file, write_text_file
 from ksef2_cli.results import SavedFile
@@ -173,12 +174,13 @@ def invoices_upo(
                         status = submission.get_status()
 
                 if status.status.code >= 400:
-                    raise ValueError(
+                    raise UsageError(
                         "Invoice processing failed: "
-                        f"{online.invoice_reference} ({status.status.code}: {status.status.description})"
+                        f"{online.invoice_reference} ({status.status.code}: {status.status.description})",
+                        exit_code=1,
                     )
                 if not status.ksef_number:
-                    raise ValueError("UPO is not ready. Re-run with --wait.")
+                    raise UsageError("UPO is not ready. Re-run with --wait.", exit_code=1)
 
                 if output_file is not None:
                     target = output_file

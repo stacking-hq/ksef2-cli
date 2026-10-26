@@ -4,6 +4,7 @@ from pathlib import Path
 from functools import cache
 from typing import Annotated
 
+import click
 import typer
 from ksef2.clients import AuthenticatedClient
 
@@ -36,12 +37,15 @@ from ksef2_cli.commands.invoices.models import (
     InvoiceRoleChoice,
     SortOrderChoice,
 )
-from ksef2_cli.context import run_authenticated_command
+from ksef2_cli.config import OutputMode
+from ksef2_cli.context import get_settings, run_authenticated_command
+from ksef2_cli.exceptions import UsageError
 from ksef2_cli.invoice_workflows import (
     InvoiceMetadataInput,
     download_invoice,
     query_invoice_metadata,
 )
+from ksef2_cli.parsing import parse_optional_bool, validate_offset_pagination
 from ksef2_cli.results import SavedFile
 
 
@@ -67,8 +71,23 @@ def invoices_metadata(
     invoicing_mode: InvoicingModeOption = None,
     attachment: AttachmentOption = None,
     self_invoicing: SelfInvoicingOption = None,
-    page_size: Annotated[int, typer.Option("--page-size", min=10, max=250)] = 10,
-    page_offset: Annotated[int, typer.Option("--page-offset", min=0)] = 0,
+    page_size: Annotated[
+        int,
+        typer.Option(
+            "--page-size",
+            min=10,
+            max=250,
+            help="Items per API request, including with --all.",
+        ),
+    ] = 10,
+    page_offset: Annotated[
+        int,
+        typer.Option(
+            "--page-offset",
+            min=0,
+            help="Offset for a single page; must be 0 with --all.",
+        ),
+    ] = 0,
     sort_order: Annotated[
         SortOrderChoice, typer.Option("--sort-order", help="asc or desc.")
     ] = SortOrderChoice.ASC,
@@ -80,6 +99,9 @@ def invoices_metadata(
 
     @cache
     def load_input() -> InvoiceMetadataInput:
+        validate_offset_pagination(all_pages=all_pages, page_offset=page_offset)
+        parse_optional_bool(attachment, option_name="--attachment")
+        parse_optional_bool(self_invoicing, option_name="--self-invoicing")
         return InvoiceMetadataInput(
             **parse_invoice_dates(date_from, date_to),
             role=role,
@@ -124,7 +146,16 @@ def invoices_download(
     ] = None,
     output_file: Annotated[
         Path | None,
-        typer.Option("--out", "-o", dir_okay=False, help="Target XML file."),
+        typer.Option(
+            "--out",
+            "-o",
+            dir_okay=False,
+            help=(
+                "Target XML file (default: NUMBER.xml in the current directory). "
+                "Use - for raw XML bytes on stdout; diagnostics stay on stderr. "
+                "Incompatible with global JSON output."
+            ),
+        ),
     ] = None,
     wait: Annotated[
         bool, typer.Option("--wait", help="Poll until the invoice can be downloaded.")
@@ -145,9 +176,15 @@ def invoices_download(
             raise ValueError(
                 "Provide one KSeF number, either positionally or with --ksef-number."
             )
+        if output_file == Path("-") and get_settings(ctx).output is OutputMode.json:
+            raise UsageError(
+                "--out - cannot be combined with global JSON output "
+                "(--json, --output json, or -o json).",
+                exit_code=2,
+            )
 
-    def work(auth: AuthenticatedClient) -> SavedFile:
-        return download_invoice(
+    def work(auth: AuthenticatedClient) -> SavedFile | None:
+        result = download_invoice(
             auth,
             ksef_number=ksef_number or number,
             output_file=output_file,
@@ -155,5 +192,11 @@ def invoices_download(
             timeout=timeout,
             poll_interval=poll_interval,
         )
+        if isinstance(result, bytes):
+            stream = click.get_binary_stream("stdout")
+            stream.write(result)
+            stream.flush()
+            return None
+        return result
 
     run_authenticated_command(ctx, work, validate=validate)
