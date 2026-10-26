@@ -14,6 +14,20 @@ Root options must appear before the command group:
 ksef2 [ROOT OPTIONS] invoices metadata [COMMAND OPTIONS]
 ```
 
+## Which environment a login lands on
+
+The default environment is `test`. A selected profile supplies the environment when
+you do not pass `--env`, and `--env` overrides the profile, so nothing here changed for
+production work: `--env production` still authenticates against production, and so does
+a profile with `environment = "production"`. What changed is the fallback, so a
+credential that was aimed at production by omission now reaches TEST. Name the
+environment, or the profile that carries it, in any command you script or paste.
+
+A TEST certificate is valid in TEST only. Asking for `--test-cert` against another
+environment fails with exit `2` before any request is sent, and so does a profile that
+combines `test_certificate` auth with a non-TEST environment. Pass a real credential
+to displace that profile method and keep its other defaults.
+
 ## Profiles for local work
 
 Create one profile per KSeF subject or context. Profiles store non-secret
@@ -98,7 +112,7 @@ export KSEF2_NIP=5261040828
 ## Token authentication
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
   invoices metadata \
   --role seller \
   --date-from 2026-01-01T00:00:00Z \
@@ -119,7 +133,7 @@ This method is only for TEST environment workflows.
 ## PEM XAdES credentials
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" \
+uv run ksef2 --env production --nip "$KSEF2_NIP" \
   --cert cert.pem \
   --key private-key.pem \
   --json auth login
@@ -131,7 +145,7 @@ For encrypted private keys, pass `--key-password` or set
 ## PKCS#12/PFX credentials
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" \
+uv run ksef2 --env production --nip "$KSEF2_NIP" \
   --p12 signing-credentials.p12 \
   --p12-password "$KSEF2_P12_PASSWORD" \
   --json auth login
@@ -139,17 +153,53 @@ uv run ksef2 --nip "$KSEF2_NIP" \
 
 ## Refresh an access token
 
+Point the global `--auth-state` option at a saved state file and the CLI takes the
+refresh token from the file:
+
 ```bash
-uv run ksef2 --json auth refresh --refresh-token "$KSEF2_REFRESH_TOKEN"
+uv run ksef2 --env production --auth-state "$XDG_RUNTIME_DIR/ksef2-auth.json" --json auth refresh
+```
+
+That is the form to use in a script. `auth refresh` also accepts
+`--refresh-token`, and the environment variable `KSEF2_REFRESH_TOKEN`, for a state file
+you do not have; a token in a command line is visible to every process on the machine
+and lands in your shell history, so prefer the file. The two sources are exclusive,
+and the check runs before any request is sent.
+
+The answer is masked in both output modes, the same way `auth login` masks it: the new
+access token shows only its first eight and last four characters beside its
+`valid_until`, unless you pass `--show-tokens`. `--save-state FILE` is how a script
+keeps the refreshed value without printing it. With `--auth-state`
+and no `--save-state`, the refreshed state replaces the source file in place. A copy
+written anywhere else needs that same state file, because only it still carries the
+refresh token and its expiry; `--save-state` without `--auth-state` stops with an error
+rather than saving state that would lose that expiry:
+
+```bash
+uv run ksef2 --env production --auth-state "$XDG_RUNTIME_DIR/ksef2-auth.json" --json \
+  auth refresh --save-state ./refreshed.json
 ```
 
 `auth refresh` does not require the other root authentication method options.
 
 ## Reuse a saved authentication
 
-`auth login --save-state` writes the SDK authentication resume state, which holds
-the access and refresh tokens plus their expiry times. The CLI writes it with
-mode `0600` and treats it as credential material, so protect it like a token:
+`auth login` reports expiries and masks both token values in both output modes. Each
+token field keeps only its first eight and last four characters, beside
+`access_token_valid_until` and `refresh_token_valid_until`. The masked fields are the
+whole answer by default, so a captured login output is useless as a credential.
+`--show-tokens` prints the raw bearer tokens instead. Treat that flag the way you would
+treat a token on a command line: it puts a credential in your terminal scrollback, your
+transcript, and any log you pipe the command into.
+
+`auth login --save-state` is what keeps the credential. It writes the SDK authentication
+resume state, which holds the access and refresh tokens as **plain-text bearer tokens**
+plus their expiry times. The CLI creates the file with mode `0600` and treats it as
+credential material: that mode keeps other users on the machine from opening it and
+encrypts nothing, so a readable copy on a shared volume, in a backup, in a container
+layer, or in a commit is a leaked credential whatever its permissions were on the way
+there. Store it somewhere private, `"$XDG_RUNTIME_DIR"` on a shared workstation, and
+outside any repository:
 
 ```bash
 uv run ksef2 --profile prod-token --json \
@@ -161,24 +211,30 @@ through the refresh endpoint when the saved access token expired while the
 refresh token is still valid:
 
 ```bash
-uv run ksef2 --json auth resume --state-file "$XDG_RUNTIME_DIR/ksef2-auth.json"
+uv run ksef2 --env production --json auth resume --state-file "$XDG_RUNTIME_DIR/ksef2-auth.json"
 ```
 
-`auth login`, `auth resume`, and `auth refresh` mask tokens in text and JSON;
-use `--show-tokens` to print raw values or `--save-state FILE` on login/resume to
-save reusable credentials. With `--save-state`, output stays masked even with
-`--show-tokens` and includes `state_file`.
+`auth login`, `auth resume`, and `auth refresh` mask tokens in text and in JSON. Use
+`--show-tokens` to print raw values, or `--save-state FILE` on login and resume to keep
+reusable credentials. With `--save-state`, the output stays masked even under
+`--show-tokens`, and it adds the `state_file` it wrote. `auth resume` behaves like `auth
+login` in every other respect, and when it writes back to the file it read, that file
+keeps mode `0600`.
 
 Any other command can reuse the same state by pointing the global `--auth-state`
 option, or `KSEF2_AUTH_STATE`, at it instead of naming an authentication method:
 
 ```bash
-uv run ksef2 --auth-state "$XDG_RUNTIME_DIR/ksef2-auth.json" --json \
+uv run ksef2 --env production --auth-state "$XDG_RUNTIME_DIR/ksef2-auth.json" --json \
   invoices metadata \
   --role seller \
   --date-from 2026-01-01T00:00:00Z \
   --all
 ```
+
+A state file records tokens, not the environment those tokens were issued in. The
+environment still comes from `--env` or a profile, so a reused state needs the same
+environment it was logged in with, and with neither named that is now TEST.
 
 `--auth-state` is one authentication method among the others, so combining it
 with `--token`, `--test-cert`, `--cert`/`--key`, or `--p12` fails. A command that
@@ -190,11 +246,13 @@ expired, the command stops and asks for a new `auth login --save-state`.
 `auth logout` ends the KSeF session behind a state file and deletes the file:
 
 ```bash
-uv run ksef2 --auth-state "$XDG_RUNTIME_DIR/ksef2-auth.json" --json auth logout
+uv run ksef2 --env production --auth-state "$XDG_RUNTIME_DIR/ksef2-auth.json" --json auth logout
 ```
 
 KSeF has to accept the termination first, so a state it rejects or reports as
-expired keeps its file on disk for you to remove yourself.
+expired keeps its file on disk for you to remove yourself. The command speaks for
+that one authentication session, which is what it asks KSeF to end; it is not a
+statement about any other token or session the same subject holds.
 
 ## Polling options
 
@@ -221,6 +279,7 @@ order:
 1. CLI option.
 2. Environment variable.
 3. Selected profile.
-4. Built-in default.
+4. Built-in default, which for the environment is `test`.
 
-Use `--no-config` to ignore profiles for one invocation.
+Use `--no-config` to ignore profiles for one invocation. It conflicts with
+`--profile`, which exits `2` rather than silently dropping the profile.

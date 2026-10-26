@@ -1,8 +1,10 @@
 """Root Typer application and global option handling."""
 
 import sys
+from contextvars import ContextVar
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, Sequence
 
 import click
 import typer
@@ -11,6 +13,8 @@ from typer.main import get_command
 
 from ksef2 import KSeFException
 from ksef2.models import ContextIdentifierTypeEnum
+from rich.console import Console
+from typer.core import TyperGroup
 
 from ksef2_cli.commands import (
     auth,
@@ -41,10 +45,89 @@ from ksef2_cli.config import (
     RuntimeOverrides,
     resolve_settings,
 )
+from ksef2_cli.exceptions import UsageError, error_from_exception, render_cli_error
+
+_raw_argv: ContextVar[tuple[str, ...] | None] = ContextVar("raw_argv", default=None)
+
+_json_requested: ContextVar[bool] = ContextVar("json_requested", default=False)
+
+
+class CliGroup(TyperGroup):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._hide_none_defaults(self)
+
+    @staticmethod
+    def _hide_none_defaults(command: click.Command) -> None:
+        for parameter in command.params:
+            if isinstance(parameter, click.Option) and parameter.default is None:
+                parameter.show_default = False
+        if isinstance(command, click.Group):
+            for child in command.commands.values():
+                CliGroup._hide_none_defaults(child)
+
+    def main(
+        self,
+        args: Sequence[str] | None = None,
+        prog_name: str | None = None,
+        complete_var: str | None = None,
+        standalone_mode: bool = True,
+        **extra: Any,
+    ) -> Any:
+        arguments = list(sys.argv[1:] if args is None else args)
+        argv_token = _raw_argv.set(tuple(arguments))
+        # Parse root options without callbacks or type conversion, so parse errors
+        # still use the requested output mode. Click handles values and -ojson.
+        context = click.Context(self, resilient_parsing=True)
+        parser = self.make_parser(context)
+        options, _, _ = parser.parse_args(arguments.copy())
+        json_mode = bool(options.get("json_output")) or options.get("output") == "json"
+        token = _json_requested.set(json_mode)
+        try:
+            try:
+                result = super().main(
+                    arguments, prog_name, complete_var, standalone_mode=False, **extra
+                )
+            except click.ClickException as exc:
+                if not json_mode:
+                    if not standalone_mode:
+                        raise
+                    exc.show()
+                else:
+                    render_cli_error(
+                        UsageError(exc.format_message(), exit_code=exc.exit_code),
+                        console=Console(stderr=True),
+                    )
+                result = exc.exit_code
+            except click.Abort as exc:
+                error = error_from_exception(exc)
+                render_cli_error(error, console=Console(stderr=True))
+                result = error.exit_code
+            if standalone_mode:
+                raise SystemExit(result if isinstance(result, int) else 0)
+            return result
+        finally:
+            _json_requested.reset(token)
+            _raw_argv.reset(argv_token)
+
+
+def _show_version(value: bool) -> None:
+    if value:
+        versions = []
+        for package in ("ksef2-cli", "ksef2"):
+            try:
+                installed = version(package)
+            except PackageNotFoundError:
+                installed = "unknown"
+            versions.append(f"{package} {installed}")
+        typer.echo("\n".join(versions))
+        raise typer.Exit()
+
 
 app = typer.Typer(
+    cls=CliGroup,
     help="Command-line interface for Poland's KSeF v2 API using the ksef2 SDK.",
-    context_settings={"help_option_names": ["-h", "--help"]},
+    context_settings={"help_option_names": ["-h", "--help"], "show_default": False},
     no_args_is_help=True,
 )
 
@@ -69,12 +152,21 @@ app.add_typer(testdata.app, name="testdata")
 @app.callback()
 def root(
     context: typer.Context,
+    version_flag: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            callback=_show_version,
+            is_eager=True,
+            help="Show CLI and SDK versions.",
+        ),
+    ] = False,
     environment: Annotated[
         EnvironmentName | None,
         typer.Option(
             "--env",
             "-e",
-            help="KSeF environment. Defaults to the selected profile or production.",
+            help="KSeF environment. Defaults to the selected profile or TEST.",
             show_default=False,
         ),
     ] = None,
@@ -280,14 +372,15 @@ def main() -> None:
         app()
         return
 
-    from ksef2_cli.exceptions import Aborted, UsageError, render_cli_error
+    from ksef2_cli.exceptions import error_from_exception, UsageError, render_cli_error
     from ksef2_cli.renderers import console
 
     try:
         exit_code = app(standalone_mode=False)
     except (click.Abort, KeyboardInterrupt, EOFError) as exc:
-        render_cli_error(Aborted("Aborted."), console=console, json_output=True)
-        raise SystemExit(1) from exc
+        error = error_from_exception(exc)
+        render_cli_error(error, console=console, json_output=True)
+        raise SystemExit(error.exit_code) from exc
     except click.ClickException as exc:
         error = UsageError(exc.format_message(), exit_code=exc.exit_code)
         render_cli_error(error, console=console, json_output=True)

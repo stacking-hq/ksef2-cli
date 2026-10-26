@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ksef2-cli"
-version = "0.0.2"
+version = "1.0.0"
 description = "Command-line interface for the ksef2 Python SDK"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "click>=8.1,<8.2",
-    "ksef2>=0.22.2,<2",
+    "ksef2>=1.0,<2",
     "pydantic>=2.13.4",
     "rich>=13.7,<14",
     "typer>=0.12,<0.13",
@@ -20,7 +20,7 @@ dependencies = [
 # WeasyPrint renders `invoices export-pdf`. It is optional so the CLI imports and
 # runs without it; the command reports the install hint when the extra is absent.
 pdf = [
-    "ksef2[pdf]>=0.22.2,<2",
+    "ksef2[pdf]>=1.0,<2",
 ]
 
 [project.scripts]
@@ -31,14 +31,6 @@ ksef2-cli = "ksef2_cli.app:main"
 Documentation = "https://docs.stackinghq.com/ksef2/cli/intro/"
 Repository = "https://github.com/stacking-hq/ksef2-cli"
 Issues = "https://github.com/stacking-hq/ksef2-cli/issues"
-
-# TEMPORARY (until ksef2 1.0.0 is on PyPI, stacking-hq/ksef2#147).
-# Track the SDK's 1.0 release branch until the release is available on PyPI.
-# `tool.uv.sources` is uv-only dev config and never reaches the built wheel.
-# Pick up new SDK commits with `uv lock -P ksef2`. On release day: delete this
-# table, set `ksef2>=1.0,<2`, and run `uv lock -P ksef2` in one commit.
-[tool.uv.sources]
-ksef2 = { git = "https://github.com/stacking-hq/ksef2.git", branch = "chore/08-release-1-0-0" }
 
 [dependency-groups]
 dev = [

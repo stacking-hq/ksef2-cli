@@ -93,7 +93,19 @@ DEPRECATED_SERVICE_METHODS = frozenset(
 )
 
 # (path relative to src/ksef2_cli, "owner.method") -> number of call sites.
-PENDING_MIGRATION: dict[tuple[str, str], int] = {}
+# The SDK's session-client replacement needs encryption state. Reference-only CLI
+# reads must retain these public service APIs: published SDK 1.0.0 exposes only
+# download_upo and historical session browsing on invoice_sessions. Keep this
+# exception until the SDK offers a status/list replacement
+# that accepts a reference without inventing keys or parsing it as JSON state.
+PENDING_MIGRATION: dict[tuple[str, str], int] = {
+    ("commands/invoices/receipts.py", "batch.get_status"): 2,
+    ("commands/invoices/receipts.py", "batch.wait_for_completion"): 2,
+    ("commands/batch.py", "batch.get_status"): 1,
+    ("commands/batch.py", "batch.wait_for_completion"): 1,
+    ("commands/batch.py", "batch.list_invoices"): 1,
+    ("commands/batch.py", "batch.list_failed_invoices"): 1,
+}
 
 
 def _owner(node: ast.expr) -> str:

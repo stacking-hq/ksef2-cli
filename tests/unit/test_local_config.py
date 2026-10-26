@@ -2,6 +2,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from click import BadParameter
 from ksef2 import Environment
 from ksef2 import KSeFValidationError
 from ksef2.profiles import (
@@ -45,19 +46,23 @@ def test_resolve_settings_reads_config_once(
             profiles={
                 "demo": ProfileConfig(
                     environment="test",
-                    nip="1111111111",
+                    nip="5261040828",
                     auth=ProfileAuthConfig(type=ProfileAuthType.TEST_CERTIFICATE),
                 ),
                 "prod": ProfileConfig(
                     environment="production",
-                    nip="2222222222",
-                    auth=ProfileAuthConfig(type=ProfileAuthType.TEST_CERTIFICATE),
+                    nip="6880313213",
+                    auth=ProfileAuthConfig(
+                        type=ProfileAuthType.TOKEN, token_env="PROD_TOKEN"
+                    ),
                 ),
             },
         ),
     )
 
-    with patch.object(Path, "read_text", autospec=True, side_effect=Path.read_text) as read:
+    with patch.object(
+        Path, "read_text", autospec=True, side_effect=Path.read_text
+    ) as read:
         settings = resolve_settings(
             config_file=config_path, profile=profile, environ=environ
         )
@@ -81,7 +86,9 @@ def test_resolve_settings_preserves_profile_selection_errors(
     config_path = tmp_path / "config.toml"
     write_cli_config(config_path, CliProfileConfig())
 
-    with pytest.raises(KSeFValidationError) as caught:
+    with pytest.raises(
+        KSeFValidationError if missing_name is None else BadParameter
+    ) as caught:
         resolve_settings(config_file=config_path, profile=profile, environ=environ)
 
     if missing_name is None:
@@ -97,11 +104,7 @@ def test_resolve_settings_preserves_profile_selection_errors(
         assert str(caught.value) == (
             f"ksef2-cli profile 'missing' is not defined in {config_path}."
         )
-        assert caught.value.context == {
-            "code": "VALIDATION_ERROR",
-            "config_path": str(config_path),
-            "profile_name": "missing",
-        }
+        assert caught.value.param_hint == "--profile"
 
 
 def test_cli_config_loads_profiles_and_resolves_active_settings(tmp_path) -> None:
@@ -141,12 +144,12 @@ def test_cli_config_loads_profiles_and_resolves_active_settings(tmp_path) -> Non
     assert settings.effective_auth_timeout == 12.0
 
 
-def test_cli_config_defaults_to_production_without_a_profile(tmp_path) -> None:
+def test_cli_config_defaults_to_test_without_a_profile(tmp_path) -> None:
     settings = resolve_settings(config_file=tmp_path / "missing.toml")
 
     assert settings.profile_name is None
     assert settings.profile is None
-    assert settings.environment is Environment.PRODUCTION
+    assert settings.environment is Environment.TEST
     assert settings.effective_poll_interval == 1.0
     assert settings.effective_auth_timeout == 60.0
 
@@ -157,12 +160,12 @@ def test_profile_selection_uses_explicit_option_then_environment(tmp_path) -> No
         profiles={
             "demo": ProfileConfig(
                 environment="test",
-                nip="1111111111",
+                nip="5261040828",
                 auth=ProfileAuthConfig(type=ProfileAuthType.TEST_CERTIFICATE),
             ),
             "prod": ProfileConfig(
                 environment="production",
-                nip="2222222222",
+                nip="6880313213",
                 auth=ProfileAuthConfig(
                     type=ProfileAuthType.TOKEN,
                     token_env="KSEF2_PROD_TOKEN",
@@ -206,7 +209,7 @@ def test_command_auth_options_are_kept_apart_from_the_profile(tmp_path) -> None:
             profiles={
                 "demo": ProfileConfig(
                     environment="demo",
-                    nip="1111111111",
+                    nip="5261040828",
                     auth=ProfileAuthConfig(
                         type=ProfileAuthType.XADES_PEM,
                         cert=cert_path,
@@ -333,7 +336,7 @@ def test_resolve_settings_rejects_unknown_profile_and_no_config_profile(
     config_path = tmp_path / "config.toml"
     write_cli_config(config_path, CliProfileConfig())
 
-    with pytest.raises(KSeFValidationError, match="is not defined"):
+    with pytest.raises(BadParameter, match="is not defined"):
         resolve_settings(config_file=config_path, profile="missing")
 
     with pytest.raises(ValueError, match="--profile cannot be used"):
@@ -349,7 +352,7 @@ def test_resolve_settings_ignores_profiles_with_no_config(tmp_path) -> None:
             profiles={
                 "demo": ProfileConfig(
                     environment="demo",
-                    nip="1111111111",
+                    nip="5261040828",
                     auth=ProfileAuthConfig(type=ProfileAuthType.TEST_CERTIFICATE),
                 )
             },
@@ -364,7 +367,7 @@ def test_resolve_settings_ignores_profiles_with_no_config(tmp_path) -> None:
 
     assert settings.profile_name is None
     assert settings.profile is None
-    assert settings.environment is Environment.PRODUCTION
+    assert settings.environment is Environment.TEST
 
 
 def test_config_path_resolution(tmp_path, monkeypatch) -> None:

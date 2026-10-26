@@ -13,7 +13,7 @@ the UPO or from `invoices metadata`.
 ## Generate an identifier
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
   collective generate \
   --invoice "$KSEF_NUMBER_1" \
   --invoice "$KSEF_NUMBER_2"
@@ -39,7 +39,7 @@ to add the per-invoice payment and description:
 ```
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
   collective generate \
   --invoices-file invoices.json \
   --invoice "$KSEF_NUMBER_3"
@@ -51,7 +51,7 @@ Both sources are merged into one request: the file entries first, then the
 ## List identifiers
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   collective list \
   --date-from 2026-03-01 \
   --date-to 2026-03-31 \
@@ -74,7 +74,7 @@ rest.
 From one invoice to the identifiers that reference it:
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   collective list-for-invoice --ksef-number "$KSEF_NUMBER_1"
 ```
 
@@ -82,7 +82,7 @@ From identifiers to the invoices under them, with several identifiers in one
 request:
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   collective list-invoices "$IDENTIFIER_1" "$IDENTIFIER_2"
 ```
 

@@ -252,7 +252,7 @@ def test_render_rejects_missing_invoice_file(runner, tmp_path) -> None:
     )
 
     assert result.exit_code == 2
-    assert "does not exist" in result.output
+    assert "does not exist" in plain(result.output)
 
 
 class FakePdfExporter:
@@ -329,7 +329,7 @@ def test_render_pdf_passes_environment_to_sdk_constructor(
     assert result.exit_code == 0, result.output
     assert pdf.read_bytes().startswith(b"%PDF")
     assert environments == [
-        Environment.PRODUCTION if environment is None else Environment.DEMO
+        Environment.TEST if environment is None else Environment.DEMO
     ]
 
 

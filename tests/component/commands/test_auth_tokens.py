@@ -13,6 +13,7 @@ from conftest import (
     payload,
 )
 from ksef2.models import RefreshedToken
+from typer.testing import CliRunner
 
 from ksef2_cli.app import app
 
@@ -145,3 +146,69 @@ def test_save_state_always_masks_and_remains_usable(
         obj=fake_runtime(client=FakeClient(authentication=reused)),
     )
     assert payload(result)["access_token"] == "eyJhbGci…P_eA"
+
+
+@pytest.mark.parametrize("json_output", [False, True])
+@pytest.mark.parametrize("verbose", [False, True])
+def test_show_tokens_render_failure_redacts_credentials(
+    monkeypatch, json_output, verbose
+):
+    """An explicit reveal applies to successful output, never diagnostics."""
+    runner = CliRunner(mix_stderr=False)
+    state = auth_state(access_token=ACCESS, refresh_token=REFRESH)
+    auth = FakeService(with_token=FakeAuthenticated(state))
+
+    def fail_render(ctx, result):
+        raise RuntimeError(f"Could not render {ACCESS} {REFRESH}")
+
+    monkeypatch.setattr("ksef2_cli.context.render", fail_render)
+    result = runner.invoke(
+        app,
+        [
+            "--no-config",
+            *(["--json"] if json_output else []),
+            *(["--verbose"] if verbose else []),
+            "--nip",
+            "5261040828",
+            "--token",
+            "secret",
+            "auth",
+            "login",
+            "--show-tokens",
+        ],
+        obj=fake_runtime(client=FakeClient(authentication=auth)),
+    )
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert ACCESS not in result.stderr
+    assert REFRESH not in result.stderr
+    assert "<redacted>" in result.stderr
+
+
+@pytest.mark.parametrize("json_output", [False, True])
+def test_saved_refresh_failure_redacts_saved_credentials(tmp_path, json_output):
+    runner = CliRunner(mix_stderr=False)
+    state = auth_state(access_token=ACCESS, refresh_token=REFRESH)
+    source = tmp_path / "saved.json"
+    source.write_text(state.to_json(), encoding="utf-8")
+    auth = FakeService(refresh=RuntimeError(f"Rejected {ACCESS} {REFRESH}"))
+    result = runner.invoke(
+        app,
+        [
+            "--no-config",
+            *(["--json"] if json_output else []),
+            "--verbose",
+            "auth",
+            "refresh",
+            "--auth-state",
+            str(source),
+            "--show-tokens",
+        ],
+        obj=fake_runtime(client=FakeClient(authentication=auth)),
+    )
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert ACCESS not in result.stderr
+    assert REFRESH not in result.stderr
+    assert "<redacted>" in result.stderr
+    assert json.loads(source.read_text())["refresh_token"] == REFRESH

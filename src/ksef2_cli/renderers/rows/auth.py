@@ -16,7 +16,7 @@ def register() -> None:
     def _(value: TokenCredentials, renderer: PlainTextRenderer) -> str:
         return format_fields(
             (
-                ("token", value.token),
+                ("token", "**********"),
                 ("valid_until", value.valid_until),
             )
         )
@@ -25,10 +25,14 @@ def register() -> None:
     def _(value: AuthTokens, renderer: PlainTextRenderer) -> str:
         return format_fields(
             (
-                ("access_token", value.access_token.token),
+                ("access_token", "**********"),
                 ("access_token_valid_until", value.access_token.valid_until),
-                ("refresh_token", value.refresh_token.token),
+                ("refresh_token", "**********"),
                 ("refresh_token_valid_until", value.refresh_token.valid_until),
+                (
+                    "hint",
+                    "Use auth login --save-state FILE to retain resumable credentials.",
+                ),
             )
         )
 
@@ -36,7 +40,7 @@ def register() -> None:
     def _(value: RefreshedToken, renderer: PlainTextRenderer) -> str:
         return format_fields(
             (
-                ("access_token", value.access_token.token),
+                ("access_token", "**********"),
                 ("access_token_valid_until", value.access_token.valid_until),
             )
         )

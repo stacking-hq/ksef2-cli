@@ -6,6 +6,8 @@ XML can become HTML or PDF, without an authenticated client.
 """
 
 import sys
+import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -15,7 +17,7 @@ from ksef2.renderers import InvoiceXSLTRenderer
 
 from ksef2_cli.context import get_settings, run_command
 from ksef2_cli.exceptions import UsageError
-from ksef2_cli.io import write_text_file
+from ksef2_cli.io import read_invoice_xml, write_text_file
 from ksef2_cli.results import SavedFile
 from ksef2_cli.runtime import create_pdf_exporter
 
@@ -112,16 +114,28 @@ def fa3_build(
 def fa3_inspect(
     ctx: typer.Context,
     invoice_file: Annotated[
-        Path,
+        Path | None,
         typer.Option(
-            "--in", "-i", exists=True, dir_okay=False, help="FA(3) invoice XML file."
+            "--in",
+            "-i",
+            exists=True,
+            dir_okay=False,
+            help="FA(3) invoice XML file. Alternative to the positional path.",
         ),
-    ],
+    ] = None,
+    invoice_path: Annotated[
+        Path | None,
+        typer.Argument(exists=True, dir_okay=False, help="FA(3) invoice XML file."),
+    ] = None,
 ) -> None:
     """Read invoice XML and print the invoice it describes."""
 
     def operation() -> object:
-        return parse_invoice_xml(invoice_file.read_bytes())
+        if (invoice_file is None) == (invoice_path is None):
+            raise ValueError(
+                "Provide one invoice path, either positionally or with --in."
+            )
+        return parse_invoice_xml(read_invoice_xml(invoice_file or invoice_path))
 
     run_command(ctx, operation)
 
@@ -188,14 +202,15 @@ def fa3_render(
             if pdf is not None
             else None
         )
+        xml = read_invoice_xml(invoice_file).decode("utf-8")
         renderer = InvoiceXSLTRenderer(enable_code_lookups=code_lookups)
 
         if out is None and pdf is None:
-            return renderer.render_from_string(invoice_file.read_text("utf-8"))
+            return renderer.render_from_string(xml)
 
         saved: list[SavedFile] = []
         if out is not None:
-            html = renderer.render_from_string(invoice_file.read_text("utf-8"))
+            html = renderer.render_from_string(xml)
             saved.append(_write(out, html))
         if exporter is not None and pdf is not None:
             target = exporter.export_to_file(
@@ -223,7 +238,10 @@ def fa3_draft_example(
     """Print a minimal invoice draft that fa3 build accepts."""
 
     def operation() -> object:
-        return _EXAMPLE_DRAFT if out is None else _write(out, _EXAMPLE_DRAFT)
+        draft = json.loads(_EXAMPLE_DRAFT)
+        draft["header"]["generation_timestamp"] = datetime.now(UTC).isoformat()
+        content = json.dumps(draft, ensure_ascii=False, indent=2)
+        return content if out is None else _write(out, content)
 
     run_command(ctx, operation)
 

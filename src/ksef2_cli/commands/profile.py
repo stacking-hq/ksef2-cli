@@ -1,8 +1,10 @@
 """Local profile command group."""
 
+import sys
 from pathlib import Path
 from typing import Annotated
 
+import click
 import typer
 from ksef2.models import ContextIdentifierTypeEnum
 from ksef2.profiles import (
@@ -12,7 +14,7 @@ from ksef2.profiles import (
     ProfileStore,
 )
 
-from ksef2_cli.config import EnvironmentName, OutputMode
+from ksef2_cli.config import EnvironmentName, OutputMode, validate_nip
 from ksef2_cli.context import get_settings, run_command
 from ksef2_cli.exceptions import UsageError
 from ksef2_cli.results import (
@@ -146,6 +148,14 @@ def profile_create(
         if not nip:
             fail("Provide --nip.")
 
+        if token_env is None or context_type in (None, ContextIdentifierTypeEnum.NIP):
+            try:
+                validate_nip(nip)
+            except click.BadParameter as exc:
+                raise UsageError(exc.format_message()) from exc
+        if test_certificate and environment is not EnvironmentName.test:
+            raise UsageError("--test-cert requires --env test.")
+
         auth = _profile_auth(
             token_env=token_env,
             context_type=context_type,
@@ -204,10 +214,10 @@ def profile_current(ctx: typer.Context) -> None:
     """Show the active profile."""
 
     def operation() -> ProfileCurrent:
-        current = _profile_store(ctx).current()
-        if current is None:
+        settings = get_settings(ctx)
+        if not settings.config_loaded:
             return ProfileCurrent()
-        return ProfileCurrent(name=current[0], profile=current[1])
+        return ProfileCurrent(name=settings.profile_name, profile=settings.profile)
 
     run_command(ctx, operation)
 
@@ -248,13 +258,14 @@ def profile_delete(
     name: Annotated[str, typer.Argument(help="Profile name.")],
     yes: Annotated[
         bool,
-        typer.Option("--yes", help="Delete without asking for confirmation."),
+        typer.Option("--yes", "-y", help="Delete without asking for confirmation."),
     ] = False,
 ) -> None:
     """Remove a profile, leaving no profile active when it was the selected one."""
 
     def operation() -> ProfileDeleted:
         store = _profile_store(ctx)
+        store.get(name)
         was_active = store.load().active_profile == name
 
         if not yes:
@@ -263,7 +274,17 @@ def profile_delete(
                     "JSON output has no confirmation prompt, so deleting a profile "
                     "needs --yes."
                 )
-            if not typer.confirm(f"Delete profile {name!r}?"):
+            if not sys.stdin.isatty():
+                raise UsageError("Noninteractive deletion requires --yes.")
+            try:
+                confirmed = typer.confirm(f"Delete profile {name!r}?")
+            except click.Abort as exc:
+                if isinstance(exc.__cause__ or exc.__context__, KeyboardInterrupt):
+                    raise
+                raise UsageError(
+                    "Confirmation requires input. Re-run with --yes to delete."
+                ) from exc
+            if not confirmed:
                 return ProfileDeleted(name=name, deleted=False, was_active=was_active)
 
         _ = store.delete(name)

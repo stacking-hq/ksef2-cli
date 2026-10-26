@@ -15,8 +15,13 @@ uv run ksef2 peppol providers
 id=PPL000120 name=PPL000120 date_created=2026-02-23T08:17:19.144453+00:00
 ```
 
-`--env` picks which environment you ask, and production is the default. Add
-`--env test` for the TEST register.
+`--env` picks which environment you ask, and `test` is what you get when you name
+neither `--env` nor a profile. The example above therefore reads the TEST register;
+add `--env production` for the production one:
+
+```bash
+uv run ksef2 --env production peppol providers
+```
 
 ## Page through the register
 

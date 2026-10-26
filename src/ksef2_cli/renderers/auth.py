@@ -7,7 +7,7 @@ from ksef2_cli.results import AuthTokenOutput
 
 def mask_token(token: str) -> str:
     """Show only the first eight and last four characters of a bearer token."""
-    return f"{token[:8]}…{token[-4:]}"
+    return f"{token[:8]}…{token[-4:]}" if len(token) > 8 else "**********"
 
 
 def auth_token_fields(value: AuthTokenOutput) -> dict[str, object]:

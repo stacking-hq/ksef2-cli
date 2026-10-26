@@ -134,13 +134,14 @@ def test_auth_text_handlers() -> None:
     )
 
     assert plain_renderer.render(refreshed) == (
-        "access_token: access\naccess_token_valid_until: 2026-01-02T00:00:00+00:00"
+        "access_token: **********\naccess_token_valid_until: 2026-01-02T00:00:00+00:00"
     )
     assert plain_renderer.render(auth_tokens) == (
-        "access_token: access\n"
+        "access_token: **********\n"
         "access_token_valid_until: 2026-01-02T00:00:00+00:00\n"
-        "refresh_token: refresh\n"
-        "refresh_token_valid_until: 2026-01-03T00:00:00+00:00"
+        "refresh_token: **********\n"
+        "refresh_token_valid_until: 2026-01-03T00:00:00+00:00\n"
+        "hint: Use auth login --save-state FILE to retain resumable credentials."
     )
 
 

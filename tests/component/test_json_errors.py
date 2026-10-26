@@ -47,7 +47,7 @@ def test_permission_denied_json(separate_runner):
             "--no-config",
             "--json",
             "--nip",
-            "1234567890",
+            "5261040828",
             "--token",
             "secret",
             "auth",
@@ -80,7 +80,7 @@ def test_conflicting_auth_json(separate_runner):
             "--env",
             "test",
             "--nip",
-            "1234567890",
+            "5261040828",
             "--token",
             "secret",
             "--test-cert",
@@ -89,6 +89,9 @@ def test_conflicting_auth_json(separate_runner):
         ],
     )
     assert error_payload(result) == {
+        "code": "AuthenticationConfigError",
+        "ksef_code": None,
+        "trace_id": None,
         "type": "AuthenticationConfigError",
         "title": "Command failed",
         "message": "Provide only one auth method: token (--token), test certificate (--test-cert).",
@@ -109,7 +112,7 @@ def test_unexpected_json_redacts_secrets(separate_runner, verbose):
             "--json",
             *(["--verbose"] if verbose else []),
             "--nip",
-            "1234567890",
+            "5261040828",
             "--token",
             secret,
             "auth",
@@ -142,14 +145,14 @@ def invoke_main(monkeypatch, args):
         ["--output", "json"],
         ["--output=json"],
         ["-o", "json"],
-        ["--nip", "1234567890", "--json"],
+        ["--nip", "5261040828", "--json"],
     ],
 )
 @pytest.mark.parametrize(
     "command,message",
     [
         (["auth", "login", "--token"], "No such option: --token"),
-        (["auth", "refresh"], "Missing option"),
+        (["--output"], "requires an argument"),
         (["--env", "invalid", "auth", "login"], "Invalid value"),
     ],
 )
@@ -181,7 +184,7 @@ def test_text_error_regression(separate_runner):
             "--env",
             "test",
             "--nip",
-            "1234567890",
+            "5261040828",
             "--token",
             "secret",
             "--test-cert",
@@ -192,8 +195,8 @@ def test_text_error_regression(separate_runner):
     )
     assert result.exit_code == 1
     assert result.stdout == ""
-    assert result.stderr == (
-        "Error: Provide only one auth method: token (--token), test certificate (--test-cert).\n"
+    assert plain(result.stderr) == (
+        "Error: Provide only one auth method: token (--token), test certificate (--test-cert)."
     )
 
 
@@ -241,7 +244,7 @@ def test_main_json_preserves_success_and_error_exit_codes(monkeypatch):
             "--no-config",
             "--json",
             "--nip",
-            "1234567890",
+            "5261040828",
             "--token",
             "secret",
             "--test-cert",
@@ -267,6 +270,9 @@ def test_main_json_renders_command_abort(monkeypatch):
     result = invoke_main(monkeypatch, ["--json", "abort"])
 
     assert error_payload(result) == {
+        "code": "Aborted",
+        "ksef_code": None,
+        "trace_id": None,
         "type": "Aborted",
         "title": "Command failed",
         "message": "Aborted.",
@@ -290,10 +296,16 @@ def test_metadata_invalid_boolean_fails_before_auth(
     result = separate_runner.invoke(
         app,
         [
-            "--no-config", *output_flags,
-            "invoices", "metadata",
-            "--date-from", "2026-10-20", "--date-to", "2026-10-21",
-            option, "maybe",
+            "--no-config",
+            *output_flags,
+            "invoices",
+            "metadata",
+            "--date-from",
+            "2026-10-20",
+            "--date-to",
+            "2026-10-21",
+            option,
+            "maybe",
         ],
         obj=RuntimeOverrides(
             client_factory=unexpected_callback,
@@ -306,8 +318,15 @@ def test_metadata_invalid_boolean_fails_before_auth(
     message = f"{option} must be yes or no."
     if output_flags:
         assert error_payload(result, 2) == {
-            "type": "UsageError", "title": "Command failed", "message": message,
-            "details": [], "hints": [], "exit_code": 2,
+            "code": "USAGE_ERROR",
+            "ksef_code": None,
+            "trace_id": None,
+            "type": "UsageError",
+            "title": "Command failed",
+            "message": message,
+            "details": [],
+            "hints": [],
+            "exit_code": 2,
         }
     else:
         assert f"Error: {message}" in plain(result.stderr)
@@ -319,8 +338,14 @@ def test_metadata_runtime_failure_keeps_exit_one(separate_runner, output_flags):
     result = separate_runner.invoke(
         app,
         [
-            "--no-config", *output_flags, "invoices", "metadata",
-            "--date-from", "2026-10-20", "--date-to", "2026-10-21",
+            "--no-config",
+            *output_flags,
+            "invoices",
+            "metadata",
+            "--date-from",
+            "2026-10-20",
+            "--date-to",
+            "2026-10-21",
         ],
         obj=fake_runtime(auth=SimpleNamespace(invoices=service)),
     )

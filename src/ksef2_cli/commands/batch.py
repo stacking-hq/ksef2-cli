@@ -25,6 +25,7 @@ from ksef2_cli.io import (
     write_text_file,
 )
 from ksef2_cli.results import BatchPrepared, BatchSubmitted, SavedFile
+from ksef2_cli.sdk_compat import allow_deprecated_batch_reference_reads
 
 app = typer.Typer(help="Submit and inspect batch invoice sessions.")
 
@@ -34,9 +35,18 @@ def _status_or_wait(
 ) -> SessionStatusResponse | None:
     """Wait when the command asked for it, otherwise report no status yet."""
 
-    return (
-        session.wait(timeout=timeout, poll_interval=poll_interval) if wait else None
-    )
+    if not wait:
+        return None
+    try:
+        return session.wait(timeout=timeout, poll_interval=poll_interval)
+    except (Exception, KeyboardInterrupt) as error:
+        reference = session.resume_state().reference_number
+        raise RemoteServiceError(
+            f"Batch session {reference} was submitted, but waiting stopped: "
+            f"{str(error) or type(error).__name__}. Check batch status --reference "
+            f"{reference}; do not submit the invoices again.",
+            exit_code=130 if isinstance(error, KeyboardInterrupt) else 1,
+        ) from error
 
 
 def _submit_inputs(
@@ -115,9 +125,15 @@ def _upload_failure(
         retry = (
             f"ksef2 batch upload --prepared {prepared} --state-file {state_file}"
             if state_file is not None
-            else f"ksef2 batch submit --prepared {prepared}"
+            else None
         )
-        hints.append(f"Retry the same parts without rebuilding them: {retry}")
+        if retry is not None:
+            hints.append(f"Retry the same parts without rebuilding them: {retry}")
+        else:
+            hints.append(
+                f"Session {error.reference_number} already exists. No state file was "
+                "requested; do not submit again without checking that session."
+            )
     else:
         hints.append(
             "Prepare the invoices once with ksef2 batch prepare --out DIR, then retry "
@@ -145,7 +161,7 @@ def batch_prepare(
     offline_mode: Annotated[
         bool, typer.Option("--offline", help="Declare offline invoicing mode.")
     ] = False,
-    max_part_size: Annotated[int | None, typer.Option("--max-part-size", min=1)] = None,
+    max_part_size: Annotated[int | None, typer.Option("--max-part-size", min=1, help="Maximum encrypted batch part size in bytes.")] = None,
 ) -> None:
     """Build and encrypt batch parts, then store them for a later submit.
 
@@ -215,7 +231,7 @@ def batch_submit(
     offline_mode: Annotated[
         bool, typer.Option("--offline", help="Declare offline invoicing mode.")
     ] = False,
-    max_part_size: Annotated[int | None, typer.Option("--max-part-size", min=1)] = None,
+    max_part_size: Annotated[int | None, typer.Option("--max-part-size", min=1, help="Maximum encrypted batch part size in bytes.")] = None,
     wait: Annotated[
         bool, typer.Option("--wait", help="Wait for batch processing completion.")
     ] = False,
@@ -250,6 +266,10 @@ def batch_submit(
                     max_part_size=max_part_size,
                 )
             state = session.resume_state()
+            if state_file:
+                _ = write_text_file(
+                    state_file, state.to_json(indent=2), file_mode=SECRET_MODEL_FILE_MODE
+                )
             status = _status_or_wait(
                 session, wait=wait, timeout=timeout, poll_interval=poll_interval
             )
@@ -313,7 +333,9 @@ def batch_upload(
             auth: AuthenticatedClient,
         ) -> tuple[BatchSessionResumeState, SessionStatusResponse | None]:
             with auth.batch_session(state=state, prepared_batch=batch) as session:
-                session.upload_parts()
+                current = session.get_status()
+                if current.status.code == 100:
+                    session.upload_parts()
                 resumed = session.resume_state()
             # Leaving the with block closed the session, which is what lets KSeF start
             # processing and lets wait() run at all.
@@ -397,16 +419,7 @@ class BatchSendInput(BaseModel):
 @app.command("status")
 def batch_status(
     ctx: typer.Context,
-    reference: Annotated[
-        str | None,
-        typer.Option(
-            "--reference",
-            help=(
-                "Batch session reference number. Not enough here: status needs the "
-                "resumable state in --state-file."
-            ),
-        ),
-    ] = None,
+    reference: Annotated[str | None, typer.Option("--reference", help="Batch session reference number; use instead of --state-file.")] = None,
     state_file: Annotated[
         Path | None,
         typer.Option(
@@ -422,15 +435,23 @@ def batch_status(
 ) -> None:
     """Fetch or wait for batch session status.
 
-    Reopening the session takes its keys, so --state-file is required and a bare
-    --reference is refused before authenticating.
+    Read by reference, or reopen using the state saved by batch submit.
     """
 
     def operation() -> SessionStatusResponse:
         inputs = BatchSendInput(reference=reference, state_file=state_file)
-        state = inputs.resume_state(command="status")
+        state = inputs.resume_state(command="status") if inputs.state_file else None
 
         def get_batch_status(auth: AuthenticatedClient) -> SessionStatusResponse:
+            if inputs.reference:
+                with allow_deprecated_batch_reference_reads():
+                    if wait:
+                        return auth.batch.wait_for_completion(
+                            session=inputs.reference,
+                            timeout=timeout,
+                            poll_interval=poll_interval,
+                        )
+                    return auth.batch.get_status(session=inputs.reference)
             with auth.batch_session(state=state) as session:
                 if wait:
                     return session.wait(
@@ -447,16 +468,7 @@ def batch_status(
 @app.command("list")
 def batch_list(
     ctx: typer.Context,
-    reference: Annotated[
-        str | None,
-        typer.Option(
-            "--reference",
-            help=(
-                "Batch session reference number. Not enough here: listing needs the "
-                "resumable state in --state-file."
-            ),
-        ),
-    ] = None,
+    reference: Annotated[str | None, typer.Option("--reference", help="Batch session reference number; use instead of --state-file.")] = None,
     state_file: Annotated[
         Path | None,
         typer.Option(
@@ -476,15 +488,27 @@ def batch_list(
 ) -> None:
     """List invoices submitted in a batch session.
 
-    Reopening the session takes its keys, so --state-file is required and a bare
-    --reference is refused before authenticating.
+    Read by reference, or reopen using the state saved by batch submit.
     """
 
     def operation() -> SessionInvoicesResponse:
         inputs = BatchSendInput(reference=reference, state_file=state_file)
-        state = inputs.resume_state(command="list")
+        state = inputs.resume_state(command="list") if inputs.state_file else None
 
         def list_batch_invoices(auth: AuthenticatedClient) -> SessionInvoicesResponse:
+            if inputs.reference:
+                with allow_deprecated_batch_reference_reads():
+                    if failed:
+                        return auth.batch.list_failed_invoices(
+                            session=inputs.reference,
+                            page_size=page_size,
+                            continuation_token=continuation_token,
+                        )
+                    return auth.batch.list_invoices(
+                        session=inputs.reference,
+                        page_size=page_size,
+                        continuation_token=continuation_token,
+                    )
             with auth.batch_session(state=state) as session:
                 if failed:
                     return session.list_failed_invoices(
@@ -506,13 +530,7 @@ def batch_upo(
     ctx: typer.Context,
     upo_reference: Annotated[str, typer.Option("--upo-reference")],
     output_file: Annotated[Path, typer.Option("--out", "-o", dir_okay=False)],
-    reference: Annotated[
-        str | None,
-        typer.Option(
-            "--reference",
-            help="Batch session reference number. A UPO download needs no session state.",
-        ),
-    ] = None,
+    reference: Annotated[str | None, typer.Option("--reference", help="Batch session reference number; use instead of --state-file.")] = None,
     state_file: Annotated[
         Path | None,
         typer.Option(

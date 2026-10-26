@@ -110,7 +110,7 @@ def test_profile_create_list_current_show_and_use(runner, tmp_path) -> None:
     ]
 
     current_result = runner.invoke(
-        app, cli_args("--config", str(config_path), "profile", "current")
+        app, ["--json", "--config", str(config_path), "profile", "current"]
     )
     assert payload(current_result)["name"] == "demo"
 
@@ -130,7 +130,7 @@ def test_profile_create_list_current_show_and_use(runner, tmp_path) -> None:
             "--env",
             "production",
             "--nip",
-            "1234567890",
+            "6880313213",
             "--token-env",
             "KSEF2_PROD_TOKEN",
             "--no-activate",
@@ -284,16 +284,19 @@ def test_profile_delete_clears_the_active_profile(runner, tmp_path) -> None:
     assert _active_profile(config_path) is None
 
     current = runner.invoke(
-        app, cli_args("--config", str(config_path), "profile", "current")
+        app, ["--json", "--config", str(config_path), "profile", "current"]
     )
     assert payload(current) == {"name": None, "profile": None}
 
 
-def test_profile_delete_asks_before_removing_in_text_mode(runner, tmp_path) -> None:
+def test_profile_delete_asks_before_removing_in_text_mode(
+    runner, tmp_path, monkeypatch
+) -> None:
     config_path = tmp_path / "config.toml"
     _create_profile(runner, config_path, "demo")
     args = ["--config", str(config_path), "profile", "delete", "demo"]
 
+    monkeypatch.setattr("click.testing._NamedTextIOWrapper.isatty", lambda self: True)
     declined = runner.invoke(app, args, input="n\n")
 
     assert declined.exit_code == 0

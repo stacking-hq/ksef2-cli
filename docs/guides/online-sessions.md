@@ -34,9 +34,13 @@ state: {"format_version":1,"reference_number":"20260302-...","aes_key":"********
 resumed: the state reaches stdout and the process ends. `online send` is the only
 other command that may open its own session; the rest require the file.
 
-The state file holds the session AES key and IV, so the CLI writes it with
-owner-only permissions (`0600`) and never prints those values. Treat it as a
-credential. `valid_until` is KSeF's deadline for the session: once it passes, the
+The state file holds the session AES key and IV **in plain text**, so the CLI creates
+it with owner-only permissions (`0600`) and never prints those values. That mode is a
+permission and not encryption: anyone reading as the file's owner, and anything that
+copies the bytes with them, gets a usable session. Keep the file out of the repository
+and out of logs, and delete it when the session is done.
+
+`valid_until` is KSeF's deadline for the session: once it passes, the
 session stops accepting anything, so open a new one rather than retrying the old
 state.
 
@@ -55,8 +59,15 @@ uv run ksef2 --profile test-company \
 | `--save-state FILE` | Write the state of the session used, opened or resumed. This is how a session started without `--state-file` becomes resumable. |
 | `--form` | Schema for a newly opened session: `FA2`, `FA3` (default), `FA_RR1`, `PEF3`, `PEF_KOR3`. |
 | `--wait` | Wait for each invoice to finish processing before sending the next. |
-| `--keep-open` | Leave the session open when the command ends. Without it the session is closed. |
+| `--keep-open` | Keep a session that this command opened for the next command. Without it a newly opened session closes. A session resumed with `--state-file` is already left open, so the flag changes nothing there. |
+| `--close` | Close the session when the command ends, including one resumed with `--state-file`. This is how a resumed session finishes without a separate `online close`. |
 | `--timeout`, `--poll-interval` | Waiting budget: 60 seconds, checked every 2 seconds by default. |
+
+A session this command opened closes by default, because that command owned the whole
+send. A session resumed with `--state-file` is left open by default, because the file is
+the handle and the next command is expected to use it; add `--close` to finish it. The
+`closed` field in the output tells you which happened, and `--close` together with
+`--keep-open` stops with an error instead of picking one.
 
 Invoice paths are files, not directories, and every path must exist. Unlike
 `invoices send`, this command has no directory walk and no `--recursive`.
@@ -78,6 +89,19 @@ file=invoice-1.xml result={"ordinal_number":1,"invoice_number":"FV/42/2026","kse
 With `--json` you get the full payload: `state_file`, `closed`, and a `results`
 array with one `{file, result}` object per invoice. The `closed` flag tells you
 whether KSeF may start processing yet.
+
+Stopping this command after KSeF accepted an invoice does not take the invoice back.
+Ctrl-C exits `130`, and a `--wait` that runs out of time exits `1`, while what was
+already sent stays in the session.
+
+What survived the stop depends on how the session started. A session resumed with
+`--state-file` still has that file, so `online list --state-file FILE` reads it. A
+session this command opened writes `--save-state` only after the whole send finished, so
+an interrupted send leaves no state file at all: find the session again with
+`sessions invoice-list --type online`, and take the invoice references from whatever the
+command managed to print. Read the session before sending any of those files a second
+time. See
+[An interrupted send is not an unsubmitted invoice](invoices.md#an-interrupted-send-is-not-an-unsubmitted-invoice).
 
 ## Check where the session stands
 
@@ -156,7 +180,7 @@ uv run ksef2 --profile test-company \
 `--out` is required, and so is exactly one of `--ksef-number` or
 `--invoice-reference`. The command asks once and never waits, so run
 `online invoice-status --wait` first. If KSeF has not issued the UPO yet, the
-command exits non-zero under the heading `KSeF has not finished processing yet`
+command exits `1` under the heading `KSeF has not finished processing yet`
 and tells you to retry later; an invoice KSeF rejected never gets a UPO at all, so
 read its status before retrying forever.
 

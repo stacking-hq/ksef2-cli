@@ -17,7 +17,8 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--env`, `-e` | [production\|demo\|test] | - | - | KSeF environment. Defaults to the selected profile or production. |
+| `--version` | - | false | - | Show CLI and SDK versions. |
+| `--env`, `-e` | [production\|demo\|test] | - | - | KSeF environment. Defaults to the selected profile or TEST. |
 | `--output`, `-o` | [text\|json] | - | - | Output mode. Defaults to text. |
 | `--json` | - | false | - | Shortcut for --output json. |
 | `--verbose`, `-v` | - | false | - | Show tracebacks for CLI errors. |
@@ -62,7 +63,7 @@ ksef2 [GLOBAL OPTIONS] COMMAND [ARGS]...
 
 ### `auth login`
 
-Authenticate with the configured method and print access/refresh tokens.
+Authenticate and show masked tokens. Use --save-state to retain credentials.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
@@ -79,11 +80,13 @@ End the saved session and remove its auth state file.
 
 ### `auth refresh`
 
-Exchange a refresh token for a new access token.
+Refresh access using saved state or an explicit refresh token; mask output.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--refresh-token` | TEXT | required | KSEF2_REFRESH_TOKEN | Refresh token. |
+| `--refresh-token` | TEXT | - | KSEF2_REFRESH_TOKEN | Refresh token. Prefer --auth-state to avoid tokens in process arguments. |
+| `--auth-state`, `--state-file` | FILE | - | - | Saved auth state to reuse. Defaults to the global --auth-state. |
+| `--save-state` | FILE | - | - | Write resumable auth state to this file. It holds bearer tokens in plain text. |
 | `--show-tokens` | - | false | - | Print the raw access and refresh tokens. They are bearer credentials; keep them out of logs. |
 
 ### `auth resume`
@@ -102,12 +105,11 @@ Reuse saved auth state, refreshing the access token when it expired.
 
 List invoices submitted in a batch session.
 
-Reopening the session takes its keys, so --state-file is required and a bare
---reference is refused before authenticating.
+Read by reference, or reopen using the state saved by batch submit.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--reference` | TEXT | - | - | Batch session reference number. Not enough here: listing needs the resumable state in --state-file. |
+| `--reference` | TEXT | - | - | Batch session reference number; use instead of --state-file. |
 | `--state-file` | FILE | - | - | Batch session state written by batch submit --state-file. |
 | `--page-size` | INTEGER RANGE | 10 | - | - |
 | `--continuation-token` | TEXT | - | - | - |
@@ -130,18 +132,17 @@ as protected as a credential file.
 | `--out`, `-o` | DIRECTORY | required | - | Artifact directory. |
 | `--form` | [FA2\|FA3\|FA_RR1\|PEF3\|PEF_KOR3] | FA3 | - | Form schema: FA2, FA3, FA_RR1, PEF3, PEF_KOR3. |
 | `--offline` | - | false | - | Declare offline invoicing mode. |
-| `--max-part-size` | INTEGER RANGE | - | - | - |
+| `--max-part-size` | INTEGER RANGE | - | - | Maximum encrypted batch part size in bytes. |
 
 ### `batch status`
 
 Fetch or wait for batch session status.
 
-Reopening the session takes its keys, so --state-file is required and a bare
---reference is refused before authenticating.
+Read by reference, or reopen using the state saved by batch submit.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--reference` | TEXT | - | - | Batch session reference number. Not enough here: status needs the resumable state in --state-file. |
+| `--reference` | TEXT | - | - | Batch session reference number; use instead of --state-file. |
 | `--state-file` | FILE | - | - | Batch session state written by batch submit --state-file. |
 | `--wait` | - | false | - | Wait for completion. |
 | `--timeout` | FLOAT RANGE | 120.0 | - | - |
@@ -163,7 +164,7 @@ batch prepare stored, which is the retry path after a failed upload.
 | `--state-file` | FILE | - | - | - |
 | `--form` | [FA2\|FA3\|FA_RR1\|PEF3\|PEF_KOR3] | FA3 | - | Form schema: FA2, FA3, FA_RR1, PEF3, PEF_KOR3. |
 | `--offline` | - | false | - | Declare offline invoicing mode. |
-| `--max-part-size` | INTEGER RANGE | - | - | - |
+| `--max-part-size` | INTEGER RANGE | - | - | Maximum encrypted batch part size in bytes. |
 | `--wait` | - | false | - | Wait for batch processing completion. |
 | `--timeout` | FLOAT RANGE | 120.0 | - | - |
 | `--poll-interval` | FLOAT RANGE | 2.0 | - | - |
@@ -195,7 +196,7 @@ reopened.
 | --- | --- | --- | --- | --- |
 | `--upo-reference` | TEXT | required | - | - |
 | `--out`, `-o` | FILE | required | - | - |
-| `--reference` | TEXT | - | - | Batch session reference number. A UPO download needs no session state. |
+| `--reference` | TEXT | - | - | Batch session reference number; use instead of --state-file. |
 | `--state-file` | FILE | - | - | Batch session state. Only its reference number is used here. |
 
 ## `certificates`
@@ -370,11 +371,14 @@ Print a minimal invoice draft that fa3 build accepts.
 
 ### `fa3 inspect`
 
+Usage: `ksef2 fa3 inspect [OPTIONS] [INVOICE_PATH]`
+
 Read invoice XML and print the invoice it describes.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--in`, `-i` | FILE | required | - | FA(3) invoice XML file. |
+| `--in`, `-i` | FILE | - | - | FA(3) invoice XML file. Alternative to the positional path. |
+| `[INVOICE_PATH]` | - | - | - | FA(3) invoice XML file. |
 
 ### `fa3 render`
 
@@ -392,15 +396,18 @@ Render invoice XML to HTML, and optionally to PDF.
 
 ### `invoices download`
 
+Usage: `ksef2 invoices download [OPTIONS] [NUMBER]`
+
 Download processed invoice XML by KSeF number.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--ksef-number` | TEXT | required | - | KSeF invoice number. |
+| `--ksef-number` | TEXT | - | - | KSeF invoice number. Alternative to the positional number. |
 | `--out`, `-o` | FILE | - | - | Target XML file (default: NUMBER.xml in the current directory). Use - for raw XML bytes on stdout; diagnostics stay on stderr. Incompatible with global JSON output. |
 | `--wait` | - | false | - | Poll until the invoice can be downloaded. |
-| `--timeout` | FLOAT RANGE | 120.0 | - | - |
-| `--poll-interval` | FLOAT RANGE | 2.0 | - | - |
+| `--timeout` | FLOAT RANGE | 120.0 | - | Maximum wait in seconds. |
+| `--poll-interval` | FLOAT RANGE | 2.0 | - | Seconds between status checks. |
+| `[NUMBER]` | - | - | - | KSeF invoice number. |
 
 ### `invoices export`
 
@@ -408,8 +415,8 @@ Schedule an invoice export and optionally save its resumable state.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--date-from` | TEXT | required | - | Start datetime/date, ISO format. |
-| `--date-to` | TEXT | - | - | End datetime/date, ISO format. |
+| `--date-from` | TEXT | required | - | Start ISO date/datetime. Without an offset, interpreted in Europe/Warsaw. Maximum range: 100 days. |
+| `--date-to` | TEXT | - | - | End ISO date/datetime. Defaults to now UTC. Without an offset, interpreted in Europe/Warsaw. |
 | `--role` | [seller\|buyer\|third_subject\|authorized_subject] | seller | - | buyer, seller, third_subject, authorized_subject. |
 | `--date-type` | [issue_date\|invoicing_date\|permanent_storage] | issue_date | - | issue_date, invoicing_date, permanent_storage. |
 | `--amount-type` | [brutto\|netto\|vat] | brutto | - | brutto, netto, or vat. |
@@ -429,7 +436,7 @@ Schedule an invoice export and optionally save its resumable state.
 | `--attachment` | TEXT | - | - | Filter by attachment presence: yes or no. |
 | `--self-invoicing` | TEXT | - | - | Filter by self-invoicing flag: yes or no. |
 | `--only-metadata` | - | false | - | Export only metadata. |
-| `--compression-type` | [zip\|tar_gz] | - | - | - |
+| `--compression-type` | [zip\|tar_gz] | - | - | Export archive format: zip or tar_gz. |
 | `--handle-file` | FILE | - | - | Save export handle needed for later fetch. |
 
 ### `invoices export-download`
@@ -438,8 +445,8 @@ Schedule, wait for, download, and decrypt an invoice export.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--date-from` | TEXT | required | - | Start datetime/date, ISO format. |
-| `--date-to` | TEXT | - | - | End datetime/date, ISO format. |
+| `--date-from` | TEXT | required | - | Start ISO date/datetime. Without an offset, interpreted in Europe/Warsaw. Maximum range: 100 days. |
+| `--date-to` | TEXT | - | - | End ISO date/datetime. Defaults to now UTC. Without an offset, interpreted in Europe/Warsaw. |
 | `--role` | [seller\|buyer\|third_subject\|authorized_subject] | seller | - | buyer, seller, third_subject, authorized_subject. |
 | `--date-type` | [issue_date\|invoicing_date\|permanent_storage] | issue_date | - | issue_date, invoicing_date, permanent_storage. |
 | `--amount-type` | [brutto\|netto\|vat] | brutto | - | brutto, netto, or vat. |
@@ -458,12 +465,12 @@ Schedule, wait for, download, and decrypt an invoice export.
 | `--invoicing-mode` | [online\|offline] | - | - | online or offline. |
 | `--attachment` | TEXT | - | - | Filter by attachment presence: yes or no. |
 | `--self-invoicing` | TEXT | - | - | Filter by self-invoicing flag: yes or no. |
-| `--out-dir` | DIRECTORY | downloads | - | - |
-| `--only-metadata` | - | false | - | - |
-| `--compression-type` | [zip\|tar_gz] | - | - | - |
-| `--timeout` | FLOAT RANGE | 120.0 | - | - |
-| `--poll-interval` | FLOAT RANGE | 2.0 | - | - |
-| `--handle-file` | FILE | - | - | - |
+| `--out-dir` | DIRECTORY | downloads | - | Directory for downloaded export files. |
+| `--only-metadata` | - | false | - | Export metadata without invoice XML files. |
+| `--compression-type` | [zip\|tar_gz] | - | - | Export archive format: zip or tar_gz. |
+| `--timeout` | FLOAT RANGE | 120.0 | - | Maximum wait in seconds. |
+| `--poll-interval` | FLOAT RANGE | 2.0 | - | Seconds between status checks. |
+| `--handle-file` | FILE | - | - | Save resumable export state to this protected file. |
 
 ### `invoices export-fetch`
 
@@ -471,11 +478,11 @@ Fetch and decrypt an export package using a saved export handle.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--handle-file` | FILE | required | - | - |
-| `--out-dir` | DIRECTORY | downloads | - | - |
+| `--handle-file` | FILE | required | - | Saved export handle containing the decryption state. |
+| `--out-dir` | DIRECTORY | downloads | - | Directory for downloaded export files. |
 | `--wait` | - | false | - | Wait for the export package. |
-| `--timeout` | FLOAT RANGE | 120.0 | - | - |
-| `--poll-interval` | FLOAT RANGE | 2.0 | - | - |
+| `--timeout` | FLOAT RANGE | 120.0 | - | Maximum wait in seconds. |
+| `--poll-interval` | FLOAT RANGE | 2.0 | - | Seconds between status checks. |
 
 ### `invoices export-pdf`
 
@@ -487,8 +494,8 @@ written beside it, or into --pdf-dir when given.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--date-from` | TEXT | required | - | Start datetime/date, ISO format. |
-| `--date-to` | TEXT | - | - | End datetime/date, ISO format. |
+| `--date-from` | TEXT | required | - | Start ISO date/datetime. Without an offset, interpreted in Europe/Warsaw. Maximum range: 100 days. |
+| `--date-to` | TEXT | - | - | End ISO date/datetime. Defaults to now UTC. Without an offset, interpreted in Europe/Warsaw. |
 | `--role` | [seller\|buyer\|third_subject\|authorized_subject] | seller | - | buyer, seller, third_subject, authorized_subject. |
 | `--date-type` | [issue_date\|invoicing_date\|permanent_storage] | issue_date | - | issue_date, invoicing_date, permanent_storage. |
 | `--amount-type` | [brutto\|netto\|vat] | brutto | - | brutto, netto, or vat. |
@@ -507,14 +514,14 @@ written beside it, or into --pdf-dir when given.
 | `--invoicing-mode` | [online\|offline] | - | - | online or offline. |
 | `--attachment` | TEXT | - | - | Filter by attachment presence: yes or no. |
 | `--self-invoicing` | TEXT | - | - | Filter by self-invoicing flag: yes or no. |
-| `--out-dir` | DIRECTORY | downloads | - | - |
+| `--out-dir` | DIRECTORY | downloads | - | Directory for downloaded export files. |
 | `--pdf-dir` | DIRECTORY | - | - | Where to write PDFs. Defaults to --out-dir. |
 | `--paper-size` | [a4\|a4-landscape\|a3\|a3-landscape\|letter\|letter-landscape] | - | - | PDF paper size. Defaults to the stylesheet setting. |
-| `--only-metadata` | - | false | - | - |
-| `--compression-type` | [zip\|tar_gz] | - | - | - |
-| `--timeout` | FLOAT RANGE | 120.0 | - | - |
-| `--poll-interval` | FLOAT RANGE | 2.0 | - | - |
-| `--handle-file` | FILE | - | - | - |
+| `--only-metadata` | - | false | - | Export metadata without invoice XML files. |
+| `--compression-type` | [zip\|tar_gz] | - | - | Export archive format: zip or tar_gz. |
+| `--timeout` | FLOAT RANGE | 120.0 | - | Maximum wait in seconds. |
+| `--poll-interval` | FLOAT RANGE | 2.0 | - | Seconds between status checks. |
+| `--handle-file` | FILE | - | - | Save resumable export state to this protected file. |
 
 ### `invoices export-status`
 
@@ -530,8 +537,8 @@ Query invoice metadata.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `--date-from` | TEXT | required | - | Start datetime/date, ISO format. |
-| `--date-to` | TEXT | - | - | End datetime/date, ISO format. |
+| `--date-from` | TEXT | required | - | Start ISO date/datetime. Without an offset, interpreted in Europe/Warsaw. Maximum range: 100 days. |
+| `--date-to` | TEXT | - | - | End ISO date/datetime. Defaults to now UTC. Without an offset, interpreted in Europe/Warsaw. |
 | `--role` | [seller\|buyer\|third_subject\|authorized_subject] | seller | - | buyer, seller, third_subject, authorized_subject. |
 | `--date-type` | [issue_date\|invoicing_date\|permanent_storage] | issue_date | - | issue_date, invoicing_date, permanent_storage. |
 | `--amount-type` | [brutto\|netto\|vat] | brutto | - | brutto, netto, or vat. |
@@ -563,7 +570,7 @@ Send one or more invoice XML files through an online or batch workflow.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
-| `INVOICE_PATHS...` | - | required | - | Invoice XML files or directories containing invoice XML files. |
+| `INVOICE_PATHS...` | - | required | - | Invoice XML files, directories, or - for one invoice from stdin. |
 | `--mode` | [online\|batch] | online | - | online or batch. |
 | `--recursive` | - | false | - | Include XML files in nested directories. |
 | `--wait` | - | false | - | Wait for final processing status. |
@@ -572,9 +579,9 @@ Send one or more invoice XML files through an online or batch workflow.
 | `--receipt-dir` | DIRECTORY | - | - | Directory for receipt files. |
 | `--form` | [FA2\|FA3\|FA_RR1\|PEF3\|PEF_KOR3] | FA3 | - | Form schema: FA2, FA3, FA_RR1, PEF3, PEF_KOR3. |
 | `--offline` | - | false | - | Declare batch offline invoicing mode. |
-| `--max-part-size` | INTEGER RANGE | - | - | - |
-| `--timeout` | FLOAT RANGE | 120.0 | - | - |
-| `--poll-interval` | FLOAT RANGE | 2.0 | - | - |
+| `--max-part-size` | INTEGER RANGE | - | - | Maximum encrypted batch part size in bytes. Batch mode only. |
+| `--timeout` | FLOAT RANGE | 120.0 | - | Maximum processing wait in seconds. |
+| `--poll-interval` | FLOAT RANGE | 2.0 | - | Seconds between processing status checks. |
 
 ### `invoices status`
 
@@ -658,8 +665,8 @@ Fetch or wait for one invoice status within an online session.
 | `--state-file` | FILE | required | - | - |
 | `--invoice-reference` | TEXT | required | - | - |
 | `--wait` | - | false | - | Poll until ready. |
-| `--timeout` | FLOAT RANGE | 60.0 | - | - |
-| `--poll-interval` | FLOAT RANGE | 2.0 | - | - |
+| `--timeout` | FLOAT RANGE | 60.0 | - | Maximum wait in seconds. |
+| `--poll-interval` | FLOAT RANGE | 2.0 | - | Seconds between status checks. |
 
 ### `online list`
 
@@ -685,7 +692,7 @@ Open an online session and optionally save resumable state.
 
 Usage: `ksef2 online send [OPTIONS] INVOICE_PATHS...`
 
-Send one or more invoice XML files through an online session.
+Send invoice XML files. New sessions close; resumed sessions stay open by default.
 
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
@@ -695,8 +702,9 @@ Send one or more invoice XML files through an online session.
 | `--form` | [FA2\|FA3\|FA_RR1\|PEF3\|PEF_KOR3] | FA3 | - | Form schema: FA2, FA3, FA_RR1, PEF3, PEF_KOR3. |
 | `--wait` | - | false | - | Wait for each invoice to finish processing. |
 | `--keep-open` | - | false | - | Leave the session open after sending. |
-| `--timeout` | FLOAT RANGE | 60.0 | - | - |
-| `--poll-interval` | FLOAT RANGE | 2.0 | - | - |
+| `--close` | - | false | - | Close the session after sending, including a resumed session. |
+| `--timeout` | FLOAT RANGE | 60.0 | - | Maximum wait in seconds. |
+| `--poll-interval` | FLOAT RANGE | 2.0 | - | Seconds between status checks. |
 
 ### `online status`
 
@@ -924,7 +932,7 @@ Remove a profile, leaving no profile active when it was the selected one.
 | Option | Type | Default | Env var | Help |
 | --- | --- | --- | --- | --- |
 | `NAME` | - | required | - | Profile name. |
-| `--yes` | - | false | - | Delete without asking for confirmation. |
+| `--yes`, `-y` | - | false | - | Delete without asking for confirmation. |
 
 ### `profile list`
 

@@ -49,9 +49,10 @@ status: {"status":{"code":200,"description":"Processed","details":null},...,"upo
 ```
 
 Without `--wait` nothing polls the session: JSON output reports `status` as `null`
-and text output leaves that line out. The state file holds the session key, so the CLI
-writes it with owner-only permissions (`0600`) and prints its secrets masked, like
-every other state file in the CLI.
+and text output leaves that line out. The state file holds the session AES key and IV
+**in plain text**, so the CLI creates it with owner-only permissions (`0600`) and prints
+those values masked, like every other state file in the CLI. `0600` decides who may open
+the file and encrypts nothing, so it is a credential wherever it is copied to.
 
 ## Prepare once, upload more than once
 
@@ -89,8 +90,9 @@ A prepared package is uploaded exactly as it was built, so `--form`, `--offline`
 and `--max-part-size` do not apply alongside `--prepared`, and passing invoice
 files with it fails before anything is sent.
 
-The artifact holds a session key and the invoice payloads. Treat `batch-parts` the
-way you treat a credential file and remove it when the batch is done.
+The artifact holds a session key and the invoice payloads, both **in plain text** at
+that path. Treat `batch-parts` the way you treat a credential file and remove it when
+the batch is done.
 
 ## Recover an upload KSeF rejected
 
@@ -116,26 +118,58 @@ valid answer when the old one has already expired.
 Without `--state-file` there is nothing to reattach to, and the failure names the
 other way out: prepare the invoices once, then submit the stored package.
 
+## An interrupted batch is not an unsubmitted batch
+
+`batch submit` writes the session reference to `--state-file` before it starts polling,
+and `invoices send --mode batch` writes its receipt at that same moment. So Ctrl-C, an
+exhausted `--timeout`, and a dropped connection end the command with the batch already
+submitted, and the CLI says so (`Batch session ... was submitted, but waiting stopped:
+... do not submit the invoices again`) and exits `130` for Ctrl-C or `1` otherwise.
+
+Read what KSeF holds before you upload anything again:
+
+```bash
+uv run ksef2 --profile prod-token --json \
+  batch status --state-file batch-state.json --wait
+
+uv run ksef2 --profile prod-token --json \
+  batch list --state-file batch-state.json --failed
+```
+
+`batch upload --prepared DIR --state-file FILE` posts the stored parts to that same
+session again, so a stalled batch is normally finished rather than restarted, and no
+invoice has to be encrypted a second time. Starting the same invoices in a new session
+puts a second copy of every invoice into KSeF. `batch list --failed` says which invoices
+the session rejected, as distinct from the parts its storage refused.
+
 ## Read status and per-invoice results
 
-Status and listing reopen the session, so both take `--state-file`, the file
-`batch submit --state-file` wrote. That file carries the session keys and a bare
-`--reference` does not, so passing one stops before authenticating under the heading
-`Batch session state required` and points back at the state file:
+Status and listing accept either handle: `--reference` with the session number, or
+`--state-file` with the file `batch submit --state-file` wrote. Pass exactly one. Both
+stops with `Use either --reference or --state-file, not both.` and neither stops with
+`Provide --reference or --state-file.`, both before any request is sent.
+
+The number alone is enough here, because KSeF answers a session status and an invoice
+page by session number:
 
 ```bash
 uv run ksef2 --profile prod-token \
-  batch status --state-file batch-state.json --wait
+  batch status --reference "$BATCH_REFERENCE" --wait
 
 uv run ksef2 --profile prod-token \
-  batch list --state-file batch-state.json --page-size 100
+  batch list --reference "$BATCH_REFERENCE" --page-size 100
 
 uv run ksef2 --profile prod-token \
   batch list --state-file batch-state.json --failed
 ```
 
-Keep that file with the batch until KSeF has finished with it: the `state` line the
-commands print is the same session with its keys masked, so it is not a way back.
+That is why the interrupted `submit` above tells you to run `batch status --reference
+REFERENCE`: a lost state file does not blind you to what KSeF holds. `--state-file` does
+more than read by number. It carries the session AES key and IV, so the command reopens
+the session and asks through it instead of calling the service API, which is the form to
+use when the file is already to hand. Keep it with the batch until KSeF has finished with
+it: reopening needs those keys, and the `state` line the commands print is the same
+session with its keys masked, so it is not a way back.
 
 `batch status` reads the same summary as `submit --wait` and can wait on the same
 terms (`--wait`, `--timeout` 120, `--poll-interval` 2). Its counters are the
@@ -168,7 +202,7 @@ two handles really are interchangeable: the request goes to KSeF with the sessio
 number, whichever of `--reference` and `--state-file` supplied it. A session UPO
 page exists only after the session is closed and processed, and the command never
 waits: run `batch status --wait` first. If KSeF has not produced the page yet, the
-command exits non-zero under the heading `KSeF has not finished processing yet` and
+command exits `1` under the heading `KSeF has not finished processing yet` and
 tells you to retry later. `download_url_expiration_date` next to each reference is
 KSeF's own deadline for the URL behind that reference, so store the downloaded XML
 rather than the reference.

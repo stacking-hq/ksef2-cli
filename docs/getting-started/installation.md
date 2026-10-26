@@ -7,6 +7,13 @@ description: Install or run KSeF2 CLI with uv and inspect the available command 
 
 KSeF2 CLI requires Python 3.12 or newer.
 
+This 1.0 line depends on the `ksef2` SDK `>=1.0,<2`, and that SDK resolves from PyPI:
+ksef2 1.0.0 published there on 2026-10-26. The CLI's own 1.0.0 package is not on PyPI
+yet, where the latest release is still 0.0.1, so run the 1.0 line from a checkout. A
+`uv tool install` or `pipx install` of `ksef2-cli` still gives you the 0.x CLI. See
+`CONTRIBUTING.md` for the checks that keep the project version, the declared bounds,
+and the locked SDK in step.
+
 For local development from a checkout, use `uv`:
 
 ```bash
@@ -14,7 +21,7 @@ uv sync
 uv run ksef2 --help
 ```
 
-For an installed package, use either executable:
+For an installed 0.x package, use either executable:
 
 ```bash
 ksef2 --help
@@ -29,6 +36,19 @@ The top-level command lists global options first and command groups second:
 
 ```bash
 uv run ksef2 --help
+```
+
+`--version` reports the CLI and the SDK it resolved, one per line. It is read before
+the config file, so it answers even when the config is missing or broken, and it
+prints the same plain text in `--json` mode:
+
+```bash
+uv run ksef2 --version
+```
+
+```text
+ksef2-cli 1.0.0
+ksef2 1.0.0
 ```
 
 Use group help to inspect a specific workflow:
@@ -47,11 +67,11 @@ uv run ksef2 --json config path
 
 ## Environment selection
 
-The default environment is `production`. Pass `--env` before the command group
-when you need `test` or `demo`:
+The default environment is `test`. Pass `--env` before the command group when you
+need `demo` or `production`:
 
 ```bash
-uv run ksef2 --env test --help
+uv run ksef2 --env production --help
 ```
 
 Supported values are:
@@ -59,6 +79,19 @@ Supported values are:
 - `production`
 - `demo`
 - `test`
+
+A selected profile supplies the environment when you do not pass `--env`, and it wins
+over the default. A profile that says `environment = "production"` therefore still
+authenticates against production, and `--env` on the command line still overrides that
+profile for one invocation:
+
+```bash
+uv run ksef2 --profile prod-client --env test --json auth login
+```
+
+The same order applies to every environment-backed command, including `peppol
+providers`, which needs no credentials at all and so is the easiest place to be
+surprised by a silent default.
 
 ## PDF rendering
 

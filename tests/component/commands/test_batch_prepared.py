@@ -16,6 +16,8 @@ from conftest import (
 )
 from ksef2 import KSeFBatchUploadError, KSeFExternalTransferError
 from ksef2.models import BatchSessionResumeState, FormSchema, PreparedBatch
+from datetime import UTC, datetime
+from ksef2.models import SessionStatusResponse, StatusInfo
 
 from ksef2_cli.app import app
 from ksef2_cli.batch_artifact import MANIFEST_NAME, PARTS_DIR, write_prepared_batch
@@ -25,6 +27,11 @@ def _auth(batch_service: FakeService, session: FakeService) -> Any:
     """``auth.batch`` is a service and ``auth.batch_session`` a factory, so neither can
     come from FakeService's catch-all attribute lookup."""
 
+    session.returns.setdefault("get_status", SessionStatusResponse(
+        status=StatusInfo(code=100, description="open"),
+        date_created=datetime(2026, 1, 1, tzinfo=UTC),
+        date_updated=datetime(2026, 1, 1, tzinfo=UTC),
+    ))
     return SimpleNamespace(
         batch=batch_service, batch_session=lambda **kwargs: session
     )
@@ -241,7 +248,7 @@ def test_batch_upload_sends_the_stored_parts_to_a_resumed_session(
     )
 
     assert result["state"]["reference_number"] == "retry-ref"
-    assert [name for name, _, _ in session.calls] == ["upload_parts", "resume_state"]
+    assert [name for name, _, _ in session.calls] == ["get_status", "upload_parts", "resume_state"]
     assert opened[0]["prepared_batch"].recovery_digest() == batch.recovery_digest()
     assert opened[0]["state"].reference_number == "batch-ref"
 

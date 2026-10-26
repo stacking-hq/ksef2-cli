@@ -10,8 +10,10 @@ of any past session, lists online and batch sessions KSeF still remembers, and s
 the authentication sessions your credential holds open.
 
 Status answers are safe to log. Session state files, receipts, and prepared batch
-directories carry session keys, so keep them like credentials and never paste them
-into a report. See [Invoice workflows](invoices.md#advanced-session-commands).
+directories carry session keys **in plain text** (`0600` on each file the CLI writes, a
+permission and not an encryption), so keep them like credentials and never paste them
+into a report. The references in the list below are the safe thing to share. See
+[Invoice workflows](invoices.md#advanced-session-commands).
 
 ## Which UPO command fits
 
@@ -51,7 +53,7 @@ document:
 
 The command works for online and batch sessions alike and still authenticates,
 because it asks KSeF for the document. It never waits: processing unfinished means
-a non-zero exit under the heading `KSeF has not finished processing yet`, with the
+exit `1` under the heading `KSeF has not finished processing yet`, with the
 hint to retry later.
 
 ### Check status before retrying

@@ -11,7 +11,6 @@ from conftest import (
     FakeService,
     fake_runtime,
     payload,
-    plain,
 )
 from ksef2_cli.app import app
 

@@ -8,8 +8,8 @@ from ksef2_cli.renderers.auth import mask_token
     [
         ("eyJhbGci-middle-secret-P_eA", "eyJhbGci…P_eA"),
         ("access-token", "access-t…oken"),
-        ("short", "short…hort"),
-        ("", "…"),
+        ("short", "**********"),
+        ("", "**********"),
     ],
 )
 def test_mask_token(token: str, expected: str) -> None:

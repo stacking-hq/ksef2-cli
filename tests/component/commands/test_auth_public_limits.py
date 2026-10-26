@@ -103,7 +103,8 @@ def test_auth_refresh_requires_and_uses_refresh_token(runner) -> None:
     missing = runner.invoke(
         app, cli_args("auth", "refresh"), obj=fake_runtime(client=client)
     )
-    assert missing.exit_code == 2
+    assert missing.exit_code == 1
+    assert "Provide --auth-state or --refresh-token" in missing.output
 
     result = runner.invoke(
         app,

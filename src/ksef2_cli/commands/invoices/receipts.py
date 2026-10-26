@@ -14,12 +14,10 @@ from ksef2_cli.commands.invoices.models import (
 )
 from ksef2_cli.context import read_model, run_authenticated, run_command
 from ksef2_cli.exceptions import UsageError
-from ksef2_cli.invoice_workflows import (
-    download_batch_upos,
-    require_batch_session_state,
-)
+from ksef2_cli.invoice_workflows import download_batch_upos
 from ksef2_cli.io import SECRET_MODEL_FILE_MODE, write_bytes_file, write_text_file
 from ksef2_cli.results import SavedFile
+from ksef2_cli.sdk_compat import allow_deprecated_batch_reference_reads
 
 
 def _safe_filename(value: str, suffix: str) -> str:
@@ -86,12 +84,15 @@ def invoices_status(
             batch = receipt.batch
             if batch is None:
                 raise ValueError("Receipt does not contain batch data.")
-            session_state = require_batch_session_state(batch)
-            with auth.batch_session(state=session_state) as session:
+            with allow_deprecated_batch_reference_reads():
                 status = (
-                    session.wait(timeout=timeout, poll_interval=poll_interval)
+                    auth.batch.wait_for_completion(
+                        session=batch.session_reference,
+                        timeout=timeout,
+                        poll_interval=poll_interval,
+                    )
                     if wait
-                    else session.get_status()
+                    else auth.batch.get_status(session=batch.session_reference)
                 )
             updated = receipt.model_copy(
                 update={
@@ -223,9 +224,6 @@ def invoices_upo(
             target_dir = upo_dir
             if target_dir is None:
                 raise ValueError("Provide --upo-dir.")
-            # The download reopens the session even when the cached status already lists
-            # the UPO references, so a receipt without state fails before either call.
-            session_state = require_batch_session_state(batch)
             cached_status = batch.status
             if (
                 not wait
@@ -234,16 +232,20 @@ def invoices_upo(
             ):
                 status = cached_status
             else:
-                with auth.batch_session(state=session_state) as session:
+                with allow_deprecated_batch_reference_reads():
                     sdk_status = (
-                        session.wait(timeout=timeout, poll_interval=poll_interval)
+                        auth.batch.wait_for_completion(
+                            session=batch.session_reference,
+                            timeout=timeout,
+                            poll_interval=poll_interval,
+                        )
                         if wait
-                        else session.get_status()
+                        else auth.batch.get_status(session=batch.session_reference)
                     )
                 status = BatchSessionStatus.from_status(sdk_status)
             saved_upos = download_batch_upos(
                 auth=auth,
-                state=session_state,
+                session_reference=batch.session_reference,
                 status=status,
                 upo_dir=target_dir,
             )

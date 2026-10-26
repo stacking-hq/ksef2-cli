@@ -1,20 +1,23 @@
 """Human-oriented CLI exceptions and rendering helpers."""
 
 import json
+import re
 import os
 import sys
 import traceback
 from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 from typing import Iterable, Sequence
 from urllib.parse import quote, quote_plus, urlencode
 
+import click
 from ksef2 import (
     KSeFApiError,
     KSeFArgumentError,
+    KSeFAuthenticationExpiredError,
     KSeFAuthError,
     KSeFAuthPollingTimeoutError,
     KSeFAuthTokenRedemptionError,
-    KSeFAuthenticationExpiredError,
     KSeFBatchSessionTimeoutError,
     KSeFBatchUploadError,
     KSeFCertificateEnrollmentFailedError,
@@ -130,6 +133,10 @@ class CliError(Exception):
         show_traceback: bool = False,
     ) -> None:
         super().__init__(message)
+        self.status_code: int | None = None
+        self.ksef_code: int | None = None
+        self.trace_id: str | None = None
+        self.code = type(self).__name__
         self.message = message
         self.title = title
         self.details = tuple(details)
@@ -254,12 +261,23 @@ class UnexpectedCliError(CliError):
                 "```",
             ]
         )
+        body = redact_local_paths(body)
         return f"{BUG_REPORT_URL}?{urlencode({'title': title, 'body': body})}"
 
 
 def error_from_exception(error: Exception) -> CliError:
     """Map common Python exceptions into the CLI error hierarchy."""
 
+    if isinstance(error, (click.Abort, KeyboardInterrupt, EOFError)):
+        interrupted = isinstance(error, KeyboardInterrupt) or isinstance(
+            error.__cause__ or error.__context__, KeyboardInterrupt
+        )
+        return Aborted(
+            "Interrupted." if interrupted else "Aborted.",
+            exit_code=130 if interrupted else 1,
+        )
+    if isinstance(error, ValidationError):
+        return UsageError(format_validation_error(error))
     if isinstance(error, CliError):
         return error
     if isinstance(error, KSeFClientClosedError):
@@ -285,6 +303,9 @@ def error_from_exception(error: Exception) -> CliError:
             show_traceback=True,
         )
     if isinstance(error, KSeFValidationError):
+        validation = error.validation_error
+        if isinstance(validation, ValidationError):
+            return ConfigError(format_validation_error(validation))
         return ConfigError(_sdk_message(error))
     if isinstance(error, KSeFAuthenticationExpiredError):
         return AuthenticationConfigError(
@@ -322,9 +343,11 @@ def error_from_exception(error: Exception) -> CliError:
             if error.retry_after is not None
             else "Wait before retrying the same command."
         )
-        return RemoteServiceError(
-            _sdk_message(error),
+        return _from_api_error(
+            error,
+            cli_error=RemoteServiceError,
             title="KSeF rate limit exceeded",
+            message=_sdk_message(error),
             hints=(hints,),
         )
     if isinstance(error, _AUTH_INCOMPLETE_SDK_ERRORS):
@@ -353,7 +376,7 @@ def error_from_exception(error: Exception) -> CliError:
     if isinstance(error, KSeFException):
         return RemoteServiceError(_sdk_message(error), title="KSeF operation failed")
     if isinstance(error, ValueError):
-        return UsageError(str(error))
+        return UsageError(_without_validation_urls(str(error)))
     if isinstance(error, OSError):
         return FileCliError.from_os_error(error)
     return UnexpectedCliError(error)
@@ -393,7 +416,7 @@ def _sdk_message(error: KSeFException) -> str:
     mean nothing on the command line; the CLI error carries its own hints.
     """
 
-    return str(error.args[0]) if error.args else str(error)
+    return _without_validation_urls(str(error.args[0]) if error.args else str(error))
 
 
 # One malformed field can reject every item in a list; the first few explain it.
@@ -437,17 +460,27 @@ def _from_api_error(
 ) -> CliError:
     """Build a CLI error that keeps the HTTP status, KSeF code and trace ID of an API error."""
 
-    details = [*_sdk_message(error).splitlines(), f"HTTP status: {error.status_code}"]
-    if error.ksef_code is not None:
-        details.append(f"KSeF code: {error.ksef_code}")
-    if error.trace_id:
-        details.append(f"Trace ID: {error.trace_id}")
-    return cli_error(
+    result = cli_error(
         message or f"KSeF request failed with HTTP {error.status_code}.",
         title=title,
-        details=tuple(details),
+        details=(
+            _sdk_message(error),
+            *error.details,
+            f"HTTP status: {error.status_code}",
+            *(
+                (f"KSeF code: {error.ksef_code}",)
+                if error.ksef_code is not None
+                else ()
+            ),
+            *((f"Trace ID: {error.trace_id}",) if error.trace_id else ()),
+        ),
         hints=tuple(hints),
     )
+    result.status_code = error.status_code
+    result.ksef_code = error.ksef_code
+    result.trace_id = error.trace_id
+    result.code = error.code
+    return result
 
 
 def render_cli_error(
@@ -459,10 +492,53 @@ def render_cli_error(
     source: Exception | None = None,
     secrets: Iterable[str] = (),
 ) -> None:
-    """Render a concise, actionable error message."""
+    """Render errors on stderr, with one JSON envelope in JSON mode.
+
+    JSON retains the typed error fields and nested SDK metadata, plus stable
+    code, ksef_code, and trace_id fields. Usage errors use code USAGE_ERROR.
+    Credentials and local home/virtualenv paths are redacted in every mode.
+    """
+
+    from ksef2_cli.app import _json_requested, _raw_argv
+
+    ctx = click.get_current_context(silent=True)
+    settings = ctx.find_root().obj if ctx is not None else None
+    json_output = (
+        json_output
+        or _json_requested.get()
+        or getattr(settings, "output", None) == "json"
+    )
+    command = _raw_argv.get()
+    if command is None:
+        command = error.command if isinstance(error, UnexpectedCliError) else sys.argv
+    secret_values = set(secrets)
+    for original, redacted in zip(command, redact_argv(command)):
+        if original != redacted:
+            secret_values.add(
+                original if redacted == "<redacted>" else original.partition("=")[2]
+            )
+    for option in SECRET_OPTIONS:
+        value = os.environ.get("KSEF2_" + option[2:].replace("-", "_").upper())
+        if value:
+            secret_values.add(value)
+
+    def redact(value: object) -> object:
+        if isinstance(value, str):
+            for secret in sorted(filter(None, secret_values), key=len, reverse=True):
+                for form in {secret, quote(secret, safe=""), quote_plus(secret)}:
+                    value = value.replace(form, "<redacted>")
+            return redact_local_paths(value)
+        if isinstance(value, list):
+            return [redact(item) for item in value]
+        if isinstance(value, dict):
+            return {key: redact(item) for key, item in value.items()}
+        return value
 
     if json_output:
         payload: dict[str, object] = {
+            "code": "USAGE_ERROR" if error.exit_code == 2 else error.code,
+            "ksef_code": error.ksef_code,
+            "trace_id": error.trace_id,
             "type": type(error).__name__,
             "title": error.title,
             "message": error.message,
@@ -470,6 +546,8 @@ def render_cli_error(
             "hints": list(error.hints),
             "exit_code": error.exit_code,
         }
+        if error.status_code is not None:
+            payload["status_code"] = error.status_code
         if isinstance(source, KSeFApiError):
             ksef: dict[str, object] = {
                 "status_code": source.status_code,
@@ -488,32 +566,6 @@ def render_cli_error(
         if verbose and error.show_traceback:
             original = error.error if isinstance(error, UnexpectedCliError) else error
             payload["traceback"] = "".join(traceback.format_exception(original))
-        command = error.command if isinstance(error, UnexpectedCliError) else sys.argv
-        secret_values = set(secrets)
-        for original, redacted in zip(command, redact_argv(command)):
-            if original != redacted:
-                secret_values.add(
-                    original if redacted == "<redacted>" else original.partition("=")[2]
-                )
-        for option in SECRET_OPTIONS:
-            value = os.environ.get("KSEF2_" + option[2:].replace("-", "_").upper())
-            if value:
-                secret_values.add(value)
-
-        # Redact before JSON encoding so quotes and newlines in secrets cannot escape it.
-        def redact(value: object) -> object:
-            if isinstance(value, str):
-                for secret in sorted(
-                    filter(None, secret_values), key=len, reverse=True
-                ):
-                    for form in {secret, quote(secret, safe=""), quote_plus(secret)}:
-                        value = value.replace(form, "<redacted>")
-                return value
-            if isinstance(value, list):
-                return [redact(item) for item in value]
-            if isinstance(value, dict):
-                return {key: redact(item) for key, item in value.items()}
-            return value
 
         print(
             json.dumps(
@@ -531,21 +583,44 @@ def render_cli_error(
         return
 
     if verbose and error.show_traceback:
-        console.print_exception()
+        original = source or (
+            error.error if isinstance(error, UnexpectedCliError) else error
+        )
+        console.print(
+            escape(str(redact("".join(traceback.format_exception(original)))))
+        )
 
-    if error.details:
-        for detail in error.details:
-            console.print(escape(detail))
+    message = error.message
+    details = error.details
+    if error.status_code is not None:
+        if message == f"KSeF request failed with HTTP {error.status_code}." and details:
+            message = details[0]
+        details = tuple(
+            detail
+            for detail in dict.fromkeys(details)
+            if detail != message
+            and not (
+                detail.startswith("HTTP status:")
+                and f"HTTP {error.status_code}" in message
+                or detail.startswith("KSeF code:")
+                and f"KSeF code {error.ksef_code}" in message
+                or detail.startswith("Trace ID:")
+                and detail in message
+            )
+        )
+    if details:
+        for detail in details:
+            console.print(escape(str(redact(detail))))
 
     if error.hints:
         console.print("[bold]Try:[/]")
         for hint in error.hints:
-            console.print(f"  - {escape(hint)}")
+            console.print(f"  - {escape(str(redact(hint)))}")
 
     if error.reportable and isinstance(error, UnexpectedCliError):
-        console.print(f"Report: {error.report_url()}")
+        console.print(f"Report: {redact(error.report_url())}")
 
-    console.print(f"[red]Error:[/] {escape(error.message)}")
+    console.print(f"[red]Error:[/] {escape(str(redact(message)))}")
 
 
 def redact_argv(argv: Sequence[str]) -> tuple[str, ...]:
@@ -589,3 +664,30 @@ def _package_version() -> str:
         return version("ksef2-cli")
     except PackageNotFoundError:
         return "unknown"
+
+
+def format_validation_error(error: ValidationError | KSeFValidationError) -> str:
+    if isinstance(error, KSeFValidationError):
+        if isinstance(error.validation_error, ValidationError):
+            error = error.validation_error
+        else:
+            return _sdk_message(error)
+    return "\n".join(
+        f"{'.'.join(map(str, item['loc'])) or 'value'}: {item['msg']}"
+        for item in error.errors(include_url=False, include_input=False)
+    )
+
+
+def redact_local_paths(value: str) -> str:
+    value = value.replace(str(Path.home()), "<home>")
+    if sys.prefix != sys.base_prefix:
+        value = value.replace(sys.prefix, "<venv>")
+    return re.sub(r"(?:/[^/\s\"']+)+/\.venv(?=/|\b)", "<venv>", value)
+
+
+def _without_validation_urls(message: str) -> str:
+    return re.sub(
+        r"\n[ \t]*For further information visit https://errors\.pydantic\.dev/[^\s]+",
+        "",
+        message,
+    )

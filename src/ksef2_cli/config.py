@@ -6,6 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Callable, Mapping, Protocol, TypeVar
 
+from click import BadParameter
 from cryptography.x509 import Certificate
 from ksef2 import Client, Environment, FormSchema, KSeFValidationError
 from ksef2.clients import AuthenticatedClient
@@ -16,6 +17,7 @@ from ksef2.models import ContextIdentifierType, ContextIdentifierTypeEnum
 from ksef2.profiles import (
     PROFILE_ENV_VAR,
     CliProfileConfig,
+    ProfileAuthType,
     ProfileConfig,
     default_profile_config_path,
     load_profile_config,
@@ -258,14 +260,13 @@ def resolve_settings(
                 )
             selected_profile = local_config.profiles.get(selected_name)
             if selected_profile is None:
-                raise KSeFValidationError(
+                raise BadParameter(
                     f"ksef2-cli profile {selected_name!r} is not defined in "
                     f"{resolved_config_file}.",
-                    config_path=str(resolved_config_file),
-                    profile_name=selected_name,
+                    param_hint="--profile",
                 )
 
-    resolved_environment = Environment.PRODUCTION
+    resolved_environment = Environment.TEST
     if selected_profile is not None:
         resolved_environment = selected_profile.sdk_environment
     if environment is not None:
@@ -279,10 +280,42 @@ def resolve_settings(
     ignored_auth_params = (
         auth_env_params if selected_profile is not None else frozenset()
     )
+    token = None if "token" in ignored_auth_params else token
+    context_type = None if "context_type" in ignored_auth_params else context_type
+    test_certificate = (
+        False if "test_certificate" in ignored_auth_params else test_certificate
+    )
+    cert = None if "cert" in ignored_auth_params else cert
+    key = None if "key" in ignored_auth_params else key
+    p12 = None if "p12" in ignored_auth_params else p12
+    resolved_context_type = context_type
+    if resolved_context_type is None and selected_profile is not None:
+        resolved_context_type = selected_profile.auth.context_type
+    if resolved_nip is not None and resolved_context_type in (None, "nip"):
+        validate_nip(resolved_nip)
+    explicit_auth = any(
+        (
+            token is not None,
+            auth_state is not None,
+            cert is not None,
+            key is not None,
+            p12 is not None,
+            test_certificate,
+        )
+    )
+    uses_test_certificate = test_certificate or (
+        not explicit_auth
+        and selected_profile is not None
+        and selected_profile.auth.type is ProfileAuthType.TEST_CERTIFICATE
+    )
+    if uses_test_certificate and resolved_environment is not Environment.TEST:
+        raise BadParameter(
+            "Test certificates require the TEST environment.", param_hint="--test-cert"
+        )
 
     return Settings(
         config_file=resolved_config_file,
-        config_loaded=resolved_config_file.exists(),
+        config_loaded=not no_config and resolved_config_file.exists(),
         profile_name=selected_name,
         profile=selected_profile,
         environment=resolved_environment,
@@ -305,3 +338,17 @@ def resolve_settings(
         runtime_overrides=runtime_overrides,
         auth_env_params=auth_env_params,
     )
+
+
+def validate_nip(nip: str) -> None:
+    """Validate the ten ASCII digits and control digit of a Polish NIP."""
+    if len(nip) != 10 or not nip.isascii() or not nip.isdigit() or nip == "0000000000":
+        raise BadParameter(
+            "NIP must contain 10 digits with a valid checksum.", param_hint="--nip"
+        )
+    weights = (6, 5, 7, 2, 3, 4, 5, 6, 7)
+    checksum = sum(int(digit) * weight for digit, weight in zip(nip[:9], weights)) % 11
+    if checksum != int(nip[-1]):
+        raise BadParameter(
+            "NIP must contain 10 digits with a valid checksum.", param_hint="--nip"
+        )

@@ -65,10 +65,8 @@ class BatchSessionStatus(CliResult):
 class BatchInvoiceReceipt(CliResult):
     """Resumable receipt for one submitted batch session.
 
-    ``session_reference`` is what the CLI reports; resuming needs ``session_state``,
-    because the SDK resumes a batch session from its state, never from a reference
-    number. The field stays optional so receipts written before it was stored load and
-    say why they cannot be resumed.
+    ``session_state`` retains upload recovery credentials. Reference-only status and
+    UPO reads also work for older receipts that carry only ``session_reference``.
     """
 
     session_reference: str

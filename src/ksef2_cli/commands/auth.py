@@ -5,6 +5,8 @@ from typing import Annotated
 
 import typer
 from ksef2 import Client
+from ksef2.models import AuthenticationResumeState
+from pydantic import SecretStr
 
 from ksef2_cli.context import (
     authenticate_client,
@@ -47,7 +49,7 @@ def auth_login(
         typer.Option("--save-state", dir_okay=False, help=_SAVE_STATE_HELP),
     ] = None,
 ) -> None:
-    """Authenticate with the configured method and print access/refresh tokens."""
+    """Authenticate and show masked tokens. Use --save-state to retain credentials."""
 
     def command(client: Client) -> AuthTokenOutput:
         state = authenticate_client(ctx, client).resume_state()
@@ -96,8 +98,7 @@ def auth_resume(
         # Building the authenticated branch is what proves the saved state still
         # rehydrates one; the SDK keeps refreshing its access token on later requests.
         resume_authentication(client, state)
-        if save_state is not None:
-            _ = save_resume_state(save_state, state)
+        _ = save_resume_state(save_state or source, state)
         return AuthTokenOutput(
             tokens=state.to_tokens(), show_tokens=show_tokens, state_file=save_state
         )
@@ -146,21 +147,56 @@ def auth_logout(
 def auth_refresh(
     ctx: typer.Context,
     refresh_token: Annotated[
-        str,
+        str | None,
         typer.Option(
-            "--refresh-token", envvar="KSEF2_REFRESH_TOKEN", help="Refresh token."
+            "--refresh-token",
+            envvar="KSEF2_REFRESH_TOKEN",
+            help="Refresh token. Prefer --auth-state to avoid tokens in process arguments.",
         ),
-    ],
+    ] = None,
+    state_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--auth-state",
+            "--state-file",
+            exists=True,
+            dir_okay=False,
+            help=_STATE_FILE_HELP,
+        ),
+    ] = None,
+    save_state: Annotated[
+        Path | None,
+        typer.Option("--save-state", dir_okay=False, help=_SAVE_STATE_HELP),
+    ] = None,
     show_tokens: Annotated[
         bool, typer.Option("--show-tokens", help=_SHOW_TOKENS_HELP)
     ] = False,
 ) -> None:
-    """Exchange a refresh token for a new access token."""
+    """Refresh access using saved state or an explicit refresh token; mask output."""
 
     def command(client: Client) -> AuthTokenOutput:
+        source = state_file or get_settings(ctx).auth_state
+        if source is not None and refresh_token is not None:
+            fail("Provide only one of --auth-state and --refresh-token.")
+        if source is None and refresh_token is None:
+            fail("Provide --auth-state or --refresh-token (or KSEF2_REFRESH_TOKEN).")
+        if save_state is not None and source is None:
+            fail("--save-state requires --auth-state to preserve refresh-token expiry.")
+        state = read_resume_state(source) if source is not None else None
+        token = state.refresh_token.get_secret_value() if state else refresh_token
+        assert token is not None
+        refreshed = client.authentication.refresh(refresh_token=token)
+        if state is not None:
+            updated = AuthenticationResumeState(
+                access_token=SecretStr(refreshed.access_token.token),
+                access_token_valid_until=refreshed.access_token.valid_until,
+                refresh_token=state.refresh_token,
+                refresh_token_valid_until=state.refresh_token_valid_until,
+            )
+            assert source is not None
+            _ = save_resume_state(save_state or source, updated)
         return AuthTokenOutput(
-            tokens=client.authentication.refresh(refresh_token=refresh_token),
-            show_tokens=show_tokens,
+            tokens=refreshed, show_tokens=show_tokens, state_file=save_state
         )
 
     run_client_command(ctx, command)

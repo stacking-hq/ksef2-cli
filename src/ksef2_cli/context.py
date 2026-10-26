@@ -1,5 +1,6 @@
 """Typer adapters for SDK-backed command execution."""
 
+import json
 import os
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -97,6 +98,7 @@ def run_command(
 ) -> None:
     """Run command work with consistent error formatting and result rendering."""
 
+    result: object = None
     try:
         result = operation()
         if render_result:
@@ -111,7 +113,7 @@ def run_command(
             console=console,
             verbose=get_settings(ctx).verbose,
             json_output=get_settings(ctx).output is OutputMode.json,
-            secrets=_secret_values(ctx),
+            secrets=(*_secret_values(ctx), *_result_secrets(result)),
         )
         raise typer.Exit(exc.exit_code) from exc
     except typer.Exit:
@@ -124,7 +126,7 @@ def run_command(
             verbose=get_settings(ctx).verbose,
             json_output=get_settings(ctx).output is OutputMode.json,
             source=exc,
-            secrets=_secret_values(ctx),
+            secrets=(*_secret_values(ctx), *_result_secrets(result)),
         )
         raise typer.Exit(error.exit_code) from exc
 
@@ -183,4 +185,28 @@ def _secret_values(ctx: typer.Context) -> tuple[str, ...]:
     for name, value in getattr(ctx, "params", {}).items():
         if "--" + name.replace("_", "-") in SECRET_OPTIONS and isinstance(value, str):
             values.append(value)
+    for path in (settings.auth_state, ctx.params.get("state_file")):
+        if isinstance(path, (str, Path)):
+            try:
+                state = json.loads(Path(path).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(state, dict):
+                values.extend(
+                    value
+                    for name in ("access_token", "refresh_token")
+                    if isinstance(value := state.get(name), str)
+                )
     return tuple(value for value in values if value)
+
+
+def _result_secrets(result: object) -> tuple[str, ...]:
+    from ksef2_cli.results import AuthTokenOutput
+
+    if not isinstance(result, AuthTokenOutput):
+        return ()
+    return tuple(
+        credential.token
+        for name in ("access_token", "refresh_token")
+        if (credential := getattr(result.tokens, name, None)) is not None
+    )

@@ -7,6 +7,10 @@ command while the names, help text and defaults stay in one place.
 """
 
 from typing import Annotated
+from datetime import UTC, datetime
+
+from ksef2.models import InvoicesFilter
+from ksef2_cli.parsing import parse_iso_datetime
 
 import typer
 
@@ -20,10 +24,18 @@ from ksef2_cli.commands.invoices.models import (
 from ksef2_cli.config import FORM_SCHEMA_NAMES, FormSchemaChoice
 
 DateFromOption = Annotated[
-    str, typer.Option("--date-from", help="Start datetime/date, ISO format.")
+    str,
+    typer.Option(
+        "--date-from",
+        help="Start ISO date/datetime. Without an offset, interpreted in Europe/Warsaw. Maximum range: 100 days.",
+    ),
 ]
 DateToOption = Annotated[
-    str | None, typer.Option("--date-to", help="End datetime/date, ISO format.")
+    str | None,
+    typer.Option(
+        "--date-to",
+        help="End ISO date/datetime. Defaults to now UTC. Without an offset, interpreted in Europe/Warsaw.",
+    ),
 ]
 RoleOption = Annotated[
     InvoiceRoleChoice,
@@ -101,3 +113,28 @@ SelfInvoicingOption = Annotated[
     str | None,
     typer.Option("--self-invoicing", help="Filter by self-invoicing flag: yes or no."),
 ]
+
+
+def parse_invoice_dates(date_from: str, date_to: str | None) -> dict[str, datetime]:
+    start = parse_iso_datetime(date_from, option_name="--date-from")
+    end = (
+        datetime.now(UTC)
+        if date_to is None
+        else parse_iso_datetime(date_to, option_name="--date-to")
+    )
+
+    def describe(value: datetime) -> str:
+        return value.isoformat() + (
+            " [Europe/Warsaw]" if value.tzinfo is None else " [explicit UTC offset]"
+        )
+
+    context = f"--date-from={describe(start)}; --date-to={describe(end)}" + (
+        " (implicit now UTC)" if date_to is None else ""
+    )
+    try:
+        filters = InvoicesFilter(
+            role="seller", date_type="issue_date", date_from=start, date_to=end
+        )
+    except ValueError as error:
+        raise ValueError(f"Invalid invoice date range: {context}. {error}") from error
+    return {"date_from": filters.date_from, "date_to": filters.date_to}

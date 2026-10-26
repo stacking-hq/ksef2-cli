@@ -29,9 +29,7 @@ def write_model_file(
     return path
 
 
-def write_text_file(
-    path: Path, content: str, *, file_mode: int | None = None
-) -> Path:
+def write_text_file(path: Path, content: str, *, file_mode: int | None = None) -> Path:
     """Write text the caller already serialized, optionally tightening file mode.
 
     SDK session resume state masks its AES key and IV in ``model_dump_json``, so state
@@ -52,3 +50,36 @@ def write_bytes_file(
     if file_mode is not None:
         path.chmod(file_mode)
     return path
+
+
+def validate_invoice_xml(content: bytes, *, source: object) -> bytes:
+    """Reject unsupported encodings without changing potentially signed bytes."""
+    if not content.strip():
+        raise ValueError(f"Invoice XML from {source} is empty.")
+    for marker, encoding in (
+        (b"\xef\xbb\xbf", "UTF-8 BOM"),
+        (b"\xff\xfe", "UTF-16 LE BOM"),
+        (b"\xfe\xff", "UTF-16 BE BOM"),
+    ):
+        if content.startswith(marker):
+            raise ValueError(
+                f"Invoice XML from {source} uses {encoding}. Provide UTF-8 XML without "
+                "a BOM. Re-export from the source system before signing; changing "
+                "signed XML can invalidate its signature. No bytes were changed."
+            )
+    try:
+        content.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError(
+            f"Invoice XML from {source} must be UTF-8. Re-export it as UTF-8 before signing."
+        ) from error
+    return content
+
+
+def read_invoice_xml(path: Path) -> bytes:
+    return validate_invoice_xml(path.read_bytes(), source=path)
+
+
+def read_stdin_invoice_xml() -> bytes:
+    """Read one invoice from stdin, preserving the original bytes in memory."""
+    return validate_invoice_xml(sys.stdin.buffer.read(), source="stdin.xml")

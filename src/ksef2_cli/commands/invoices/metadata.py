@@ -1,6 +1,7 @@
 """Invoice metadata and download commands."""
 
 from pathlib import Path
+from functools import cache
 from typing import Annotated
 
 import click
@@ -8,6 +9,7 @@ import typer
 from ksef2.clients import AuthenticatedClient
 
 from ksef2_cli.commands.invoices.filters import (
+    parse_invoice_dates,
     AmountMaxOption,
     AmountMinOption,
     AmountTypeOption,
@@ -43,11 +45,7 @@ from ksef2_cli.invoice_workflows import (
     download_invoice,
     query_invoice_metadata,
 )
-from ksef2_cli.parsing import (
-    parse_iso_datetime,
-    parse_optional_bool,
-    validate_offset_pagination,
-)
+from ksef2_cli.parsing import parse_optional_bool, validate_offset_pagination
 from ksef2_cli.results import SavedFile
 
 
@@ -99,15 +97,13 @@ def invoices_metadata(
 ) -> None:
     """Query invoice metadata."""
 
+    @cache
     def load_input() -> InvoiceMetadataInput:
         validate_offset_pagination(all_pages=all_pages, page_offset=page_offset)
         parse_optional_bool(attachment, option_name="--attachment")
         parse_optional_bool(self_invoicing, option_name="--self-invoicing")
         return InvoiceMetadataInput(
-            date_from=parse_iso_datetime(date_from, option_name="--date-from"),
-            date_to=None
-            if date_to is None
-            else parse_iso_datetime(date_to, option_name="--date-to"),
+            **parse_invoice_dates(date_from, date_to),
             role=role,
             date_type=date_type,
             amount_type=amount_type,
@@ -142,8 +138,12 @@ def invoices_metadata(
 def invoices_download(
     ctx: typer.Context,
     ksef_number: Annotated[
-        str, typer.Option("--ksef-number", help="KSeF invoice number.")
-    ],
+        str | None,
+        typer.Option(
+            "--ksef-number",
+            help="KSeF invoice number. Alternative to the positional number.",
+        ),
+    ] = None,
     output_file: Annotated[
         Path | None,
         typer.Option(
@@ -160,12 +160,22 @@ def invoices_download(
     wait: Annotated[
         bool, typer.Option("--wait", help="Poll until the invoice can be downloaded.")
     ] = False,
-    timeout: Annotated[float, typer.Option("--timeout", min=1.0)] = 120.0,
-    poll_interval: Annotated[float, typer.Option("--poll-interval", min=0.1)] = 2.0,
+    timeout: Annotated[
+        float, typer.Option("--timeout", min=1.0, help="Maximum wait in seconds.")
+    ] = 120.0,
+    poll_interval: Annotated[
+        float,
+        typer.Option("--poll-interval", min=0.1, help="Seconds between status checks."),
+    ] = 2.0,
+    number: Annotated[str | None, typer.Argument(help="KSeF invoice number.")] = None,
 ) -> None:
     """Download processed invoice XML by KSeF number."""
 
     def validate() -> None:
+        if (ksef_number is None) == (number is None):
+            raise ValueError(
+                "Provide one KSeF number, either positionally or with --ksef-number."
+            )
         if output_file == Path("-") and get_settings(ctx).output is OutputMode.json:
             raise UsageError(
                 "--out - cannot be combined with global JSON output "
@@ -176,7 +186,7 @@ def invoices_download(
     def work(auth: AuthenticatedClient) -> SavedFile | None:
         result = download_invoice(
             auth,
-            ksef_number=ksef_number,
+            ksef_number=ksef_number or number,
             output_file=output_file,
             wait=wait,
             timeout=timeout,
