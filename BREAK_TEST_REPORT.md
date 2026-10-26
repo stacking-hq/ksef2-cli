@@ -117,3 +117,22 @@ only answer, and the JSON error prose follows `next`'s envelope (`type`, `title`
 Nothing in this follow-up ran against PyPI or live KSeF. It records the metadata and
 document state after the merge; the test numbers above still describe the 2026-10-25
 run.
+
+## SDK main compatibility check, 2026-10-26
+
+PR #68 was merged into `next`; its CI, documentation check, and SDK-head check
+passed. The SDK-head workflow had stopped testing unreleased SDK code when the
+git source override was removed: `uv lock -P ksef2` now selected PyPI instead.
+The workflow now installs SDK `main` explicitly, verifies the installed git
+source and commit, and runs with `--no-sync` to preserve that installation.
+
+An isolated local run against SDK commit
+`00e6d01333f4a2adf54caa0662d2b7193f7fe430`, including the filesystem signing-certificate
+stores, passed with `-W error::DeprecationWarning`: **878 passed, 1 skipped**.
+The skipped check requires PDF dependencies. This run made no live KSeF calls.
+It verifies compatibility of existing CLI commands; it does not add commands
+for managing the SDK's local signing-certificate stores.
+
+After the next SDK release reaches PyPI, refresh `uv.lock` and verify that
+published artifact before tagging the CLI. Installed-CLI TEST and PDF smoke
+checks remain part of the release verification.
