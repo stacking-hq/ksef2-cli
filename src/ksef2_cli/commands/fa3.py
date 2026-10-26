@@ -171,8 +171,8 @@ def fa3_render(
         typer.Option(
             "--code-lookups/--no-code-lookups",
             help=(
-                "Let the bundled stylesheet read local files and URLs so coded values "
-                "print as names. Use it only with invoice XML you trust."
+                "Resolve country and tax-office codes using the SDK's bundled "
+                "official lists, without network access."
             ),
         ),
     ] = False,

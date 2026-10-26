@@ -7,12 +7,14 @@ description: Install or run KSeF2 CLI with uv and inspect the available command 
 
 KSeF2 CLI requires Python 3.12 or newer.
 
-This 1.0 line depends on the `ksef2` SDK `>=1.0,<2`, and that SDK resolves from PyPI:
-ksef2 1.0.0 published there on 2026-10-26. The CLI's own 1.0.0 package is not on PyPI
-yet, where the latest release is still 0.0.1, so run the 1.0 line from a checkout. A
-`uv tool install` or `pipx install` of `ksef2-cli` still gives you the 0.x CLI. See
-`CONTRIBUTING.md` for the checks that keep the project version, the declared bounds,
-and the locked SDK in step.
+The CLI depends on the published `ksef2` SDK `>=1.1,<2`. Version 1.1 includes fixes
+for certificate retrieval and offline PDF code lookups. Install from PyPI:
+
+```bash
+uv tool install ksef2-cli
+# or
+pipx install ksef2-cli
+```
 
 For local development from a checkout, use `uv`:
 
@@ -21,7 +23,7 @@ uv sync
 uv run ksef2 --help
 ```
 
-For an installed 0.x package, use either executable:
+For an installed package, use either executable:
 
 ```bash
 ksef2 --help
@@ -48,7 +50,7 @@ uv run ksef2 --version
 
 ```text
 ksef2-cli 1.0.0
-ksef2 1.0.0
+ksef2 1.1.0
 ```
 
 Use group help to inspect a specific workflow:

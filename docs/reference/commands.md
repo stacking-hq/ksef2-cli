@@ -389,7 +389,7 @@ Render invoice XML to HTML, and optionally to PDF.
 | `--in`, `-i` | FILE | required | - | FA(3) invoice XML file. |
 | `--out`, `-o` | FILE | - | - | Where to write HTML. Defaults to stdout when --pdf is not used. |
 | `--pdf` | FILE | - | - | Also write PDF here. Needs the optional ksef2[pdf] dependencies. |
-| `--code-lookups`, `--no-code-lookups` | - | false | - | Let the bundled stylesheet read local files and URLs so coded values print as names. Use it only with invoice XML you trust. |
+| `--code-lookups`, `--no-code-lookups` | - | false | - | Resolve country and tax-office codes using the SDK's bundled official lists, without network access. |
 | `--ksef-number` | TEXT | - | - | With --pdf: the accepted KSeF number of this invoice. It prints under a verification QR for the selected --env. Omit it for a draft PDF. |
 
 ## `invoices`

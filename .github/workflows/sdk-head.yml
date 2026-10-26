@@ -1,9 +1,8 @@
 name: SDK head
 
-# The `next` branch locks ksef2 to a commit on the SDK's main branch. This job
-# re-resolves ksef2 to the newest main commit and runs the suite, so a PR shows
-# when the SDK has moved on in a way the CLI no longer handles. It reports
-# drift without blocking; refresh the lock with `uv lock -P ksef2` to adopt it.
+# Release dependencies stay locked to PyPI. This job installs the SDK's main
+# branch over that environment and runs without syncing back to the release
+# lock, so unreleased SDK changes are checked independently of the release CI.
 on:
   pull_request:
     branches:
@@ -27,7 +26,9 @@ jobs:
         with:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v5
-      - run: uv lock -P ksef2
-      - run: grep -A2 '^name = "ksef2"$' uv.lock
-      - run: uv sync --all-groups
-      - run: uv run python -W error::DeprecationWarning -m pytest -q
+      - run: uv sync --all-groups --locked
+      - name: Install unreleased SDK main
+        run: uv pip install --python .venv/bin/python --upgrade "ksef2 @ git+https://github.com/stacking-hq/ksef2.git@main"
+      - name: Verify SDK source and resolved commit
+        run: uv pip freeze --python .venv/bin/python | grep -F 'ksef2 @ git+https://github.com/stacking-hq/ksef2.git@'
+      - run: uv run --no-sync python -W error::DeprecationWarning -m pytest -q

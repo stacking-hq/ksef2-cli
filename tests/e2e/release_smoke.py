@@ -52,7 +52,8 @@ def main() -> None:
         run(f"build-{index}", ["fa3", "build", "-i", str(source), "-o", str(xml)],
             authenticated=False)
         invoices.append(xml)
-    run("pdf", ["fa3", "render", "-i", str(invoices[0]), "--pdf", str(work / "local.pdf")],
+    run("pdf", ["fa3", "render", "-i", str(invoices[0]), "--code-lookups",
+                "--pdf", str(work / "local.pdf")],
         authenticated=False)
     assert (work / "local.pdf").read_bytes().startswith(b"%PDF-")
     try:

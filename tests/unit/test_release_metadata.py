@@ -11,7 +11,7 @@ PYPROJECT = ROOT / "pyproject.toml"
 UV_LOCK = ROOT / "uv.lock"
 
 EXPECTED_VERSION = "1.0.0"
-EXPECTED_SDK_SPECIFIER = ">=1.0,<2"
+EXPECTED_SDK_SPECIFIER = ">=1.1,<2"
 
 
 def _load(path: Path) -> dict:
@@ -44,12 +44,12 @@ def test_project_version_is_expected(pyproject: dict) -> None:
     assert pyproject["project"]["version"] == EXPECTED_VERSION
 
 
-def test_normal_dependency_refuses_pre_1_0_sdk(pyproject: dict) -> None:
+def test_normal_dependency_requires_sdk_fixes(pyproject: dict) -> None:
     requirement = _sdk_requirement(pyproject["project"]["dependencies"], extras=False)
     assert requirement == f"ksef2{EXPECTED_SDK_SPECIFIER}"
 
 
-def test_pdf_extra_refuses_pre_1_0_sdk(pyproject: dict) -> None:
+def test_pdf_extra_requires_sdk_fixes(pyproject: dict) -> None:
     requirements = pyproject["project"]["optional-dependencies"]["pdf"]
     requirement = _sdk_requirement(requirements, extras=True)
     assert requirement == f"ksef2[pdf]{EXPECTED_SDK_SPECIFIER}"
@@ -71,7 +71,7 @@ def test_locked_sdk_satisfies_declared_bounds(uv_lock: dict) -> None:
     locked = [p for p in uv_lock["package"] if p["name"] == "ksef2"]
     assert len(locked) == 1
     version = _as_tuple(locked[0]["version"])
-    assert (1, 0) <= version < (2, 0), f"locked ksef2 {locked[0]['version']} breaks {EXPECTED_SDK_SPECIFIER}"
+    assert (1, 1) <= version < (2, 0), f"locked ksef2 {locked[0]['version']} breaks {EXPECTED_SDK_SPECIFIER}"
 
 
 def test_sdk_resolves_from_pypi(pyproject: dict, uv_lock: dict) -> None:

@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "click>=8.1,<8.2",
-    "ksef2>=1.0,<2",
+    "ksef2>=1.1,<2",
     "pydantic>=2.13.4",
     "rich>=13.7,<14",
     "typer>=0.12,<0.13",
@@ -20,7 +20,7 @@ dependencies = [
 # WeasyPrint renders `invoices export-pdf`. It is optional so the CLI imports and
 # runs without it; the command reports the install hint when the extra is absent.
 pdf = [
-    "ksef2[pdf]>=1.0,<2",
+    "ksef2[pdf]>=1.1,<2",
 ]
 
 [project.scripts]
