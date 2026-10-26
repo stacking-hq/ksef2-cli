@@ -1,12 +1,13 @@
 """Invoice command-owned models."""
 
-import base64
 import json
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
-from ksef2.domain.models.session import (
+from ksef2.models import (
+    BatchSessionResumeState,
+    ExportResumeState,
     OnlineSessionResumeState,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
@@ -14,10 +15,6 @@ from ksef2.domain.models.session import (
 from pydantic import Field
 
 from ksef2_cli.results import CliResult, SavedFile
-
-if TYPE_CHECKING:
-    from ksef2.domain.models.invoices import ExportHandle
-
 
 InvoiceWorkflowMode = Literal["online", "batch"]
 InvoiceWorkflowItemStatus = Literal["submitted", "accepted", "failed"]
@@ -66,9 +63,14 @@ class BatchSessionStatus(CliResult):
 
 
 class BatchInvoiceReceipt(CliResult):
-    """Resumable receipt for one submitted batch session."""
+    """Resumable receipt for one submitted batch session.
+
+    ``session_state`` retains upload recovery credentials. Reference-only status and
+    UPO reads also work for older receipts that carry only ``session_reference``.
+    """
 
     session_reference: str
+    session_state: BatchSessionResumeState | None = None
     files: list[Path]
     status: BatchSessionStatus | None = None
     upo_files: list[Path] = Field(default_factory=list)
@@ -84,18 +86,24 @@ class InvoiceWorkflowReceipt(CliResult):
     batch: BatchInvoiceReceipt | None = None
 
     def to_resumable_json(self) -> str:
-        """Serialize the receipt so its online session can still be resumed.
+        """Serialize the receipt so its session can still be resumed.
 
-        ``model_dump_json`` masks the resume state's AES key and IV, which would save a
-        receipt that can no longer resume its session, so the state is exported through
-        the SDK's own credential export. The result is credential material: write it to a
-        protected file only, never to command output.
+        ``model_dump_json`` masks the resume state's AES key and IV, and drops the batch
+        upload instructions, which would save a receipt that can no longer resume its
+        session, so each state is exported through the SDK's own credential export. The
+        result is credential material: write it to a protected file only, never to
+        command output.
         """
         data = self.model_dump(mode="json", by_alias=True, exclude_none=True)
         if self.online is not None:
             data["online"] = {
                 **data["online"],
                 "session_state": self.online.session_state.to_dict(mode="json"),
+            }
+        if self.batch is not None and self.batch.session_state is not None:
+            data["batch"] = {
+                **data["batch"],
+                "session_state": self.batch.session_state.to_dict(mode="json"),
             }
         return json.dumps(data, indent=2)
 
@@ -170,32 +178,10 @@ class InvoicesUpoResult(CliResult):
 
 
 class ExportHandleSaved(CliResult):
-    """Export handle material printed or saved by export commands."""
+    """Export resume state redacted for output, plus its optional saved file path."""
 
-    reference_number: str
-    aes_key: str
-    iv: str
+    state: ExportResumeState
     handle_file: Path | None = None
-
-    @classmethod
-    def from_handle(
-        cls, handle: "ExportHandle", *, handle_file: Path | None = None
-    ) -> "ExportHandleSaved":
-        return cls(
-            reference_number=handle.reference_number,
-            aes_key=base64.b64encode(handle.aes_key).decode("ascii"),
-            iv=base64.b64encode(handle.iv).decode("ascii"),
-            handle_file=handle_file,
-        )
-
-    def to_handle(self) -> "ExportHandle":
-        from ksef2.domain.models.invoices import ExportHandle
-
-        return ExportHandle(
-            reference_number=self.reference_number,
-            aes_key=base64.b64decode(self.aes_key),
-            iv=base64.b64decode(self.iv),
-        )
 
 
 class ExportPaths(CliResult):
@@ -203,6 +189,15 @@ class ExportPaths(CliResult):
 
     reference_number: str
     paths: list[Path]
+    handle_file: Path | None = None
+
+
+class InvoicePdfExport(CliResult):
+    """PDFs rendered from the invoices in a downloaded export package."""
+
+    reference_number: str
+    pdfs: list[SavedFile] = Field(default_factory=list)
+    invoice_xml_files: list[Path] = Field(default_factory=list)
     handle_file: Path | None = None
 
 

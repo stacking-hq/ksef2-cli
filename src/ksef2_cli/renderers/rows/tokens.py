@@ -1,6 +1,6 @@
 """Plain-text handlers for token responses."""
 
-from ksef2.domain.models.tokens import (
+from ksef2.models import (
     QueryTokensResponse,
     TokenAuthorIdentifier,
     TokenContextIdentifier,
@@ -24,6 +24,7 @@ def register() -> None:
             (
                 ("reference_number", value.reference_number),
                 ("token", value.token),
+                ("status", value.status),
             )
         )
 

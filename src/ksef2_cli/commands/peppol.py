@@ -4,10 +4,10 @@ from typing import Annotated
 
 import typer
 from ksef2 import Client
-from ksef2.domain.models.pagination import OffsetPaginationParams
-from ksef2.domain.models.peppol import ListPeppolProvidersResponse, PeppolProvider
+from ksef2.models import OffsetPaginationParams, PeppolProvider
 
-from ksef2_cli.context import run_client_command
+from ksef2_cli.context import run_client, run_command
+from ksef2_cli.parsing import validate_offset_pagination
 
 app = typer.Typer(help="Query public PEPPOL providers.")
 
@@ -16,18 +16,36 @@ app = typer.Typer(help="Query public PEPPOL providers.")
 def peppol_providers(
     ctx: typer.Context,
     all_pages: Annotated[bool, typer.Option("--all", help="Fetch all pages.")] = False,
-    page_size: Annotated[int, typer.Option("--page-size", min=10, max=100)] = 10,
-    page_offset: Annotated[int, typer.Option("--page-offset", min=0)] = 0,
+    page_size: Annotated[
+        int,
+        typer.Option(
+            "--page-size",
+            min=10,
+            max=100,
+            help="Items per API request, including with --all.",
+        ),
+    ] = 10,
+    page_offset: Annotated[
+        int,
+        typer.Option(
+            "--page-offset",
+            min=0,
+            help="Offset for a single page; must be 0 with --all.",
+        ),
+    ] = 0,
 ) -> None:
     """List PEPPOL providers."""
 
-    def query_providers(
-        client: Client,
-    ) -> ListPeppolProvidersResponse | list[PeppolProvider]:
+    def list_providers(client: Client) -> list[PeppolProvider]:
         params = OffsetPaginationParams(page_size=page_size, page_offset=page_offset)
 
+        pager = client.peppol.list(params=params)
         if all_pages:
-            return list(client.peppol.all(params=params))
-        return client.peppol.query(params=params)
+            return list(pager)
+        return pager.first_page()
 
-    run_client_command(ctx, query_providers)
+    def operation() -> list[PeppolProvider]:
+        validate_offset_pagination(all_pages=all_pages, page_offset=page_offset)
+        return run_client(ctx, list_providers)
+
+    run_command(ctx, operation)

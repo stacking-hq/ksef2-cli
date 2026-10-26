@@ -4,8 +4,13 @@ import json
 
 from pydantic import TypeAdapter
 
-from ksef2_cli.commands.invoices.models import ExportHandleSaved, ExportPaths
-from ksef2_cli.results import FocusedResult
+from ksef2_cli.commands.invoices.models import (
+    ExportHandleSaved,
+    ExportPaths,
+    InvoicePdfExport,
+)
+from ksef2_cli.renderers.auth import auth_token_fields
+from ksef2_cli.results import AuthTokenOutput, FocusedResult
 
 _JSON_VALUE = TypeAdapter(object)
 
@@ -21,9 +26,11 @@ class JsonRenderer:
         )
 
     def to_jsonable(self, value: object) -> object:
+        if isinstance(value, AuthTokenOutput):
+            value = auth_token_fields(value)
         if isinstance(value, FocusedResult):
             value = value.payload
-        if isinstance(value, (ExportHandleSaved, ExportPaths)):
+        if isinstance(value, (ExportHandleSaved, ExportPaths, InvoicePdfExport)):
             value = value.model_dump(mode="json", by_alias=True, exclude_none=True)
         return _JSON_VALUE.dump_python(value, mode="json", by_alias=True)
 

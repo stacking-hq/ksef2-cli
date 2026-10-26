@@ -4,10 +4,10 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.domain.models.invoices import SendInvoiceResponse
-from ksef2.domain.models.session import (
+from ksef2.clients import AuthenticatedClient
+from ksef2.models import (
     OnlineSessionResumeState,
+    SendInvoiceResponse,
     SessionInvoicesResponse,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
@@ -18,6 +18,7 @@ from ksef2_cli.context import run_authenticated, run_authenticated_command, run_
 from ksef2_cli.io import (
     SECRET_MODEL_FILE_MODE,
     read_model_file,
+    read_invoice_xml,
     write_bytes_file,
     write_text_file,
 )
@@ -51,7 +52,7 @@ def online_open(
     def operation() -> OnlineSessionOpened:
         def open_session(auth: AuthenticatedClient) -> OnlineSessionResumeState:
             session = auth.online_session(form_code=form.form_schema)
-            return session.get_state()
+            return session.resume_state()
 
         state = run_authenticated(ctx, open_session)
         if state_file:
@@ -92,39 +93,55 @@ def online_send(
     keep_open: Annotated[
         bool, typer.Option("--keep-open", help="Leave the session open after sending.")
     ] = False,
-    timeout: Annotated[float, typer.Option("--timeout", min=1.0)] = 60.0,
-    poll_interval: Annotated[float, typer.Option("--poll-interval", min=0.1)] = 2.0,
+    close: Annotated[
+        bool,
+        typer.Option(
+            "--close",
+            help="Close the session after sending, including a resumed session.",
+        ),
+    ] = False,
+    timeout: Annotated[
+        float, typer.Option("--timeout", min=1.0, help="Maximum wait in seconds.")
+    ] = 60.0,
+    poll_interval: Annotated[
+        float,
+        typer.Option("--poll-interval", min=0.1, help="Seconds between status checks."),
+    ] = 2.0,
 ) -> None:
-    """Send one or more invoice XML files through an online session."""
+    """Send invoice XML files. New sessions close; resumed sessions stay open by default."""
 
     def operation() -> FocusedResult[OnlineSendResult, OnlineSendItem]:
+        if close and keep_open:
+            raise ValueError("Use either --close or --keep-open, not both.")
+        should_close = close or (state_file is None and not keep_open)
+        invoices = [(path, read_invoice_xml(path)) for path in invoice_paths]
+
         def send_invoices(
             auth: AuthenticatedClient,
         ) -> tuple[list[OnlineSendItem], OnlineSessionResumeState]:
             if state_file:
-                session = auth.resume_online_session(
-                    read_model_file(state_file, OnlineSessionResumeState)
+                session = auth.online_session(
+                    state=read_model_file(state_file, OnlineSessionResumeState)
                 )
             else:
                 session = auth.online_session(form_code=form.form_schema)
             try:
                 results: list[OnlineSendItem] = []
-                for invoice_path in invoice_paths:
-                    xml = invoice_path.read_bytes()
+                for invoice_path, xml in invoices:
+                    submission = session.send_invoice(invoice_xml=xml)
                     result: OnlineSendResponse
                     if wait:
-                        result = session.send_invoice_and_wait(
-                            invoice_xml=xml,
+                        result = submission.wait(
                             timeout=timeout,
                             poll_interval=poll_interval,
                         )
                     else:
-                        result = session.send_invoice(invoice_xml=xml)
+                        result = submission.response
                     results.append(OnlineSendItem(file=invoice_path, result=result))
-                state = session.get_state()
+                state = session.resume_state()
                 return results, state
             finally:
-                if not keep_open:
+                if should_close:
                     session.close()
 
         results, state = run_authenticated(ctx, send_invoices)
@@ -133,7 +150,7 @@ def online_send(
                 save_state, state.to_json(indent=2), file_mode=SECRET_MODEL_FILE_MODE
             )
         payload = OnlineSendResult(
-            state_file=save_state, closed=not keep_open, results=results
+            state_file=save_state, closed=should_close, results=results
         )
         return FocusedResult(payload=payload, items=results)
 
@@ -151,8 +168,8 @@ def online_status(
 
     def operation() -> SessionStatusResponse:
         def get_status(auth: AuthenticatedClient) -> SessionStatusResponse:
-            return auth.resume_online_session(
-                read_model_file(state_file, OnlineSessionResumeState)
+            return auth.online_session(
+                state=read_model_file(state_file, OnlineSessionResumeState)
             ).get_status()
 
         return run_authenticated(ctx, get_status)
@@ -178,8 +195,8 @@ def online_list(
 
     def operation() -> SessionInvoicesResponse:
         def list_session_invoices(auth: AuthenticatedClient) -> SessionInvoicesResponse:
-            session = auth.resume_online_session(
-                read_model_file(state_file, OnlineSessionResumeState)
+            session = auth.online_session(
+                state=read_model_file(state_file, OnlineSessionResumeState)
             )
             if failed:
                 return session.list_failed_invoices(
@@ -202,8 +219,13 @@ def online_invoice_status(
     ],
     invoice_reference: Annotated[str, typer.Option("--invoice-reference")],
     wait: Annotated[bool, typer.Option("--wait", help="Poll until ready.")] = False,
-    timeout: Annotated[float, typer.Option("--timeout", min=1.0)] = 60.0,
-    poll_interval: Annotated[float, typer.Option("--poll-interval", min=0.1)] = 2.0,
+    timeout: Annotated[
+        float, typer.Option("--timeout", min=1.0, help="Maximum wait in seconds.")
+    ] = 60.0,
+    poll_interval: Annotated[
+        float,
+        typer.Option("--poll-interval", min=0.1, help="Seconds between status checks."),
+    ] = 2.0,
 ) -> None:
     """Fetch or wait for one invoice status within an online session."""
 
@@ -211,12 +233,11 @@ def online_invoice_status(
         def get_session_invoice_status(
             auth: AuthenticatedClient,
         ) -> SessionInvoiceStatusResponse:
-            session = auth.resume_online_session(
-                read_model_file(state_file, OnlineSessionResumeState)
+            session = auth.online_session(
+                state=read_model_file(state_file, OnlineSessionResumeState)
             )
             if wait:
-                return session.wait_for_invoice_ready(
-                    invoice_reference_number=invoice_reference,
+                return session.submission(reference_number=invoice_reference).wait(
                     timeout=timeout,
                     poll_interval=poll_interval,
                 )
@@ -250,16 +271,14 @@ def online_upo(
             )
 
     def get_upo(auth: AuthenticatedClient) -> SavedFile:
-        session = auth.resume_online_session(
-            read_model_file(state_file, OnlineSessionResumeState)
+        session = auth.online_session(
+            state=read_model_file(state_file, OnlineSessionResumeState)
         )
         if invoice_reference:
-            content = session.get_invoice_upo_by_reference(
-                invoice_reference_number=invoice_reference
-            )
+            content = session.download_invoice_upo(reference_number=invoice_reference)
         else:
             assert ksef_number is not None
-            content = session.get_invoice_upo_by_ksef_number(ksef_number=ksef_number)
+            content = session.download_invoice_upo(ksef_number=ksef_number)
         return SavedFile(path=write_bytes_file(output_file, content), size=len(content))
 
     run_authenticated_command(ctx, get_upo, validate=validate)
@@ -276,7 +295,7 @@ def online_close(
 
     def operation() -> SessionClosed:
         state = read_model_file(state_file, OnlineSessionResumeState)
-        run_authenticated(ctx, lambda auth: auth.resume_online_session(state).close())
+        run_authenticated(ctx, lambda auth: auth.online_session(state=state).close())
         return SessionClosed(reference_number=state.reference_number)
 
     run_command(ctx, operation)

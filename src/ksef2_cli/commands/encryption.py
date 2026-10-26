@@ -4,11 +4,7 @@ from typing import Annotated
 
 import typer
 from ksef2 import Client
-from ksef2.domain.models.encryption import (
-    CertUsage,
-    CertUsageEnum,
-    PublicKeyCertificate,
-)
+from ksef2.models import CertUsage, CertUsageEnum, PublicKeyCertificate
 
 from ksef2_cli.context import run_client_command
 

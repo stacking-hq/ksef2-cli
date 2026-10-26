@@ -1,90 +1,93 @@
 """Invoice metadata and download commands."""
 
 from pathlib import Path
+from functools import cache
 from typing import Annotated
 
+import click
 import typer
-from ksef2.clients.authenticated import AuthenticatedClient
+from ksef2.clients import AuthenticatedClient
 
+from ksef2_cli.commands.invoices.filters import (
+    parse_invoice_dates,
+    AmountMaxOption,
+    AmountMinOption,
+    AmountTypeOption,
+    AttachmentOption,
+    BuyerNipOption,
+    BuyerOtherIdOption,
+    BuyerVatUeOption,
+    CurrencyOption,
+    DateFromOption,
+    DateToOption,
+    DateTypeOption,
+    FormOption,
+    InvoiceNumberOption,
+    InvoiceTypeOption,
+    InvoicingModeOption,
+    KsefNumberOption,
+    PermanentStorageHwmOption,
+    RoleOption,
+    SellerNipOption,
+    SelfInvoicingOption,
+)
 from ksef2_cli.commands.invoices.models import (
     InvoiceAmountTypeChoice,
     InvoiceDateTypeChoice,
     InvoiceRoleChoice,
-    InvoiceTypeChoice,
-    InvoicingModeChoice,
     SortOrderChoice,
 )
-from ksef2_cli.config import FORM_SCHEMA_NAMES, FormSchemaChoice
-from ksef2_cli.context import run_authenticated_command
+from ksef2_cli.config import OutputMode
+from ksef2_cli.context import get_settings, run_authenticated_command
+from ksef2_cli.exceptions import UsageError
 from ksef2_cli.invoice_workflows import (
     InvoiceMetadataInput,
     download_invoice,
     query_invoice_metadata,
 )
-from ksef2_cli.parsing import parse_iso_datetime
+from ksef2_cli.parsing import parse_optional_bool, validate_offset_pagination
 from ksef2_cli.results import SavedFile
 
 
 def invoices_metadata(
     ctx: typer.Context,
-    date_from: Annotated[
-        str, typer.Option("--date-from", help="Start datetime/date, ISO format.")
-    ],
-    date_to: Annotated[
-        str | None, typer.Option("--date-to", help="End datetime/date, ISO format.")
-    ] = None,
-    role: Annotated[
-        InvoiceRoleChoice,
+    date_from: DateFromOption,
+    date_to: DateToOption = None,
+    role: RoleOption = InvoiceRoleChoice.SELLER,
+    date_type: DateTypeOption = InvoiceDateTypeChoice.ISSUE_DATE,
+    amount_type: AmountTypeOption = InvoiceAmountTypeChoice.BRUTTO,
+    restrict_hwm: PermanentStorageHwmOption = False,
+    currency: CurrencyOption = [],
+    invoice_type: InvoiceTypeOption = [],
+    seller_nip: SellerNipOption = None,
+    buyer_nip: BuyerNipOption = None,
+    buyer_vat_ue: BuyerVatUeOption = None,
+    buyer_other_id: BuyerOtherIdOption = None,
+    invoice_number: InvoiceNumberOption = None,
+    ksef_number: KsefNumberOption = None,
+    amount_min: AmountMinOption = None,
+    amount_max: AmountMaxOption = None,
+    form: FormOption = None,
+    invoicing_mode: InvoicingModeOption = None,
+    attachment: AttachmentOption = None,
+    self_invoicing: SelfInvoicingOption = None,
+    page_size: Annotated[
+        int,
         typer.Option(
-            "--role", help="buyer, seller, third_subject, authorized_subject."
+            "--page-size",
+            min=10,
+            max=250,
+            help="Items per API request, including with --all.",
         ),
-    ] = InvoiceRoleChoice.SELLER,
-    date_type: Annotated[
-        InvoiceDateTypeChoice,
+    ] = 10,
+    page_offset: Annotated[
+        int,
         typer.Option(
-            "--date-type", help="issue_date, invoicing_date, permanent_storage."
+            "--page-offset",
+            min=0,
+            help="Offset for a single page; must be 0 with --all.",
         ),
-    ] = InvoiceDateTypeChoice.ISSUE_DATE,
-    amount_type: Annotated[
-        InvoiceAmountTypeChoice,
-        typer.Option("--amount-type", help="brutto, netto, or vat."),
-    ] = InvoiceAmountTypeChoice.BRUTTO,
-    currency: Annotated[
-        list[str],
-        typer.Option("--currency", help="Currency code. Repeat for multiple."),
-    ] = [],
-    invoice_type: Annotated[
-        list[InvoiceTypeChoice],
-        typer.Option("--invoice-type", help="Invoice type. Repeat for multiple."),
-    ] = [],
-    seller_nip: Annotated[str | None, typer.Option("--seller-nip")] = None,
-    buyer_nip: Annotated[str | None, typer.Option("--buyer-nip")] = None,
-    buyer_vat_ue: Annotated[str | None, typer.Option("--buyer-vat-ue")] = None,
-    buyer_other_id: Annotated[str | None, typer.Option("--buyer-other-id")] = None,
-    invoice_number: Annotated[str | None, typer.Option("--invoice-number")] = None,
-    ksef_number: Annotated[str | None, typer.Option("--ksef-number")] = None,
-    amount_min: Annotated[float | None, typer.Option("--amount-min")] = None,
-    amount_max: Annotated[float | None, typer.Option("--amount-max")] = None,
-    form: Annotated[
-        FormSchemaChoice | None,
-        typer.Option("--form", help=f"Form schema: {FORM_SCHEMA_NAMES}."),
-    ] = None,
-    invoicing_mode: Annotated[
-        InvoicingModeChoice | None,
-        typer.Option("--invoicing-mode", help="online or offline."),
-    ] = None,
-    attachment: Annotated[
-        str | None,
-        typer.Option("--attachment", help="Filter by attachment presence: yes or no."),
-    ] = None,
-    self_invoicing: Annotated[
-        str | None,
-        typer.Option(
-            "--self-invoicing", help="Filter by self-invoicing flag: yes or no."
-        ),
-    ] = None,
-    page_size: Annotated[int, typer.Option("--page-size", min=10, max=250)] = 10,
-    page_offset: Annotated[int, typer.Option("--page-offset", min=0)] = 0,
+    ] = 0,
     sort_order: Annotated[
         SortOrderChoice, typer.Option("--sort-order", help="asc or desc.")
     ] = SortOrderChoice.ASC,
@@ -94,15 +97,17 @@ def invoices_metadata(
 ) -> None:
     """Query invoice metadata."""
 
+    @cache
     def load_input() -> InvoiceMetadataInput:
+        validate_offset_pagination(all_pages=all_pages, page_offset=page_offset)
+        parse_optional_bool(attachment, option_name="--attachment")
+        parse_optional_bool(self_invoicing, option_name="--self-invoicing")
         return InvoiceMetadataInput(
-            date_from=parse_iso_datetime(date_from, option_name="--date-from"),
-            date_to=None
-            if date_to is None
-            else parse_iso_datetime(date_to, option_name="--date-to"),
+            **parse_invoice_dates(date_from, date_to),
             role=role,
             date_type=date_type,
             amount_type=amount_type,
+            restrict_to_permanent_storage_hwm_date=restrict_hwm,
             currency=currency,
             invoice_type=invoice_type,
             seller_nip=seller_nip,
@@ -133,28 +138,65 @@ def invoices_metadata(
 def invoices_download(
     ctx: typer.Context,
     ksef_number: Annotated[
-        str, typer.Option("--ksef-number", help="KSeF invoice number.")
-    ],
+        str | None,
+        typer.Option(
+            "--ksef-number",
+            help="KSeF invoice number. Alternative to the positional number.",
+        ),
+    ] = None,
     output_file: Annotated[
         Path | None,
-        typer.Option("--out", "-o", dir_okay=False, help="Target XML file."),
+        typer.Option(
+            "--out",
+            "-o",
+            dir_okay=False,
+            help=(
+                "Target XML file (default: NUMBER.xml in the current directory). "
+                "Use - for raw XML bytes on stdout; diagnostics stay on stderr. "
+                "Incompatible with global JSON output."
+            ),
+        ),
     ] = None,
     wait: Annotated[
         bool, typer.Option("--wait", help="Poll until the invoice can be downloaded.")
     ] = False,
-    timeout: Annotated[float, typer.Option("--timeout", min=1.0)] = 120.0,
-    poll_interval: Annotated[float, typer.Option("--poll-interval", min=0.1)] = 2.0,
+    timeout: Annotated[
+        float, typer.Option("--timeout", min=1.0, help="Maximum wait in seconds.")
+    ] = 120.0,
+    poll_interval: Annotated[
+        float,
+        typer.Option("--poll-interval", min=0.1, help="Seconds between status checks."),
+    ] = 2.0,
+    number: Annotated[str | None, typer.Argument(help="KSeF invoice number.")] = None,
 ) -> None:
     """Download processed invoice XML by KSeF number."""
 
-    def work(auth: AuthenticatedClient) -> SavedFile:
-        return download_invoice(
+    def validate() -> None:
+        if (ksef_number is None) == (number is None):
+            raise ValueError(
+                "Provide one KSeF number, either positionally or with --ksef-number."
+            )
+        if output_file == Path("-") and get_settings(ctx).output is OutputMode.json:
+            raise UsageError(
+                "--out - cannot be combined with global JSON output "
+                "(--json, --output json, or -o json).",
+                exit_code=2,
+            )
+
+    def work(auth: AuthenticatedClient) -> SavedFile | None:
+        result = download_invoice(
             auth,
-            ksef_number=ksef_number,
+            ksef_number=ksef_number or number,
             output_file=output_file,
             wait=wait,
             timeout=timeout,
             poll_interval=poll_interval,
         )
+        if isinstance(result, bytes):
+            stream = click.get_binary_stream("stdout")
+            stream.write(result)
+            stream.flush()
+            return None
+        return result
 
-    run_authenticated_command(ctx, work)
+    run_authenticated_command(ctx, work, validate=validate)

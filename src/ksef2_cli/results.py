@@ -3,17 +3,21 @@
 from pathlib import Path
 from typing import Generic, TypeVar
 
-from ksef2.domain.models.batch import BatchSessionResumeState
-from ksef2.domain.models.invoices import SendInvoiceResponse
-from ksef2.domain.models.session import (
+from ksef2.models import (
+    AuthTokens,
+    BatchSessionResumeState,
+    Identifier,
     OnlineSessionResumeState,
+    Permission,
+    RefreshedToken,
+    SendInvoiceResponse,
     SessionInvoiceStatusResponse,
     SessionStatusResponse,
+    TokenStatus,
 )
-from ksef2.domain.models.testdata import Identifier, Permission
 from pydantic import BaseModel, ConfigDict, Field
 
-from ksef2_cli.config import CliConfig, ProfileConfig
+from ksef2.profiles import CliProfileConfig, ProfileConfig
 
 PayloadT = TypeVar("PayloadT")
 ItemT = TypeVar("ItemT")
@@ -65,6 +69,24 @@ class CurrentSessionTerminated(CliResult):
     terminated_current: bool = True
 
 
+class AuthTokenOutput(CliResult):
+    """Auth tokens with CLI display options, separate from persisted state."""
+
+    tokens: AuthTokens | RefreshedToken
+    show_tokens: bool = False
+    state_file: Path | None = None
+
+
+class AuthStateRemoved(CliResult):
+    """Result for ending the session behind a saved auth state file and deleting it.
+
+    Only the path is reported: the file itself held bearer tokens.
+    """
+
+    path: Path
+    terminated_current: bool = True
+
+
 class CertificateRevoked(CliResult):
     """Result for certificate revocation."""
 
@@ -86,7 +108,7 @@ class ConfigShowResult(CliResult):
 
     path: Path
     exists: bool
-    config: CliConfig
+    config: CliProfileConfig
 
 
 class ConfigInitialized(CliResult):
@@ -94,7 +116,7 @@ class ConfigInitialized(CliResult):
 
     path: Path
     mode: str
-    config: CliConfig
+    config: CliProfileConfig
 
 
 class ProfileListItem(CliResult):
@@ -135,16 +157,32 @@ class ProfileCurrent(CliResult):
     profile: ProfileConfig | None = None
 
 
+class ProfileDeleted(CliResult):
+    """Result for removing a CLI profile.
+
+    ``deleted`` is false when the user declined the confirmation prompt, and
+    ``was_active`` reports whether the profile was the selected one beforehand,
+    in which case no profile is active now.
+    """
+
+    name: str
+    deleted: bool = True
+    was_active: bool = False
+
+
 class GeneratedToken(CliResult):
     """One-time credential printed by ``tokens generate``.
 
     The SDK response marks its token as excluded from serialization, so a generic dump
     of it drops the credential. The CLI copies it into this model on purpose: the value
     is secret material and ``--json`` output of this command must be protected.
+
+    ``status`` is filled only when ``--wait`` polled the activation.
     """
 
     reference_number: str
     token: str
+    status: TokenStatus | None = None
 
 
 class OnlineSessionOpened(CliResult):
@@ -152,6 +190,15 @@ class OnlineSessionOpened(CliResult):
 
     state_file: Path | None = None
     state: OnlineSessionResumeState
+
+
+class BatchPrepared(CliResult):
+    """Result for building a batch package that a later command uploads."""
+
+    path: Path
+    digest: str
+    parts: int
+    invoices: int
 
 
 class BatchSubmitted(CliResult):
@@ -219,6 +266,14 @@ class TestAttachmentsRevoked(CliResult):
     nip: str
     expected_end_date: str | None = None
     attachments: str = "revoked"
+
+
+class TestCertificateValidityUpdated(CliResult):
+    """Result for shortening the validity of a TEST certificate."""
+
+    serial_number: str
+    valid_to: str
+    updated: bool = True
 
 
 class TestContextAccessChanged(CliResult):

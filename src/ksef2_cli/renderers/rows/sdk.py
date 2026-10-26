@@ -1,6 +1,6 @@
 """Plain-text fallback for SDK-owned response models."""
 
-from ksef2.domain.models.base import KSeFBaseModel
+from ksef2.models import KSeFBaseModel
 
 from ksef2_cli.renderers.text import PlainTextRenderer, format_fields, register_text
 

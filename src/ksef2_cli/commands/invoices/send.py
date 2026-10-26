@@ -8,6 +8,7 @@ import typer
 from ksef2_cli.commands.invoices.models import InvoiceSendModeChoice, InvoicesSendResult
 from ksef2_cli.config import FORM_SCHEMA_NAMES, FormSchemaChoice
 from ksef2_cli.context import run_authenticated, run_command
+from ksef2_cli.io import read_invoice_xml, read_stdin_invoice_xml
 from ksef2_cli.invoice_workflows import InvoiceSendInput, send_invoices
 
 
@@ -16,8 +17,7 @@ def invoices_send(
     invoice_paths: Annotated[
         list[Path],
         typer.Argument(
-            exists=True,
-            help="Invoice XML files or directories containing invoice XML files.",
+            help="Invoice XML files, directories, or - for one invoice from stdin.",
         ),
     ],
     mode: Annotated[
@@ -53,15 +53,52 @@ def invoices_send(
         bool,
         typer.Option("--offline", help="Declare batch offline invoicing mode."),
     ] = False,
-    max_part_size: Annotated[int | None, typer.Option("--max-part-size", min=1)] = None,
-    timeout: Annotated[float, typer.Option("--timeout", min=1.0)] = 120.0,
-    poll_interval: Annotated[float, typer.Option("--poll-interval", min=0.1)] = 2.0,
+    max_part_size: Annotated[
+        int | None,
+        typer.Option(
+            "--max-part-size",
+            min=1,
+            help="Maximum encrypted batch part size in bytes. Batch mode only.",
+        ),
+    ] = None,
+    timeout: Annotated[
+        float,
+        typer.Option("--timeout", min=1.0, help="Maximum processing wait in seconds."),
+    ] = 120.0,
+    poll_interval: Annotated[
+        float,
+        typer.Option(
+            "--poll-interval", min=0.1, help="Seconds between processing status checks."
+        ),
+    ] = 2.0,
 ) -> None:
     """Send one or more invoice XML files through an online or batch workflow."""
 
+    for path in invoice_paths:
+        if path != Path("-") and not path.exists():
+            raise typer.BadParameter(
+                f"Path '{path}' does not exist.", param_hint="invoice_paths"
+            )
+
     def operation() -> InvoicesSendResult:
+        if invoice_paths.count(Path("-")) > 1:
+            raise ValueError("Provide - only once for stdin.")
+        contents: dict[Path, bytes] = {}
+        if Path("-") in invoice_paths:
+            names = {path.name for path in invoice_paths}
+            for path in invoice_paths:
+                if path.is_dir():
+                    matches = path.rglob("*.xml") if recursive else path.glob("*.xml")
+                    names.update(item.name for item in matches)
+            source = Path("stdin.xml")
+            index = 2
+            while source.name in names:
+                source = Path(f"stdin-{index}.xml")
+                index += 1
+            contents[source] = read_stdin_invoice_xml()
         inputs = InvoiceSendInput(
-            invoice_paths=invoice_paths,
+            invoice_paths=[path for path in invoice_paths if path != Path("-")],
+            invoice_contents=contents,
             mode=mode,
             recursive=recursive,
             wait=wait,
@@ -74,6 +111,9 @@ def invoices_send(
             timeout=timeout,
             poll_interval=poll_interval,
         )
+        for path in inputs.invoice_files:
+            if path not in inputs.invoice_contents:
+                read_invoice_xml(path)
         return run_authenticated(ctx, lambda auth: send_invoices(auth, inputs))
 
     run_command(

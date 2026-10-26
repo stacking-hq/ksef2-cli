@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.domain.models.limits import ApiRateLimits, ContextLimits, SubjectLimits
+from ksef2.clients import AuthenticatedClient
+from ksef2.models import ApiRateLimits, ContextLimits, SubjectLimits
 
 from ksef2_cli.context import (
     read_model,

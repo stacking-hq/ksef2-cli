@@ -1,50 +1,63 @@
 """Permission grant, query, and revoke command group."""
 
-from collections.abc import Mapping
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.domain.models import KSeFBaseModel
-from ksef2.domain.models.pagination import OffsetPaginationParams
-from ksef2.domain.models.permissions import (
+from ksef2.clients import AuthenticatedClient, PermissionOperation
+from ksef2.models import (
     AttachmentPermissionStatus,
+    AuthorizationGrantDetail,
     AuthorizationPermissionTypeEnum,
-    AuthorizationPermissionsQueryResponse,
     AuthorizationSubjectIdentifierTypeEnum,
     EntityPermission,
+    EntityPermissionDetail,
     EntityPermissionTypeEnum,
-    EntityPermissionsQueryResponse,
-    EntityRolesResponse,
+    EntityRole,
     EuEntityAdminContextIdentifierTypeEnum,
+    EuEntityPermission,
     EuEntityPermissionTypeEnum,
-    EuEntityPermissionsQueryResponse,
     GrantPermissionsResponse,
     IndirectPermissionTypeEnum,
     IndirectTargetIdentifierTypeEnum,
+    OffsetPaginationParams,
     PermissionOperationStatusResponse,
-    PersonalPermissionsQueryResponse,
-    PersonPermissionsQueryResponse,
-    SubordinateEntityRolesQueryResponse,
+    PersonalPermissionDetail,
+    PersonPermissionDetail,
+    SubordinateEntityRoleDetail,
     SubunitIdentifierTypeEnum,
-    SubunitPermissionsQueryResponse,
+    SubunitPermission,
 )
 
 from ksef2_cli.context import read_model, run_authenticated, run_command
+from ksef2_cli.parsing import validate_offset_pagination
 
 app = typer.Typer(help="Grant, query, and revoke permissions.")
 
-type PermissionQueryResult = (
-    AuthorizationPermissionsQueryResponse
-    | EntityPermissionsQueryResponse
-    | EuEntityPermissionsQueryResponse
-    | PersonalPermissionsQueryResponse
-    | PersonPermissionsQueryResponse
-    | SubordinateEntityRolesQueryResponse
-    | SubunitPermissionsQueryResponse
+# One list item returned by a ``list_*`` pager, across every permission listing.
+type PermissionListItem = (
+    AuthorizationGrantDetail
+    | EntityPermissionDetail
+    | EntityRole
+    | EuEntityPermission
+    | PersonalPermissionDetail
+    | PersonPermissionDetail
+    | SubordinateEntityRoleDetail
+    | SubunitPermission
 )
+type PermissionQueryResult = list[PermissionListItem]
+type PermissionOperationResult = (
+    GrantPermissionsResponse | PermissionOperationStatusResponse
+)
+
+
+def _operation_result(
+    handle: PermissionOperation, *, wait: bool
+) -> PermissionOperationResult:
+    """Return the accepted operation response, or the final status when waiting."""
+
+    return handle.wait() if wait else handle.response
 
 
 @app.command("attachment-status")
@@ -80,17 +93,36 @@ def permissions_operation_status(
 @app.command("entity-roles")
 def permissions_entity_roles(
     ctx: typer.Context,
-    page_size: Annotated[int, typer.Option("--page-size", min=10, max=100)] = 10,
-    page_offset: Annotated[int, typer.Option("--page-offset", min=0)] = 0,
+    page_size: Annotated[
+        int,
+        typer.Option(
+            "--page-size",
+            min=10,
+            max=100,
+            help="Items per API request, including with --all.",
+        ),
+    ] = 10,
+    page_offset: Annotated[
+        int,
+        typer.Option(
+            "--page-offset",
+            min=0,
+            help="Offset for a single page; must be 0 with --all.",
+        ),
+    ] = 0,
+    all_pages: Annotated[bool, typer.Option("--all", help="Fetch all pages.")] = False,
 ) -> None:
     """List roles assigned to the authenticated entity."""
 
-    def operation() -> EntityRolesResponse:
+    def operation() -> PermissionQueryResult:
+        validate_offset_pagination(all_pages=all_pages, page_offset=page_offset)
         params = OffsetPaginationParams(page_size=page_size, page_offset=page_offset)
-        return run_authenticated(
-            ctx,
-            lambda auth: auth.permissions.get_entity_roles(params=params),
-        )
+
+        def list_roles(auth: AuthenticatedClient) -> PermissionQueryResult:
+            pager = auth.permissions.list_entity_roles(params=params)
+            return list(pager) if all_pages else pager.first_page()
+
+        return run_authenticated(ctx, list_roles)
 
     run_command(ctx, operation)
 
@@ -126,21 +158,27 @@ def permissions_grant_person(
         list[PersonPermissionScopeChoice],
         typer.Option("--permission", help="Permission scope. Repeat."),
     ] = [],
+    wait: Annotated[
+        bool, typer.Option("--wait", help="Wait for the operation to finish.")
+    ] = False,
 ) -> None:
     """Grant permissions directly to a person."""
 
-    def operation() -> GrantPermissionsResponse:
+    def operation() -> PermissionOperationResult:
         if not permission:
             raise ValueError("At least one --permission is required.")
         return run_authenticated(
             ctx,
-            lambda auth: auth.permissions.grant_person(
-                subject_type=subject_type.value,
-                subject_value=subject_value,
-                permissions=[item.value for item in permission],
-                description=description,
-                first_name=first_name,
-                last_name=last_name,
+            lambda auth: _operation_result(
+                auth.permissions.grant_person(
+                    subject_type=subject_type.value,
+                    subject_value=subject_value,
+                    permissions=[item.value for item in permission],
+                    description=description,
+                    first_name=first_name,
+                    last_name=last_name,
+                ),
+                wait=wait,
             ),
         )
 
@@ -163,10 +201,13 @@ def permissions_grant_entity(
             "--can-delegate", help="Apply delegation to all permission scopes."
         ),
     ] = False,
+    wait: Annotated[
+        bool, typer.Option("--wait", help="Wait for the operation to finish.")
+    ] = False,
 ) -> None:
     """Grant permissions to an entity."""
 
-    def operation() -> GrantPermissionsResponse:
+    def operation() -> PermissionOperationResult:
         if not permission:
             raise ValueError("At least one --permission is required.")
 
@@ -176,11 +217,14 @@ def permissions_grant_entity(
         ]
         return run_authenticated(
             ctx,
-            lambda auth: auth.permissions.grant_entity(
-                subject_value=subject_value,
-                permissions=permissions,
-                description=description,
-                entity_name=entity_name,
+            lambda auth: _operation_result(
+                auth.permissions.grant_entity(
+                    subject_value=subject_value,
+                    permissions=permissions,
+                    description=description,
+                    entity_name=entity_name,
+                ),
+                wait=wait,
             ),
         )
 
@@ -200,18 +244,24 @@ def permissions_grant_authorization(
     ],
     entity_name: Annotated[str, typer.Option("--entity-name")],
     description: Annotated[str, typer.Option("--description")],
+    wait: Annotated[
+        bool, typer.Option("--wait", help="Wait for the operation to finish.")
+    ] = False,
 ) -> None:
     """Grant invoice authorization rights to an entity."""
 
-    def operation() -> GrantPermissionsResponse:
+    def operation() -> PermissionOperationResult:
         return run_authenticated(
             ctx,
-            lambda auth: auth.permissions.grant_authorization(
-                subject_type=subject_type.value,
-                subject_value=subject_value,
-                permission=permission.value,
-                description=description,
-                entity_name=entity_name,
+            lambda auth: _operation_result(
+                auth.permissions.grant_authorization(
+                    subject_type=subject_type.value,
+                    subject_value=subject_value,
+                    permission=permission.value,
+                    description=description,
+                    entity_name=entity_name,
+                ),
+                wait=wait,
             ),
         )
 
@@ -237,23 +287,29 @@ def permissions_grant_indirect(
         IndirectTargetIdentifierTypeEnum | None, typer.Option("--target-type")
     ] = None,
     target_value: Annotated[str | None, typer.Option("--target-value")] = None,
+    wait: Annotated[
+        bool, typer.Option("--wait", help="Wait for the operation to finish.")
+    ] = False,
 ) -> None:
     """Grant indirect permissions."""
 
-    def operation() -> GrantPermissionsResponse:
+    def operation() -> PermissionOperationResult:
         if not permission:
             raise ValueError("At least one --permission is required.")
         return run_authenticated(
             ctx,
-            lambda auth: auth.permissions.grant_indirect(
-                subject_type=subject_type.value,
-                subject_value=subject_value,
-                permissions=[item.value for item in permission],
-                description=description,
-                first_name=first_name,
-                last_name=last_name,
-                target_type=target_type.value if target_type else None,
-                target_value=target_value,
+            lambda auth: _operation_result(
+                auth.permissions.grant_indirect(
+                    subject_type=subject_type.value,
+                    subject_value=subject_value,
+                    permissions=[item.value for item in permission],
+                    description=description,
+                    first_name=first_name,
+                    last_name=last_name,
+                    target_type=target_type.value if target_type else None,
+                    target_value=target_value,
+                ),
+                wait=wait,
             ),
         )
 
@@ -277,21 +333,27 @@ def permissions_grant_subunit(
     last_name: Annotated[str, typer.Option("--last-name")],
     description: Annotated[str, typer.Option("--description")],
     subunit_name: Annotated[str | None, typer.Option("--subunit-name")] = None,
+    wait: Annotated[
+        bool, typer.Option("--wait", help="Wait for the operation to finish.")
+    ] = False,
 ) -> None:
     """Grant subunit permissions."""
 
-    def operation() -> GrantPermissionsResponse:
+    def operation() -> PermissionOperationResult:
         return run_authenticated(
             ctx,
-            lambda auth: auth.permissions.grant_subunit(
-                subject_type=subject_type.value,
-                subject_value=subject_value,
-                context_type=context_type.value,
-                context_value=context_value,
-                description=description,
-                first_name=first_name,
-                last_name=last_name,
-                subunit_name=subunit_name,
+            lambda auth: _operation_result(
+                auth.permissions.grant_subunit(
+                    subject_type=subject_type.value,
+                    subject_value=subject_value,
+                    context_type=context_type.value,
+                    context_value=context_value,
+                    description=description,
+                    first_name=first_name,
+                    last_name=last_name,
+                    subunit_name=subunit_name,
+                ),
+                wait=wait,
             ),
         )
 
@@ -309,18 +371,24 @@ def permissions_grant_eu_entity(
         list[EuEntityPermissionTypeEnum],
         typer.Option("--permission", help="invoice_read or invoice_write. Repeat."),
     ] = [],
+    wait: Annotated[
+        bool, typer.Option("--wait", help="Wait for the operation to finish.")
+    ] = False,
 ) -> None:
     """Grant permissions to an EU entity."""
 
-    def operation() -> GrantPermissionsResponse:
+    def operation() -> PermissionOperationResult:
         if not permission:
             raise ValueError("At least one --permission is required.")
         return run_authenticated(
             ctx,
-            lambda auth: auth.permissions.grant_eu_entity(
-                subject_value=subject_value,
-                permissions=[item.value for item in permission],
-                description=description,
+            lambda auth: _operation_result(
+                auth.permissions.grant_eu_entity(
+                    subject_value=subject_value,
+                    permissions=[item.value for item in permission],
+                    description=description,
+                ),
+                wait=wait,
             ),
         )
 
@@ -341,18 +409,24 @@ def permissions_grant_eu_admin(
     context_type: Annotated[
         EuEntityAdminContextIdentifierTypeEnum, typer.Option("--context-type")
     ] = EuEntityAdminContextIdentifierTypeEnum.NIP_VAT_UE,
+    wait: Annotated[
+        bool, typer.Option("--wait", help="Wait for the operation to finish.")
+    ] = False,
 ) -> None:
     """Grant EU-entity administration rights."""
 
-    def operation() -> GrantPermissionsResponse:
+    def operation() -> PermissionOperationResult:
         return run_authenticated(
             ctx,
-            lambda auth: auth.permissions.grant_eu_entity_administration(
-                subject_value=subject_value,
-                context_type=context_type.value,
-                context_value=context_value,
-                description=description,
-                eu_entity_name=eu_entity_name,
+            lambda auth: _operation_result(
+                auth.permissions.grant_eu_entity_administration(
+                    subject_value=subject_value,
+                    context_type=context_type.value,
+                    context_value=context_value,
+                    description=description,
+                    eu_entity_name=eu_entity_name,
+                ),
+                wait=wait,
             ),
         )
 
@@ -387,12 +461,28 @@ def permissions_query(
             help="JSON payload for the SDK query model.",
         ),
     ],
-    page_size: Annotated[int, typer.Option("--page-size", min=10, max=100)] = 10,
-    page_offset: Annotated[int, typer.Option("--page-offset", min=0)] = 0,
+    page_size: Annotated[
+        int,
+        typer.Option(
+            "--page-size",
+            min=10,
+            max=100,
+            help="Items per API request, including with --all.",
+        ),
+    ] = 10,
+    page_offset: Annotated[
+        int,
+        typer.Option(
+            "--page-offset",
+            min=0,
+            help="Offset for a single page; must be 0 with --all.",
+        ),
+    ] = 0,
+    all_pages: Annotated[bool, typer.Option("--all", help="Fetch all pages.")] = False,
 ) -> None:
     """Run a permission query from a JSON payload."""
 
-    from ksef2.domain.models.permissions import (
+    from ksef2.models import (
         AuthorizationPermissionsQuery,
         EntityPermissionsQuery,
         EuEntityPermissionsQuery,
@@ -403,44 +493,40 @@ def permissions_query(
     )
 
     def operation() -> PermissionQueryResult:
+        validate_offset_pagination(all_pages=all_pages, page_offset=page_offset)
         params = OffsetPaginationParams(page_size=page_size, page_offset=page_offset)
 
-        def query_permissions(auth: AuthenticatedClient) -> PermissionQueryResult:
+        def list_permissions(auth: AuthenticatedClient) -> PermissionQueryResult:
             match kind:
                 case PermissionQueryKindChoice.ENTITIES:
                     query = read_model(ctx, payload_file, EntityPermissionsQuery)
-                    return auth.permissions.query_entities(query=query, params=params)
+                    pager = auth.permissions.list_entities(query, params=params)
                 case PermissionQueryKindChoice.PERSONS:
                     query = read_model(ctx, payload_file, PersonPermissionsQuery)
-                    return auth.permissions.query_persons(query=query, params=params)
+                    pager = auth.permissions.list_persons(query, params=params)
                 case PermissionQueryKindChoice.AUTHORIZATIONS:
                     query = read_model(ctx, payload_file, AuthorizationPermissionsQuery)
-                    return auth.permissions.query_authorizations(
-                        query=query, params=params
-                    )
+                    pager = auth.permissions.list_authorizations(query, params=params)
                 case PermissionQueryKindChoice.PERSONAL:
                     query = read_model(ctx, payload_file, PersonalPermissionsQuery)
-                    return auth.permissions.query_personal(query=query, params=params)
+                    pager = auth.permissions.list_personal(query, params=params)
                 case PermissionQueryKindChoice.EU_ENTITIES:
                     query = read_model(ctx, payload_file, EuEntityPermissionsQuery)
-                    return auth.permissions.query_eu_entities(
-                        query=query, params=params
-                    )
+                    pager = auth.permissions.list_eu_entities(query, params=params)
                 case PermissionQueryKindChoice.SUBORDINATE_ENTITIES:
                     query = read_model(ctx, payload_file, SubordinateEntityRolesQuery)
-                    return auth.permissions.query_subordinate_entities(
-                        query=query, params=params
+                    pager = auth.permissions.list_subordinate_entities(
+                        query, params=params
                     )
                 case PermissionQueryKindChoice.SUBUNITS:
                     query = read_model(ctx, payload_file, SubunitPermissionsQuery)
-                    return auth.permissions.query_subunits(query=query, params=params)
+                    pager = auth.permissions.list_subunits(query, params=params)
                 case _:
                     raise ValueError(f"Unsupported permission query kind: {kind}")
 
-        return run_authenticated(
-            ctx,
-            query_permissions,
-        )
+            return list(pager) if all_pages else pager.first_page()
+
+        return run_authenticated(ctx, list_permissions)
 
     run_command(ctx, operation)
 
@@ -449,13 +535,18 @@ def permissions_query(
 def permissions_revoke_common(
     ctx: typer.Context,
     permission_id: Annotated[str, typer.Option("--permission-id")],
+    wait: Annotated[
+        bool, typer.Option("--wait", help="Wait for the operation to finish.")
+    ] = False,
 ) -> None:
     """Revoke a common permission grant."""
 
-    def operation() -> GrantPermissionsResponse:
+    def operation() -> PermissionOperationResult:
         return run_authenticated(
             ctx,
-            lambda auth: auth.permissions.revoke_common(permission_id=permission_id),
+            lambda auth: _operation_result(
+                auth.permissions.revoke(permission_id=permission_id), wait=wait
+            ),
         )
 
     run_command(ctx, operation)
@@ -465,14 +556,18 @@ def permissions_revoke_common(
 def permissions_revoke_authorization(
     ctx: typer.Context,
     permission_id: Annotated[str, typer.Option("--permission-id")],
+    wait: Annotated[
+        bool, typer.Option("--wait", help="Wait for the operation to finish.")
+    ] = False,
 ) -> None:
     """Revoke an authorization permission grant."""
 
-    def operation() -> GrantPermissionsResponse:
+    def operation() -> PermissionOperationResult:
         return run_authenticated(
             ctx,
-            lambda auth: auth.permissions.revoke_authorization(
-                permission_id=permission_id
+            lambda auth: _operation_result(
+                auth.permissions.revoke_authorization(permission_id=permission_id),
+                wait=wait,
             ),
         )
 

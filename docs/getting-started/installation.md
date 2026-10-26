@@ -7,6 +7,15 @@ description: Install or run KSeF2 CLI with uv and inspect the available command 
 
 KSeF2 CLI requires Python 3.12 or newer.
 
+The CLI depends on the published `ksef2` SDK `>=1.1,<2`. Version 1.1 includes fixes
+for certificate retrieval and offline PDF code lookups. Install from PyPI:
+
+```bash
+uv tool install ksef2-cli
+# or
+pipx install ksef2-cli
+```
+
 For local development from a checkout, use `uv`:
 
 ```bash
@@ -31,6 +40,19 @@ The top-level command lists global options first and command groups second:
 uv run ksef2 --help
 ```
 
+`--version` reports the CLI and the SDK it resolved, one per line. It is read before
+the config file, so it answers even when the config is missing or broken, and it
+prints the same plain text in `--json` mode:
+
+```bash
+uv run ksef2 --version
+```
+
+```text
+ksef2-cli 1.0.0
+ksef2 1.1.0
+```
+
 Use group help to inspect a specific workflow:
 
 ```bash
@@ -47,11 +69,11 @@ uv run ksef2 --json config path
 
 ## Environment selection
 
-The default environment is `production`. Pass `--env` before the command group
-when you need `test` or `demo`:
+The default environment is `test`. Pass `--env` before the command group when you
+need `demo` or `production`:
 
 ```bash
-uv run ksef2 --env test --help
+uv run ksef2 --env production --help
 ```
 
 Supported values are:
@@ -59,6 +81,51 @@ Supported values are:
 - `production`
 - `demo`
 - `test`
+
+A selected profile supplies the environment when you do not pass `--env`, and it wins
+over the default. A profile that says `environment = "production"` therefore still
+authenticates against production, and `--env` on the command line still overrides that
+profile for one invocation:
+
+```bash
+uv run ksef2 --profile prod-client --env test --json auth login
+```
+
+The same order applies to every environment-backed command, including `peppol
+providers`, which needs no credentials at all and so is the easiest place to be
+surprised by a silent default.
+
+## PDF rendering
+
+Two commands turn invoice XML into PDF: `invoices export-pdf` and
+`fa3 render --pdf`. They render with WeasyPrint, which is an optional extra and is
+not installed with the CLI by default:
+
+```bash
+uv tool install "ksef2-cli[pdf]"   # installed CLI
+uv sync --extra pdf                # project checkout
+```
+
+On Linux, WeasyPrint also needs system libraries:
+
+```bash
+sudo apt-get install libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 libharfbuzz-subset0
+```
+
+On macOS it needs the same libraries from Homebrew. If they are installed and the load
+still fails, hand the dynamic loader the Homebrew directory with each PDF command:
+
+```bash
+brew install pango
+DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib uv run ksef2 fa3 render --in invoice.xml --pdf invoice.pdf
+```
+
+`/usr/local/lib` is the equivalent path on Intel Macs. Both PDF commands report the
+install command, and on macOS the fallback path above, when the dependencies are
+missing; every other command keeps working without them.
+
+Without the extra the CLI still installs and every other command runs; the two PDF
+commands report the install command above instead of rendering.
 
 ## Next steps
 

@@ -22,7 +22,7 @@ see [Rendering Refactor Plan](./rendering-refactor-plan.md).
 ```text
 src/ksef2_cli/
   app.py                 Root Typer app, global options, command registration
-  config.py              Profile config models, settings resolution, output mode, environment names
+  config.py              Settings resolution, output mode, environment names (profile models come from the ksef2 SDK)
   context.py             Typer adapter for command execution and rendering
   runtime.py             Typer-free client creation, authentication, and model reads
   invoice_workflows.py   Shared invoice metadata, send, export, and UPO workflows
@@ -51,13 +51,36 @@ src/ksef2_cli/
 
 1. `app.py` builds the root `Typer` app and stores global `Settings` on `ctx.obj`.
 2. A command module receives `ctx: typer.Context`.
-3. `config.resolve_settings()` selects a profile, applies CLI/environment overrides, and stores runtime-ready settings.
+3. `config.resolve_settings()` delegates profile selection to `ksef2.profiles`, applies CLI/environment overrides, and stores runtime-ready settings.
 4. Commands with local file or multi-step work define a zero-argument `operation` and pass it to `run_command(ctx, operation)`.
 5. Single authenticated SDK calls use `run_authenticated_command(ctx, command)`; use `run_authenticated(ctx, operation)` only when the command has local work around the SDK call.
 6. Public commands call `run_client_command(ctx, command)` when they only need a root SDK client.
 7. Shared invoice behavior lives behind `invoice_workflows.py` so command modules
    can stay thin while preserving one implementation for send/status/UPO flows.
 8. Human output is plain text by default; `--json` emits formatted JSON for scripts. The renderer preserves Pydantic/dataclass types until the final formatting step.
+
+## Output and file contract
+
+Users script this CLI, so these are the promises a new command keeps:
+
+| Promise | Where it is kept |
+| --- | --- |
+| Success goes to stdout, as text or as one JSON document. | `renderers.render()` writes the rendered result to `sys.stdout` and nothing else does. |
+| Command errors leave stdout empty and report on stderr; completed sends with rejected items return a result and exit 1. | `context.run_command` catches errors and calls `render_cli_error`; `exit_code_from_result` handles completed results. |
+| The JSON failure body is `{"error": {"type", "title", "message", "details", "hints", "exit_code"}}`, plus a `ksef` object with `ksef_code`, `trace_id`, and `status_code`, and `report_url` and `traceback` where they apply. | `render_cli_error()` in `exceptions.py`. |
+| Exit `0` on success, `1` on a runtime failure, `2` on a rejected command line, `130` on Ctrl-C. | `CliError.exit_code`, and `exit_code_from_result` for commands that report partial failure. |
+| A secret never reaches an argument, a log, or a rendered result unless the command's job is to hand it over. | `SECRET_OPTIONS`, the default token mask in `renderers/auth.py`, the `--show-tokens` opt-in on the three auth commands, and masked `SecretStr` fields in state models. |
+| A file that continues a workflow is written with mode `0600`. | `write_text_file(..., file_mode=SECRET_MODEL_FILE_MODE)`, used by `save_resume_state()`, the session state writers, receipts, export handles, and the batch artifact. |
+
+`0600` is a permission, not encryption: those files hold bearer tokens or a session AES
+key and IV as readable bytes. A command that adds a new continuation file therefore also
+adds a row to the table in [Configuration](../guides/configuration.md#secrets-in-the-files-this-cli-writes),
+and updates the relevant usage examples.
+
+A send that stops halfway is the case that catches operators: KSeF already holds whatever
+it accepted, so a wait that was interrupted or timed out must report the reference, say
+not to submit again, and exit `130` for Ctrl-C or `1` otherwise. `RemoteServiceError` in
+`invoice_workflows.py` and `commands/batch.py` shows the shape.
 
 ## Adding a Command
 

@@ -4,13 +4,18 @@ description: Query, download, export, send, and batch invoices with KSeF2 CLI.
 ---
 
 Invoice workflows usually start with the `invoices` command group. Use the
-lower-level `online` and `batch` groups only when you need explicit session
+lower-level [Online sessions](online-sessions.md) and
+[Batch sessions](batch-sessions.md) guides only when you need explicit session
 control. Use `--json` when commands are part of a script or CI job.
+
+See [FA(3) invoices locally](fa3.md) to build invoice XML without contacting
+KSeF, and [Collective identifiers](collective.md) to group invoices that are
+already in KSeF.
 
 ## Query metadata
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
   invoices metadata \
   --role seller \
   --date-from 2026-01-01T00:00:00Z \
@@ -18,32 +23,67 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
   --all
 ```
 
-Useful filters include:
+`invoices metadata --page-size 12` returns one page of up to 12 items.
+Add `--all` to fetch every page, with up to 12 items per API request.
+`--all` requires `--page-offset` to be 0, its default. A nonzero offset
+selects a single page and cannot be combined with `--all`.
 
-- `--role`
-- `--date-type`
-- `--amount-type`
-- `--seller-nip`
-- `--buyer-nip`
-- `--invoice-number`
-- `--ksef-number`
-- `--form`
-- `--attachment yes|no`
-- `--self-invoicing yes|no`
+`invoices metadata`, `invoices export`, `invoices export-download`, and
+`invoices export-pdf` accept the same filters, so a query you tuned against
+metadata replays unchanged on an export:
+
+- Window: `--date-from` (required) and `--date-to` over the field named by
+  `--date-type` (`issue_date`, `invoicing_date`, `permanent_storage`)
+- Counterparty: `--seller-nip`, `--buyer-nip`, `--buyer-vat-ue`, `--buyer-other-id`
+- Identity: `--invoice-number`, `--ksef-number`, `--form`, `--invoice-type`,
+  `--currency`, `--invoicing-mode`
+- Money: `--amount-type` with `--amount-min` and `--amount-max`
+- Flags: `--role`, `--attachment yes|no`, `--self-invoicing yes|no`
+
+Date options also accept day-first `DD.MM.YYYY` or `DD-MM-YYYY` dates, with one or
+two digits for the day and month. A value with no offset here is wall-clock time in
+`Europe/Warsaw`, which is how the SDK reads it, so a bare `2026-01-01` is that day at
+midnight Polish time. Write the `Z` or `+HH:MM` form when the window has to mean UTC.
+
+`--restrict-hwm` (short for `--restrict-to-permanent-storage-hwm-date`) restricts
+the result set to the permanent-storage high-water mark, so repeated requests
+return the same invoices. Without it the query runs against whatever KSeF holds
+when it processes the request, and repeating a query while invoices arrive gives a
+different set each time. Add the flag when rows must stay stable across requests,
+such as a paged metadata walk or an export you retry after a failure.
 
 ## Download one processed invoice
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   invoices download \
   --ksef-number "$KSEF_NUMBER" \
   --out invoice.xml
 ```
 
-Add `--wait` when the invoice may not be ready yet:
+Without `--out`, the command saves `NUMBER.xml` in the current directory, where
+`NUMBER` is the KSeF number. Characters unsafe for filenames are replaced with
+underscores. Use `--out PATH` or the local `-o PATH` to choose a file. File downloads
+print the saved path and byte count, or the existing JSON result with `--json`.
+
+Use `--out -` or the local `-o -` to pipe the original XML bytes to another command:
 
 ```bash
 uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+  invoices download --ksef-number "$KSEF_NUMBER" --out - \
+  | xmllint --format -
+```
+
+Stdout contains exactly the downloaded bytes, preserving their encoding with no
+added newline or summary. This mode creates no file. Errors and any progress stay
+on stderr. Do not combine `--out -` with global `--json`, `--output json`, or
+`-o json`. The command rejects that combination with exit code 2 before
+authentication or download, with a JSON error on stderr and empty stdout.
+
+Add `--wait` when the invoice may not be ready yet:
+
+```bash
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   invoices download \
   --ksef-number "$KSEF_NUMBER" \
   --wait \
@@ -53,10 +93,13 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
 
 ## Schedule and fetch an export
 
-First schedule the export and save its decryption handle:
+The filters above carry over. Export adds `--only-metadata` to skip the invoice
+payloads, `--compression-type zip|tar_gz` for the package format, and
+`--handle-file` to save the decryption handle. First schedule the export and save
+that handle:
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
   invoices export \
   --role seller \
   --date-from 2026-01-01T00:00:00Z \
@@ -66,30 +109,69 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
 Check status:
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   invoices export-status --reference "$EXPORT_REFERENCE"
 ```
 
 Fetch and decrypt the package:
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   invoices export-fetch \
   --handle-file export-handle.json \
   --wait \
   --out-dir downloads
 ```
 
-For a one-command export/download flow:
+For a one-command flow that waits for the export on its own:
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   invoices export-download \
   --role seller \
   --date-from 2026-01-01T00:00:00Z \
-  --wait \
+  --timeout 300 \
   --out-dir downloads
 ```
+
+`export-download` has no `--wait`: it always waits, for `--timeout` seconds
+(default `120`) checked every `--poll-interval` seconds. Use the separate
+`export` and `export-fetch` commands when you need to walk away between
+scheduling and downloading.
+
+## Render an export to PDF
+
+`invoices export-pdf` is `export-download` plus a rendering step: it schedules the
+export, waits, decrypts the package into `--out-dir`, and renders each invoice XML
+to PDF.
+
+```bash
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
+  invoices export-pdf \
+  --role seller \
+  --date-from 2026-01-01T00:00:00Z \
+  --out-dir downloads \
+  --pdf-dir pdfs
+```
+
+| Option | Purpose |
+| --- | --- |
+| `--out-dir DIR` | Where the decrypted invoice XML goes. Default `downloads`. |
+| `--pdf-dir DIR` | Where the PDFs go. Defaults to `--out-dir`, so the PDFs sit beside their XML. |
+| `--paper-size` | `a4`, `a4-landscape`, `a3`, `a3-landscape`, `letter`, or `letter-landscape`. Omit to keep the stylesheet paper, normally A4 landscape. |
+
+Each PDF carries the verification QR KSeF publishes for the invoice, built from the
+KSeF number the package's own `_metadata.json` reports for it. That manifest is
+downloaded with the invoices but is never rendered, and an invoice the manifest does
+not describe is still rendered, without a QR.
+
+PDF rendering uses WeasyPrint, which arrives through the optional `pdf` extra, so
+install the CLI as `ksef2-cli[pdf]` before running this command. Without the extra
+the command names the install command and stops; every other command keeps
+working. See [Installation](../getting-started/installation.md#pdf-rendering).
+
+To render a file you already have, without contacting KSeF, use
+[`fa3 render`](fa3.md) instead.
 
 ## Send invoices
 
@@ -132,8 +214,60 @@ uv run ksef2 --env test --nip "$KSEF2_NIP" --test-cert \
 ```
 
 Add `--recursive` to include nested directories. If any file fails in online
-mode, the command still attempts the remaining files and exits non-zero after
+mode, the command still attempts the remaining files and exits `1` after
 printing the per-file results.
+
+Two combinations stop before anything is sent: `--upo-dir` requires `--wait`,
+because there is no UPO to download until processing finished, and `--receipt` names
+one file, so several invoices need `--receipt-dir`.
+
+### Send XML from stdin
+
+Use one `-` to read an invoice from stdin, in online or batch mode:
+
+```bash
+ksef2 --profile test-company invoices send - --wait --receipt receipt.json < invoice.xml
+```
+
+The CLI keeps the original bytes in memory and uses `stdin.xml` in results and
+receipts. If another input has that name, it uses `stdin-2.xml` or the next free
+number. No plaintext temporary invoice file is created. Empty input, UTF-8 BOM,
+and UTF-16 input are rejected before authentication; re-export the XML as UTF-8
+without a BOM before signing it.
+
+### An interrupted send is not an unsubmitted invoice
+
+KSeF takes the invoice as the send request lands, and everything after that is the CLI
+watching. So Ctrl-C, a `--wait` that runs out of `--timeout`, a closed terminal, and a
+killed container all end the command with the invoice still submitted, and none of them
+says "not sent".
+
+The command is built around that: in online mode it writes the receipt, which carries
+the session state and the invoice reference, as soon as KSeF accepted the file, and in
+batch mode it writes the receipt with the session reference before it starts polling.
+Interrupted while `--wait` runs, the send says so in as many words (`... was submitted,
+but waiting stopped: ... do not submit the invoice again`) and exits `130` for Ctrl-C or
+`1` otherwise. Without `--receipt` the references survive only in that error message.
+
+So when a send ends badly, find out what KSeF has before sending anything again:
+
+```bash
+uv run ksef2 --profile test-company --json \
+  invoices status --receipt invoice-receipt.json --wait
+```
+
+No receipt, no file to read: take the session reference out of that error and ask with
+`sessions invoice-list --type online --reference REF`, or
+`batch status --reference REF` for a batch. `online list` and `online invoice-status`
+want a state file instead of a reference. A duplicate submission is a second invoice in
+KSeF, not an update of the first, so the cost of checking is one read and the cost of
+guessing is a document you have to explain. Send the file again only once you have seen
+that KSeF does not hold it, or holds it as a rejected invoice.
+
+One difference between the two modes, worth knowing when you resume: `invoices send`
+in online mode owns its session and closes it on the way out even when the wait was
+interrupted, while a session you drive through the `online` group stays open unless you
+close it. See [Online sessions](online-sessions.md).
 
 ## Send invoices as a batch
 
@@ -141,7 +275,7 @@ Use `--mode batch` when the input files should be prepared and submitted as one
 batch session:
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   invoices send invoices/ \
   --mode batch \
   --wait \
@@ -152,60 +286,54 @@ uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
 A batch receipt can be reused for status and UPO downloads:
 
 ```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   invoices status --receipt batch-receipt.json --wait
 
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   invoices upo --receipt batch-receipt.json --upo-dir upos
 ```
 
+`invoices upo` needs `--upo-dir` for a batch receipt: KSeF returns its confirmation
+as pages, and `--out` holds one file. `--offline` and `--max-part-size` belong to
+this mode and fail with `--mode online`.
+
+Both commands resume the batch session from the state inside the receipt, which is
+why the file is credential material. A receipt written by a CLI version that stored
+only the session reference cannot resume it, and reports that instead: finish the
+job with `batch status` or `batch upo` and `--state-file`, or send the invoices
+again.
+
+To hold the session state yourself, prepare the package once and upload it more than
+once, or recover an upload KSeF rejected, use [Batch sessions](batch-sessions.md).
+
 ## Advanced session commands
 
-Session state files (`--state-file`, `--save-state`) and invoice workflow
-receipt files (`--receipt`, `--receipt-dir`) carry the session AES key and IV,
-so the CLI writes them with owner-only permissions (`0600`). Treat them like
-credentials: do not commit them or paste them into issues.
+Everything above wraps a session that `invoices send` opens and closes for you.
+When you need the session itself, two lower-level groups operate on it directly and
+a third decides which UPO command fits:
 
-Use the `online` group when you need to keep an online session open:
+- [Online sessions](online-sessions.md): `online open`, `send`, `status`, `list`,
+  `invoice-status`, `upo`, and `close`, with `--state-file` and `--keep-open` for a
+  session that has to outlive one command.
+- [Batch sessions](batch-sessions.md): `batch submit`, `prepare`, `upload`,
+  `status`, `list`, and `upo`, including offline invoicing mode and recovering an
+  upload KSeF rejected.
+- [Sessions and UPO](sessions-and-upo.md): the UPO of any past session from its
+  reference alone, invoice session history, and authentication sessions.
 
-```bash
-uv run ksef2 --env test --nip "$KSEF2_NIP" --test-cert \
-  online send invoice-1.xml invoice-2.xml \
-  --keep-open \
-  --save-state online-state.json
+Session state files (`--state-file`, `--save-state`), invoice workflow receipt files
+(`--receipt`, `--receipt-dir`), and export handle files (`--handle-file`) are
+continuation state written **in plain text** with owner-only permissions (`0600`): an
+online receipt embeds the session's resumable state, so its AES key and IV, exactly as
+`online open --state-file` does, and an export handle carries the export key and IV. A
+batch receipt is the exception, holding references rather than keys. A `0600` file is
+not an encrypted file: the mode decides who may open it and nothing about what is
+inside, so a copy in a backup, in a CI artifact, in a Docker layer, or in a commit is an
+exposed key no matter how it was permissioned on the way there. A directory written by
+`batch prepare` holds that key together with the encrypted invoice payloads.
 
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  online status --state-file online-state.json
-
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  online close --state-file online-state.json
-```
-
-Use the `batch` group when you need direct access to batch session state:
-
-```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  batch submit invoice-1.xml invoice-2.xml \
-  --wait \
-  --state-file batch-state.json
-```
-
-Check status or list invoices:
-
-```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  batch status --state-file batch-state.json
-
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  batch list --state-file batch-state.json --failed
-```
-
-Download a batch UPO page:
-
-```bash
-uv run ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
-  batch upo \
-  --state-file batch-state.json \
-  --upo-reference "$UPO_REFERENCE" \
-  --out batch-upo.xml
-```
+Treat all of them the way you treat a token: keep them out of the repository and name
+them in `.gitignore`, do not paste them into issues or logs, and delete them when the
+workflow ends. What you would share instead is the reference: a session reference, an
+invoice reference, or a KSeF number, which `sessions upo` and `invoices status` can do
+a lot with. See [Sessions and UPO](sessions-and-upo.md#which-upo-command-fits).

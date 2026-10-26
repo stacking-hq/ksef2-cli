@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.clients.authenticated import AuthenticatedClient
-from ksef2.domain.models.certificates import (
+from ksef2.clients import AuthenticatedClient
+from ksef2.models import (
     CertificateEnrollmentData,
     CertificateEnrollmentResponse,
     CertificateEnrollmentStatusResponse,
@@ -13,13 +13,13 @@ from ksef2.domain.models.certificates import (
     CertificateLimitsResponse,
     CertificateStatusEnum,
     CertificateTypeEnum,
-    CertificatesInfoList,
-    RevocationReasonEnum,
+    OffsetPaginationParams,
     RetrievedCertificatesList,
+    RevocationReasonEnum,
 )
-from ksef2.domain.models.pagination import OffsetPaginationParams
 
-from ksef2_cli.context import run_authenticated, run_command
+from ksef2_cli.context import get_settings, run_authenticated, run_command
+from ksef2_cli.parsing import validate_offset_pagination
 from ksef2_cli.results import CertificateRevoked
 
 app = typer.Typer(help="Manage MCU certificates.")
@@ -58,20 +58,35 @@ def certificates_enroll(
     valid_from: Annotated[
         str | None, typer.Option("--valid-from", help="ISO datetime.")
     ] = None,
+    wait: Annotated[
+        bool, typer.Option("--wait", help="Wait for certificate enrollment to finish.")
+    ] = False,
 ) -> None:
     """Request certificate enrollment with a base64-encoded CSR file."""
 
-    def operation() -> CertificateEnrollmentResponse:
+    def operation() -> CertificateEnrollmentResponse | CertificateEnrollmentStatusResponse:
         csr = csr_file.read_text(encoding="utf-8").strip()
-        return run_authenticated(
-            ctx,
-            lambda auth: auth.certificates.enroll(
+
+        def enroll(
+            auth: AuthenticatedClient,
+        ) -> CertificateEnrollmentResponse | CertificateEnrollmentStatusResponse:
+            handle = auth.certificates.enroll(
                 certificate_name=name,
                 certificate_type=certificate_type.value,
                 csr=csr,
                 valid_from=valid_from,
-            ),
-        )
+            )
+            settings = get_settings(ctx)
+            return (
+                handle.wait(
+                    timeout=settings.certificate_wait_timeout,
+                    poll_interval=settings.effective_poll_interval,
+                )
+                if wait
+                else handle.response
+            )
+
+        return run_authenticated(ctx, enroll)
 
     run_command(ctx, operation)
 
@@ -106,15 +121,31 @@ def certificates_list(
     expires_after: Annotated[
         str | None, typer.Option("--expires-after", help="ISO datetime.")
     ] = None,
-    page_size: Annotated[int, typer.Option("--page-size", min=10, max=100)] = 10,
-    page_offset: Annotated[int, typer.Option("--page-offset", min=0)] = 0,
+    page_size: Annotated[
+        int,
+        typer.Option(
+            "--page-size",
+            min=10,
+            max=100,
+            help="Items per API request, including with --all.",
+        ),
+    ] = 10,
+    page_offset: Annotated[
+        int,
+        typer.Option(
+            "--page-offset",
+            min=0,
+            help="Offset for a single page; must be 0 with --all.",
+        ),
+    ] = 0,
     all_pages: Annotated[bool, typer.Option("--all", help="Fetch all pages.")] = False,
 ) -> None:
     """Query certificates."""
 
-    def operation() -> CertificatesInfoList | list[CertificateInfo]:
-        from ksef2.domain.models.certificates import validate_certificate_serial_number
+    def operation() -> list[CertificateInfo]:
+        from ksef2.models import validate_certificate_serial_number
 
+        validate_offset_pagination(all_pages=all_pages, page_offset=page_offset)
         params = OffsetPaginationParams(page_size=page_size, page_offset=page_offset)
         serial = (
             validate_certificate_serial_number(serial_number) if serial_number else None
@@ -122,21 +153,8 @@ def certificates_list(
 
         def list_certificates(
             auth: AuthenticatedClient,
-        ) -> CertificatesInfoList | list[CertificateInfo]:
-            if all_pages:
-                return list(
-                    auth.certificates.all(
-                        certificate_serial_number=serial,
-                        name=name,
-                        certificate_type=certificate_type.value
-                        if certificate_type
-                        else None,
-                        status=status.value if status else None,
-                        expires_after=expires_after,
-                        params=params,
-                    )
-                )
-            return auth.certificates.query(
+        ) -> list[CertificateInfo]:
+            pager = auth.certificates.list(
                 certificate_serial_number=serial,
                 name=name,
                 certificate_type=certificate_type.value if certificate_type else None,
@@ -144,6 +162,9 @@ def certificates_list(
                 expires_after=expires_after,
                 params=params,
             )
+            if all_pages:
+                return list(pager)
+            return pager.first_page()
 
         return run_authenticated(ctx, list_certificates)
 
@@ -168,7 +189,7 @@ def certificates_retrieve(
     """Retrieve issued certificates by serial number."""
 
     def operation() -> RetrievedCertificatesList:
-        from ksef2.domain.models.certificates import validate_certificate_serial_number
+        from ksef2.models import validate_certificate_serial_number
 
         serials = [
             validate_certificate_serial_number(value) for value in serial_numbers
@@ -201,7 +222,7 @@ def certificates_revoke(
     """Revoke a certificate."""
 
     def operation() -> CertificateRevoked:
-        from ksef2.domain.models.certificates import validate_certificate_serial_number
+        from ksef2.models import validate_certificate_serial_number
 
         serial = validate_certificate_serial_number(serial_number)
         run_authenticated(
