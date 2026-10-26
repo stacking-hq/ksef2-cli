@@ -21,6 +21,7 @@ from ksef2_cli.exceptions import (
     PDF_SYSTEM_LIBS_HINT,
     AuthenticationConfigError,
     MissingOptionalDependencyError,
+    format_validation_error,
 )
 from ksef2_cli.io import (
     SECRET_MODEL_FILE_MODE,
@@ -372,7 +373,7 @@ def read_resume_state(path: Path) -> AuthenticationResumeState:
         raise AuthenticationConfigError(
             f"{path} does not hold resumable auth state.",
             title="Auth state cannot be resumed",
-            details=(str(error),),
+            details=(format_validation_error(error),),
             hints=(f"Re-create the file with: ksef2 auth login --save-state {path}",),
         ) from error
 

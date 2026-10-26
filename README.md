@@ -65,6 +65,43 @@ ksef2-cli --help
 
 Requires Python 3.12 or newer.
 
+This line is version 1.0.0, and its package metadata requires the `ksef2` SDK
+`>=1.0,<2`: the built wheel refuses any older SDK, including the 0.22.x releases that
+are all an index offers today. The SDK's own 1.0 release is still tracked in
+[`stacking-hq/ksef2#147`](https://github.com/stacking-hq/ksef2/issues/147), so nothing
+here claims a matching SDK, or this CLI version, is installable from an index. Until
+both are published, `uv tool install` and `pipx install` hand you the older 0.x CLI, and
+the 1.0 behavior described in these pages needs a checkout, where `uv sync` resolves the
+SDK from the development override described in
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+Check what you are running, CLI and SDK together:
+
+```bash
+ksef2 --version
+```
+
+```text
+ksef2-cli 1.0.0
+ksef2 1.0.0
+```
+
+`--version` is read before the local config file, so it answers even with a broken
+or missing config. It prints plain text in every output mode.
+
+## Choose an environment
+
+The default environment is **TEST**. An explicit `--env` wins over a profile, and a
+profile's `environment` wins over the default, so `--env production` and a profile
+that says `environment = "production"` both keep working unchanged:
+
+```bash
+ksef2 --env production --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json auth login
+```
+
+Examples below name TEST explicitly. A copy-pasted command that omits `--env` and a
+profile now talks to TEST rather than to production.
+
 ## Authenticate
 
 For repeated local work, create a profile once and let commands inherit its
@@ -82,7 +119,7 @@ ksef2 --profile test-company --json auth login
 For CI and one-off scripts, pass global options before the command group:
 
 ```bash
-ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
+ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
   invoices metadata \
   --role seller \
   --date-from 2026-01-01T00:00:00Z \
@@ -97,14 +134,32 @@ Supported direct authentication methods:
 - `--p12` for PKCS#12/PFX XAdES credentials
 - `--auth-state` to reuse state saved by `auth login --save-state`
 
+`auth login` never prints a token value. Text output prints `access_token: **********`
+and JSON output prints `"token": "**********"`, each with its expiry time, so nothing
+useful survives a log, a shell transcript, or a pasted issue comment. When a later
+command needs the credential, save it rather than capturing the output.
+
 Saving auth state lets later commands skip a fresh KSeF login:
 
 ```bash
 ksef2 --profile test-company --json auth login --save-state ksef2-auth.json
-ksef2 --auth-state ksef2-auth.json --json sessions auth-list
+ksef2 --env test --auth-state ksef2-auth.json --json sessions auth-list
 ```
 
-Each command that reuses the state writes any refreshed token back to that file.
+`--save-state` holds the access and refresh bearer tokens **in plain text**. The CLI
+writes the file with mode `0600`, which stops other users reading it and does nothing
+else: it is not encrypted, and it survives `chmod`-preserving copies, backups, and
+`git add`. Keep it outside the repository, or ignore it in `.gitignore`, and put it
+somewhere private such as `$XDG_RUNTIME_DIR` on a shared machine.
+
+Each command that reuses the state writes any refreshed token back to that file, and
+keeps that mode. `auth refresh` accepts the same `--auth-state`, so a refresh needs
+neither a token in the arguments nor a fresh login:
+
+```bash
+ksef2 --env test --auth-state ksef2-auth.json --json auth refresh
+```
+
 End the session and remove the file with `ksef2 --auth-state ksef2-auth.json
 --json auth logout`.
 
@@ -133,7 +188,7 @@ ksef2 --profile test-company \
 Submit many XML files as one batch:
 
 ```bash
-ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   invoices send invoice-1.xml invoice-2.xml \
   --mode batch \
   --wait \
@@ -143,14 +198,57 @@ ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
 Prepare a batch separately when its parts should survive a failed upload:
 
 ```bash
-ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   batch prepare invoice-1.xml invoice-2.xml --out batch-parts
 
-ksef2 --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
+ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   batch submit --prepared batch-parts --state-file batch-state.json
 ```
 
+An online receipt carries the session AES key and IV in plain text, exactly as a session
+state file does; a batch receipt holds the session reference and the file names. Every
+one of them is written with mode `0600`, and every one of them is a credential for as
+long as it can continue the workflow.
+
+`online send` decides what to do with the session it used by how it got it: a session
+the command opened closes when the command ends, and a session resumed with
+`--state-file` stays open for the next command. `--close` and `--keep-open` say which
+you want regardless.
+
+Stopping a send after KSeF accepted the invoice does not unsubmit it. Ctrl-C, a
+timed-out `--wait`, and a dropped connection all end the command with the invoice
+still inside the session, so read the saved receipt or state file, or ask with
+`invoices status`, `online list`, or `batch status`, before sending the file a second
+time.
+
 Use `--json` before the command group when output is consumed by scripts.
+
+## Output and exit codes
+
+A successful command writes to stdout: plain text by default, one JSON document with
+`--json`. Command errors go to stderr as plain text or one JSON object in
+`--json` mode, leaving stdout empty. A completed `invoices send` can instead
+return a result on stdout with rejected invoice items and exit 1.
+
+An error envelope looks like this:
+
+```json
+{"error": {"code": "RemoteServiceError", "message": "...", "ksef_code": 21405, "trace_id": "..."}}
+```
+
+`code` names the CLI error class, or `USAGE_ERROR` for a rejected command line;
+`ksef_code` and `trace_id` are KSeF's own numbers and are `null` when the failure
+never reached KSeF. API errors add `status_code`, and both `details` and `hints`
+appear when the CLI has them.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Success. |
+| `1` | Runtime failure: a rejected request, a KSeF timeout, missing or contradictory credentials, a bad file. |
+| `2` | Usage failure: unknown option, missing argument, or an invalid value such as a bad NIP checksum or an unreadable `--auth-state` path. |
+| `130` | Interrupted (Ctrl-C). The command may still have changed something server-side. |
+
+`invoices send` exits `1` when any file failed, after printing every per-file result.
 
 ## Documentation
 
@@ -166,9 +264,14 @@ Use `--json` before the command group when output is consumed by scripts.
 ```bash
 uv sync --all-groups
 uv run ksef2 --help
+uv run ksef2 --version
 uv run python -m coverage run -m pytest -q
 uv run python scripts/validate_docs_frontmatter.py docs/
 ```
+
+While the SDK's 1.0 release is unpublished, `uv sync` installs the SDK from the
+development override in `pyproject.toml`; see
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 The CLI command domains live under `src/ksef2_cli/commands/`. Source
 documentation lives under `docs/`.

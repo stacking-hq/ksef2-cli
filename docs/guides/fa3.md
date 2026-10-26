@@ -75,7 +75,7 @@ uv tool install "ksef2-cli[pdf]"  # installed CLI
 uv run ksef2 fa3 render --in invoice.xml --out invoice.html --pdf invoice.pdf
 ```
 
-Without those dependencies the command checks for them first and exits non-zero
+Without those dependencies the command checks for them first and exits `1`
 naming the extra, so neither the HTML nor a half-written PDF appears. See
 [PDF rendering](../getting-started/installation.md#pdf-rendering) for the system
 libraries WeasyPrint needs.

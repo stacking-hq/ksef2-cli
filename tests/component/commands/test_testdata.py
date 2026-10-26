@@ -118,6 +118,8 @@ def test_testdata_sandbox_requires_test_environment(runner) -> None:
     result = runner.invoke(
         app,
         cli_args(
+            "--env",
+            "production",
             "testdata",
             "sandbox",
             "--nip",

@@ -13,6 +13,24 @@ credentials through global options or environment variables. A local config file
 is available for developer workstations, but secrets should normally come from
 environment variables or a trusted secret manager in shared environments.
 
+The default environment is `test`. A selected profile carries the environment when
+you do not pass `--env`, and `--env` overrides the profile, so `--env production` and
+a profile that says `environment = "production"` both keep working. What changed in
+1.0 is only the fallback: a command with no `--env` and no profile talks to TEST
+instead of production.
+
+Output is split by outcome. Success goes to stdout, as plain text or as one JSON
+document with `--json`. Failure goes to stderr with nothing on stdout, and in JSON
+mode it is one object: `{"error": {"code": ..., "message": ..., "ksef_code": ...,
+"trace_id": ...}}`. Exit codes are `0` for success, `1` for a runtime failure, `2` for
+a usage failure, and `130` for Ctrl-C. See
+[Output modes](guides/configuration.md#output-modes).
+
+Files the CLI writes to continue a workflow, meaning auth state, session state,
+export handles, and receipts, hold credentials or session keys in plain text. The CLI
+gives them mode `0600`, which is a permission and not encryption. Keep them out of
+commits, logs, and issue threads.
+
 ## Start here
 
 - [Install and run the CLI](getting-started/installation.md)
@@ -38,6 +56,9 @@ Global options come before the command group:
 ```bash
 ksef2 --env test --nip 5261040828 --test-cert --json auth login
 ```
+
+`--version` prints the CLI version and the SDK version it resolved, and reads no
+config file:
 
 The command groups mirror the SDK domains:
 

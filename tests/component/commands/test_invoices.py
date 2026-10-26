@@ -28,6 +28,7 @@ from ksef2.models import (
     InvoiceStatusInfo,
     PackagePart,
     SessionInvoiceStatusResponse,
+    SessionInvoicesResponse,
     SessionStatusResponse,
     StatusInfo,
     Upo,
@@ -694,14 +695,14 @@ def test_invoices_send_batch_wait_downloads_upo_and_writes_receipt(
     first.write_text("<a/>", encoding="utf-8")
     second.write_text("<b/>", encoding="utf-8")
     submitted = FakeService(
-        resume_state=batch_state(), wait=_batch_processing_status()
+        resume_state=batch_state(), wait=_batch_processing_status(),
+        list_invoices=SessionInvoicesResponse(invoices=[]),
     )
-    # `submit()` hands back the closed session; UPO pages come from a reopened one.
-    upo_session = FakeService(download_upo=[b"<batch-upo/>"])
+    upo_session = FakeService(download_upo=b"<batch-upo/>")
     runtime = fake_runtime(
         auth=SimpleNamespace(
             batch=FakeService(submit=submitted),
-            batch_session=lambda **kwargs: upo_session,
+            invoice_sessions=upo_session,
         )
     )
     receipt_file = tmp_path / "batch-receipt.json"
@@ -741,17 +742,21 @@ def test_invoices_send_batch_wait_downloads_upo_and_writes_receipt(
     assert receipt.batch is not None
     assert receipt.batch.session_reference == "batch-ref"
 
-    # Pages pair with the status' UPO references by position, so a session that
-    # returns a different number of pages fails instead of writing a wrong UPO.
-    mismatched = FakeService(download_upo=[b"<a/>", b"<b/>"])
-    mismatch_runtime = fake_runtime(
+    assert upo_session.calls == [
+        ("download_upo", ("batch-ref",), {"upo_reference_number": "upo-page-1"})
+    ]
+
+    # A failed reference download must fail the command.
+    failed_download = FakeService(download_upo=ValueError("Cannot download upo-page-1"))
+    failed_download_runtime = fake_runtime(
         auth=SimpleNamespace(
             batch=FakeService(
                 submit=FakeService(
-                    resume_state=batch_state(), wait=_batch_processing_status()
+                    resume_state=batch_state(), wait=_batch_processing_status(),
+                    list_invoices=SessionInvoicesResponse(invoices=[]),
                 )
             ),
-            batch_session=lambda **kwargs: mismatched,
+            invoice_sessions=failed_download,
         )
     )
     failed = runner.invoke(
@@ -767,7 +772,7 @@ def test_invoices_send_batch_wait_downloads_upo_and_writes_receipt(
             "--upo-dir",
             str(tmp_path / "mismatch"),
         ),
-        obj=mismatch_runtime,
+        obj=failed_download_runtime,
     )
     assert failed.exit_code == 1
     assert "upo-page-1" in failed.output
@@ -799,15 +804,13 @@ def test_invoices_status_and_upo_from_batch_receipt(runner, tmp_path) -> None:
         == 0
     )
 
-    # Status polling and UPO pages both come from a session client reopened from
-    # the receipt's reference number.
-    receipt_session = FakeService(
-        wait=_batch_processing_status(),
+    batch = FakeService(
+        wait_for_completion=_batch_processing_status(),
         get_status=_batch_processing_status(),
-        download_upo=[b"<batch-upo/>"],
     )
+    invoice_sessions = FakeService(download_upo=b"<batch-upo/>")
     runtime = fake_runtime(
-        auth=SimpleNamespace(batch_session=lambda **kwargs: receipt_session)
+        auth=SimpleNamespace(batch=batch, invoice_sessions=invoice_sessions)
     )
     status = payload(
         runner.invoke(
@@ -818,6 +821,11 @@ def test_invoices_status_and_upo_from_batch_receipt(runner, tmp_path) -> None:
     )
     assert status["status"] == "completed"
     assert status["invoice_count"] == 2
+    assert batch.calls == [
+        ("wait_for_completion", (), {
+            "session": "batch-ref", "timeout": 120.0, "poll_interval": 2.0,
+        })
+    ]
 
     upo_dir = tmp_path / "upos"
     upo = payload(
@@ -835,6 +843,11 @@ def test_invoices_status_and_upo_from_batch_receipt(runner, tmp_path) -> None:
         )
     )
     assert upo["upo_files"][0]["path"] == str(upo_dir / "batch-batch-ref-upo-1.xml")
+    assert (upo_dir / "batch-batch-ref-upo-1.xml").read_bytes() == b"<batch-upo/>"
+    assert len(batch.calls) == 1  # UPO uses the status cached in the receipt.
+    assert invoice_sessions.calls == [
+        ("download_upo", ("batch-ref",), {"upo_reference_number": "upo-page-1"})
+    ]
 
 
 def test_invoice_export_status_fetch_and_download(runner, tmp_path) -> None:

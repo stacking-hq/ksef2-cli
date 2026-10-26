@@ -1,18 +1,22 @@
 """Human-oriented CLI exceptions and rendering helpers."""
 
+import json
+import re
 import sys
 import traceback
 from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 from typing import Iterable, Sequence
 from urllib.parse import urlencode
 
+import click
 from ksef2 import (
     KSeFApiError,
     KSeFArgumentError,
+    KSeFAuthenticationExpiredError,
     KSeFAuthError,
     KSeFAuthPollingTimeoutError,
     KSeFAuthTokenRedemptionError,
-    KSeFAuthenticationExpiredError,
     KSeFBatchSessionTimeoutError,
     KSeFBatchUploadError,
     KSeFCertificateEnrollmentFailedError,
@@ -36,6 +40,7 @@ from ksef2 import (
     KSeFUnsupportedEnvironmentError,
     KSeFValidationError,
 )
+from pydantic import ValidationError
 from rich.console import Console
 from rich.markup import escape
 
@@ -109,6 +114,10 @@ class CliError(Exception):
         show_traceback: bool = False,
     ) -> None:
         super().__init__(message)
+        self.status_code: int | None = None
+        self.ksef_code: int | None = None
+        self.trace_id: str | None = None
+        self.code = type(self).__name__
         self.message = message
         self.title = title
         self.details = tuple(details)
@@ -208,12 +217,23 @@ class UnexpectedCliError(CliError):
                 "```",
             ]
         )
+        body = redact_local_paths(body)
         return f"{BUG_REPORT_URL}?{urlencode({'title': title, 'body': body})}"
 
 
 def error_from_exception(error: Exception) -> CliError:
     """Map common Python exceptions into the CLI error hierarchy."""
 
+    if isinstance(error, click.Abort):
+        interrupted = isinstance(
+            error.__cause__ or error.__context__, KeyboardInterrupt
+        )
+        return CliError(
+            "Interrupted." if interrupted else "Aborted.",
+            exit_code=130 if interrupted else 1,
+        )
+    if isinstance(error, ValidationError):
+        return UsageError(format_validation_error(error))
     if isinstance(error, CliError):
         return error
     if isinstance(error, KSeFClientClosedError):
@@ -224,6 +244,9 @@ def error_from_exception(error: Exception) -> CliError:
     if isinstance(error, KSeFInvoiceRenderingError):
         return UsageError(_sdk_message(error))
     if isinstance(error, KSeFValidationError):
+        validation = error.validation_error
+        if isinstance(validation, ValidationError):
+            return ConfigError(format_validation_error(validation))
         return ConfigError(_sdk_message(error))
     if isinstance(error, KSeFAuthenticationExpiredError):
         return AuthenticationConfigError(
@@ -261,9 +284,11 @@ def error_from_exception(error: Exception) -> CliError:
             if error.retry_after is not None
             else "Wait before retrying the same command."
         )
-        return RemoteServiceError(
-            _sdk_message(error),
+        return _from_api_error(
+            error,
+            cli_error=RemoteServiceError,
             title="KSeF rate limit exceeded",
+            message=_sdk_message(error),
             hints=(hints,),
         )
     if isinstance(error, _AUTH_INCOMPLETE_SDK_ERRORS):
@@ -292,7 +317,7 @@ def error_from_exception(error: Exception) -> CliError:
     if isinstance(error, KSeFException):
         return RemoteServiceError(_sdk_message(error), title="KSeF operation failed")
     if isinstance(error, ValueError):
-        return UsageError(str(error))
+        return UsageError(_without_validation_urls(str(error)))
     if isinstance(error, OSError):
         return FileCliError.from_os_error(error)
     return UnexpectedCliError(error)
@@ -305,7 +330,7 @@ def _sdk_message(error: KSeFException) -> str:
     mean nothing on the command line; the CLI error carries its own hints.
     """
 
-    return str(error.args[0]) if error.args else str(error)
+    return _without_validation_urls(str(error.args[0]) if error.args else str(error))
 
 
 def _from_api_error(
@@ -318,17 +343,27 @@ def _from_api_error(
 ) -> CliError:
     """Build a CLI error that keeps the HTTP status, KSeF code and trace ID of an API error."""
 
-    details = [*_sdk_message(error).splitlines(), f"HTTP status: {error.status_code}"]
-    if error.ksef_code is not None:
-        details.append(f"KSeF code: {error.ksef_code}")
-    if error.trace_id:
-        details.append(f"Trace ID: {error.trace_id}")
-    return cli_error(
+    result = cli_error(
         message or f"KSeF request failed with HTTP {error.status_code}.",
         title=title,
-        details=tuple(details),
+        details=(
+            _sdk_message(error),
+            *error.details,
+            f"HTTP status: {error.status_code}",
+            *(
+                (f"KSeF code: {error.ksef_code}",)
+                if error.ksef_code is not None
+                else ()
+            ),
+            *((f"Trace ID: {error.trace_id}",) if error.trace_id else ()),
+        ),
         hints=tuple(hints),
     )
+    result.status_code = error.status_code
+    result.ksef_code = error.ksef_code
+    result.trace_id = error.trace_id
+    result.code = error.code
+    return result
 
 
 def render_cli_error(
@@ -336,11 +371,50 @@ def render_cli_error(
 ) -> None:
     """Render a concise, actionable error message."""
 
+    from ksef2_cli.app import _json_requested
+
+    ctx = click.get_current_context(silent=True)
+    settings = ctx.find_root().obj if ctx is not None else None
+    output = getattr(settings, "output", None)
+    if _json_requested.get() or output == "json":
+        payload = {
+            "code": "USAGE_ERROR" if error.exit_code == 2 else error.code,
+            "message": error.message,
+            "ksef_code": getattr(error, "ksef_code", None),
+            "trace_id": getattr(error, "trace_id", None),
+        }
+        if error.status_code is not None:
+            payload["status_code"] = error.status_code
+        if error.details:
+            payload["details"] = list(error.details)
+        if error.hints:
+            payload["hints"] = list(error.hints)
+        click.echo(json.dumps({"error": payload}, ensure_ascii=False), err=True)
+        return
+
     if verbose and error.show_traceback:
         console.print_exception()
 
-    if error.details:
-        for detail in error.details:
+    message = error.message
+    details = error.details
+    if error.status_code is not None:
+        if message == f"KSeF request failed with HTTP {error.status_code}." and details:
+            message = details[0]
+        details = tuple(
+            detail
+            for detail in dict.fromkeys(details)
+            if detail != message
+            and not (
+                detail.startswith("HTTP status:")
+                and f"HTTP {error.status_code}" in message
+                or detail.startswith("KSeF code:")
+                and f"KSeF code {error.ksef_code}" in message
+                or detail.startswith("Trace ID:")
+                and detail in message
+            )
+        )
+    if details:
+        for detail in details:
             console.print(escape(detail))
 
     if error.hints:
@@ -351,7 +425,7 @@ def render_cli_error(
     if error.reportable and isinstance(error, UnexpectedCliError):
         console.print(f"Report: {error.report_url()}")
 
-    console.print(f"[red]Error:[/] {escape(error.message)}")
+    console.print(f"[red]Error:[/] {escape(message)}")
 
 
 def redact_argv(argv: Sequence[str]) -> tuple[str, ...]:
@@ -395,3 +469,25 @@ def _package_version() -> str:
         return version("ksef2-cli")
     except PackageNotFoundError:
         return "unknown"
+
+
+def format_validation_error(error: ValidationError) -> str:
+    return "\n".join(
+        f"{'.'.join(map(str, item['loc'])) or 'value'}: {item['msg']}"
+        for item in error.errors(include_url=False, include_input=False)
+    )
+
+
+def redact_local_paths(value: str) -> str:
+    value = value.replace(str(Path.home()), "<home>")
+    if sys.prefix != sys.base_prefix:
+        value = value.replace(sys.prefix, "<venv>")
+    return re.sub(r"(?:/[^/\s\"']+)+/\.venv(?=/|\b)", "<venv>", value)
+
+
+def _without_validation_urls(message: str) -> str:
+    return re.sub(
+        r"\n[ \t]*For further information visit https://errors\.pydantic\.dev/[^\s]+",
+        "",
+        message,
+    )

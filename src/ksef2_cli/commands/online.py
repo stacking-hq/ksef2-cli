@@ -18,6 +18,7 @@ from ksef2_cli.context import run_authenticated, run_authenticated_command, run_
 from ksef2_cli.io import (
     SECRET_MODEL_FILE_MODE,
     read_model_file,
+    read_invoice_xml,
     write_bytes_file,
     write_text_file,
 )
@@ -92,12 +93,29 @@ def online_send(
     keep_open: Annotated[
         bool, typer.Option("--keep-open", help="Leave the session open after sending.")
     ] = False,
-    timeout: Annotated[float, typer.Option("--timeout", min=1.0)] = 60.0,
-    poll_interval: Annotated[float, typer.Option("--poll-interval", min=0.1)] = 2.0,
+    close: Annotated[
+        bool,
+        typer.Option(
+            "--close",
+            help="Close the session after sending, including a resumed session.",
+        ),
+    ] = False,
+    timeout: Annotated[
+        float, typer.Option("--timeout", min=1.0, help="Maximum wait in seconds.")
+    ] = 60.0,
+    poll_interval: Annotated[
+        float,
+        typer.Option("--poll-interval", min=0.1, help="Seconds between status checks."),
+    ] = 2.0,
 ) -> None:
-    """Send one or more invoice XML files through an online session."""
+    """Send invoice XML files. New sessions close; resumed sessions stay open by default."""
 
     def operation() -> FocusedResult[OnlineSendResult, OnlineSendItem]:
+        if close and keep_open:
+            raise ValueError("Use either --close or --keep-open, not both.")
+        should_close = close or (state_file is None and not keep_open)
+        invoices = [(path, read_invoice_xml(path)) for path in invoice_paths]
+
         def send_invoices(
             auth: AuthenticatedClient,
         ) -> tuple[list[OnlineSendItem], OnlineSessionResumeState]:
@@ -109,8 +127,7 @@ def online_send(
                 session = auth.online_session(form_code=form.form_schema)
             try:
                 results: list[OnlineSendItem] = []
-                for invoice_path in invoice_paths:
-                    xml = invoice_path.read_bytes()
+                for invoice_path, xml in invoices:
                     submission = session.send_invoice(invoice_xml=xml)
                     result: OnlineSendResponse
                     if wait:
@@ -124,7 +141,7 @@ def online_send(
                 state = session.resume_state()
                 return results, state
             finally:
-                if not keep_open:
+                if should_close:
                     session.close()
 
         results, state = run_authenticated(ctx, send_invoices)
@@ -133,7 +150,7 @@ def online_send(
                 save_state, state.to_json(indent=2), file_mode=SECRET_MODEL_FILE_MODE
             )
         payload = OnlineSendResult(
-            state_file=save_state, closed=not keep_open, results=results
+            state_file=save_state, closed=should_close, results=results
         )
         return FocusedResult(payload=payload, items=results)
 
@@ -202,8 +219,13 @@ def online_invoice_status(
     ],
     invoice_reference: Annotated[str, typer.Option("--invoice-reference")],
     wait: Annotated[bool, typer.Option("--wait", help="Poll until ready.")] = False,
-    timeout: Annotated[float, typer.Option("--timeout", min=1.0)] = 60.0,
-    poll_interval: Annotated[float, typer.Option("--poll-interval", min=0.1)] = 2.0,
+    timeout: Annotated[
+        float, typer.Option("--timeout", min=1.0, help="Maximum wait in seconds.")
+    ] = 60.0,
+    poll_interval: Annotated[
+        float,
+        typer.Option("--poll-interval", min=0.1, help="Seconds between status checks."),
+    ] = 2.0,
 ) -> None:
     """Fetch or wait for one invoice status within an online session."""
 

@@ -1,14 +1,16 @@
 """Shared invoice workflows used by CLI and TUI adapters."""
 
 import base64
+import hashlib
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Self, cast
 
-from ksef2 import KSeFInvoiceRejectedError, KSeFSessionError
+from ksef2 import KSeFBatchUploadError, KSeFInvoiceRejectedError, KSeFSessionError
 from ksef2.clients import AuthenticatedClient, OnlineSessionClient
 from ksef2.models import (
+    BatchInvoice,
     CurrencyCodes,
     ExportResumeState,
     FormSchema,
@@ -42,6 +44,7 @@ from ksef2_cli.commands.invoices.models import (
     SortOrderChoice,
 )
 from ksef2_cli.config import FormSchemaChoice
+from ksef2_cli.exceptions import RemoteServiceError
 from ksef2_cli.io import (
     SECRET_MODEL_FILE_MODE,
     write_bytes_file,
@@ -126,6 +129,7 @@ class InvoiceMetadataInput(InvoiceFilterInput):
 
 class InvoiceSendInput(BaseModel):
     invoice_paths: list[Path]
+    invoice_contents: dict[Path, bytes] = Field(default_factory=dict)
     mode: InvoiceSendModeChoice = InvoiceSendModeChoice.ONLINE
     recursive: bool = False
     wait: bool = False
@@ -138,6 +142,11 @@ class InvoiceSendInput(BaseModel):
     timeout: float = Field(default=120.0, ge=1.0)
     poll_interval: float = Field(default=2.0, ge=0.1)
     invoice_files: list[Path] = Field(default_factory=list)
+
+    def content_for(self, path: Path) -> bytes:
+        if path in self.invoice_contents:
+            return self.invoice_contents[path]
+        return path.read_bytes()
 
     @property
     def form_schema(self) -> FormSchema:
@@ -154,6 +163,8 @@ class InvoiceSendInput(BaseModel):
             if path.suffix.lower() != ".xml":
                 raise ValueError(f"{path} is not an .xml file.")
             invoice_files.append(path)
+
+        invoice_files.extend(self.invoice_contents)
 
         if not invoice_files:
             raise ValueError("No XML invoice files found.")
@@ -261,8 +272,31 @@ class OnlineInvoiceHandler:
         error: str | None = None
 
         try:
-            submission = session.send_invoice(invoice_xml=invoice_path.read_bytes())
+            submission = session.send_invoice(invoice_xml=self.inputs.content_for(invoice_path))
             invoice_reference = submission.reference_number
+
+            online_receipt_file = _online_receipt_path(
+                invoice_path=invoice_path,
+                receipt_file=self.inputs.receipt_file,
+                receipt_dir=self.inputs.receipt_dir,
+            )
+            if online_receipt_file is not None:
+                receipt = InvoiceWorkflowReceipt(
+                    mode="online",
+                    submitted_files=[invoice_path],
+                    online=OnlineInvoiceReceipt(
+                        file=invoice_path,
+                        session_state=session.resume_state(),
+                        invoice_reference=invoice_reference,
+                        status=status,
+                        upo_file=upo_file,
+                    ),
+                )
+                _ = write_text_file(
+                    online_receipt_file,
+                    receipt.to_resumable_json(),
+                    file_mode=SECRET_MODEL_FILE_MODE,
+                )
 
             if self.inputs.wait:
                 try:
@@ -272,6 +306,14 @@ class OnlineInvoiceHandler:
                     )
                 except KSeFInvoiceRejectedError as exc:
                     status = exc.status
+                except (Exception, KeyboardInterrupt) as exc:
+                    raise RemoteServiceError(
+                        f"Invoice {invoice_reference} in online session "
+                        f"{session.reference_number} was submitted, but waiting stopped: "
+                        f"{str(exc) or type(exc).__name__}. Check the session and invoice "
+                        "status; do not submit the invoice again.",
+                        exit_code=130 if isinstance(exc, KeyboardInterrupt) else 1,
+                    ) from exc
                 ksef_number = status.ksef_number
                 if status.status.code >= 400:
                     item_status = "failed"
@@ -306,6 +348,8 @@ class OnlineInvoiceHandler:
                     receipt.to_resumable_json(),
                     file_mode=SECRET_MODEL_FILE_MODE,
                 )
+        except RemoteServiceError:
+            raise
         except Exception as exc:
             item_status = "failed"
             error = str(exc) or type(exc).__name__
@@ -335,21 +379,66 @@ class BatchInvoiceHandler:
         batch_service = self.auth.batch
         inputs = self.inputs
 
-        if inputs.max_part_size is None:
-            session = batch_service.submit(
-                inputs.invoice_files,
-                form_code=inputs.form_schema,
-                offline_mode=inputs.offline_mode,
+        invoices = [
+            BatchInvoice(file_name=path.name, content=inputs.invoice_contents[path])
+            if path in inputs.invoice_contents else path
+            for path in inputs.invoice_files
+        ]
+        try:
+            if inputs.max_part_size is None:
+                session = batch_service.submit(
+                    invoices,
+                    form_code=inputs.form_schema,
+                    offline_mode=inputs.offline_mode,
+                )
+            else:
+                session = batch_service.submit(
+                    invoices,
+                    form_code=inputs.form_schema,
+                    offline_mode=inputs.offline_mode,
+                    max_part_size=inputs.max_part_size,
+                )
+
+        except KSeFBatchUploadError as error:
+            reference = error.reference_number
+            receipt_path = _batch_receipt_path(
+                reference_number=reference, receipt_file=inputs.receipt_file,
+                receipt_dir=inputs.receipt_dir,
             )
-        else:
-            session = batch_service.submit(
-                inputs.invoice_files,
-                form_code=inputs.form_schema,
-                offline_mode=inputs.offline_mode,
-                max_part_size=inputs.max_part_size,
-            )
+            if receipt_path is not None:
+                _ = write_text_file(
+                    receipt_path,
+                    InvoiceWorkflowReceipt(
+                        mode="batch", submitted_files=inputs.invoice_files,
+                        batch=BatchInvoiceReceipt(
+                            session_reference=reference, files=inputs.invoice_files,
+                        ),
+                    ).to_resumable_json(),
+                    file_mode=SECRET_MODEL_FILE_MODE,
+                )
+            raise RemoteServiceError(
+                f"Upload to batch session {reference} failed. Check batch status "
+                f"--reference {reference} before submitting again. {error}",
+            ) from error
 
         state = session.resume_state()
+        batch_receipt_file = _batch_receipt_path(
+            reference_number=state.reference_number,
+            receipt_file=inputs.receipt_file,
+            receipt_dir=inputs.receipt_dir,
+        )
+        # Persist the submitted reference before polling, listing, or downloading.
+        if batch_receipt_file is not None:
+            _ = write_text_file(
+                batch_receipt_file,
+                InvoiceWorkflowReceipt(
+                    mode="batch", submitted_files=inputs.invoice_files,
+                    batch=BatchInvoiceReceipt(
+                        session_reference=state.reference_number, files=inputs.invoice_files,
+                    ),
+                ).to_resumable_json(),
+                file_mode=SECRET_MODEL_FILE_MODE,
+            )
         sdk_status = None
         wait_failed = False
         if inputs.wait:
@@ -360,10 +449,51 @@ class BatchInvoiceHandler:
             except KSeFSessionError:
                 wait_failed = True
                 sdk_status = session.get_status()
+            except (Exception, KeyboardInterrupt) as error:
+                raise RemoteServiceError(
+                    f"Batch session {state.reference_number} was submitted, but waiting "
+                    f"stopped: {str(error) or type(error).__name__}. Check batch status "
+                    f"--reference {state.reference_number}; do not submit again.",
+                    exit_code=130 if isinstance(error, KeyboardInterrupt) else 1,
+                ) from error
         status = (
             None if sdk_status is None else BatchSessionStatus.from_status(sdk_status)
         )
         batch_failed = wait_failed or (status is not None and (status.code or 0) >= 400)
+        items: list[InvoiceWorkflowItem] = []
+        statuses: dict[str, list[SessionInvoiceStatusResponse]] = {}
+        if inputs.wait and not batch_failed:
+            token = None
+            while True:
+                page = session.list_invoices(page_size=1000, continuation_token=token)
+                for invoice in page.invoices:
+                    statuses.setdefault(invoice.invoice_hash, []).append(invoice)
+                token = page.continuation_token
+                if not token:
+                    break
+        for path in inputs.invoice_files:
+            digest = base64.b64encode(hashlib.sha256(inputs.content_for(path)).digest()).decode()
+            matches = statuses.get(digest, [])
+            invoice = matches.pop(0) if matches else None
+            rejected = batch_failed or (invoice is not None and invoice.status.code >= 400)
+            error = status.description if batch_failed and status else None
+            if invoice is not None and rejected:
+                error = "; ".join(
+                    [invoice.status.description, *(invoice.status.details or [])]
+                )
+            items.append(
+                InvoiceWorkflowItem(
+                    file=path,
+                    status="failed" if rejected else (
+                        "accepted" if invoice is not None and invoice.status.code == 200
+                        else "submitted"
+                    ),
+                    invoice_reference=invoice.reference_number if invoice else None,
+                    ksef_number=invoice.ksef_number if invoice else None,
+                    receipt_file=batch_receipt_file,
+                    error=error,
+                )
+            )
         saved_upos = (
             download_batch_upos(
                 auth=self.auth,
@@ -376,11 +506,6 @@ class BatchInvoiceHandler:
         )
         upo_files = [saved.path for saved in saved_upos]
 
-        batch_receipt_file = _batch_receipt_path(
-            reference_number=state.reference_number,
-            receipt_file=inputs.receipt_file,
-            receipt_dir=inputs.receipt_dir,
-        )
         if batch_receipt_file is not None:
             receipt = InvoiceWorkflowReceipt(
                 mode="batch",
@@ -415,8 +540,10 @@ class BatchInvoiceHandler:
         succeeded = (
             successful_invoice_count
             if successful_invoice_count is not None
-            else len(inputs.invoice_files)
+            else sum(item.status == "accepted" for item in items)
         )
+        if failed_invoice_count is None:
+            failed = sum(item.status == "failed" for item in items)
         receipt_files = []
         if batch_receipt_file is not None:
             receipt_files = [batch_receipt_file]
@@ -436,6 +563,7 @@ class BatchInvoiceHandler:
             succeeded=succeeded,
             failed=failed,
             batch=batch,
+            items=items,
             receipt_files=receipt_files,
             upo_files=upo_files,
         )
@@ -669,15 +797,12 @@ def download_batch_upos(
     if not status.upo_references:
         raise ValueError("Batch UPO is not ready. Re-run with --wait.")
 
-    with auth.batch_session(state=session_reference) as session:
-        # KSeF hands back one page per UPO reference, in the order the status reported.
-        pages = session.download_upo()
-    if len(pages) != len(status.upo_references):
-        raise ValueError(
-            f"Batch session {session_reference} reported UPO references "
-            f"{', '.join(status.upo_references)} but returned {len(pages)} pages."
+    pages = [
+        auth.invoice_sessions.download_upo(
+            session_reference, upo_reference_number=reference
         )
-
+        for reference in status.upo_references
+    ]
     saved: list[SavedFile] = []
     for index, content in enumerate(pages, start=1):
         target = _batch_upo_path(

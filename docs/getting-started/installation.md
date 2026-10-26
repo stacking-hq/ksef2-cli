@@ -7,6 +7,11 @@ description: Install or run KSeF2 CLI with uv and inspect the available command 
 
 KSeF2 CLI requires Python 3.12 or newer.
 
+This 1.0 line depends on the `ksef2` SDK `>=1.0,<2`. The SDK's 1.0 release is not on
+PyPI yet, so install and run from a checkout until it is. `CONTRIBUTING.md` in the
+repository explains the development override that makes `uv sync` resolve the SDK,
+and why no published 1.0 package should be assumed.
+
 For local development from a checkout, use `uv`:
 
 ```bash
@@ -31,6 +36,19 @@ The top-level command lists global options first and command groups second:
 uv run ksef2 --help
 ```
 
+`--version` reports the CLI and the SDK it resolved, one per line. It is read before
+the config file, so it answers even when the config is missing or broken, and it
+prints the same plain text in `--json` mode:
+
+```bash
+uv run ksef2 --version
+```
+
+```text
+ksef2-cli 1.0.0
+ksef2 1.0.0
+```
+
 Use group help to inspect a specific workflow:
 
 ```bash
@@ -47,11 +65,11 @@ uv run ksef2 --json config path
 
 ## Environment selection
 
-The default environment is `production`. Pass `--env` before the command group
-when you need `test` or `demo`:
+The default environment is `test`. Pass `--env` before the command group when you
+need `demo` or `production`:
 
 ```bash
-uv run ksef2 --env test --help
+uv run ksef2 --env production --help
 ```
 
 Supported values are:
@@ -59,6 +77,19 @@ Supported values are:
 - `production`
 - `demo`
 - `test`
+
+A selected profile supplies the environment when you do not pass `--env`, and it wins
+over the default. A profile that says `environment = "production"` therefore still
+authenticates against production, and `--env` on the command line still overrides that
+profile for one invocation:
+
+```bash
+uv run ksef2 --profile prod-client --env test --json auth login
+```
+
+The same order applies to every environment-backed command, including `peppol
+providers`, which needs no credentials at all and so is the easiest place to be
+surprised by a silent default.
 
 ## PDF rendering
 

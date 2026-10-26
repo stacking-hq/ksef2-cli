@@ -307,7 +307,13 @@ def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
         resume_state=batch_state(),
         wait=_session_status("completed"),
     )
-    batch_service = FakeService(submit=submitted)
+    batch_service = FakeService(
+        submit=submitted,
+        get_status=_session_status("completed", upo_references=["upo-ref"]),
+        wait_for_completion=_session_status("completed"),
+        list_invoices={"invoices": [{"reference_number": "invoice-ref"}]},
+        list_failed_invoices={"invoices": [{"reference_number": "failed-ref"}]},
+    )
     session = FakeService(
         get_status=_session_status("completed", upo_references=["upo-ref"]),
         wait=_session_status("completed"),
@@ -390,7 +396,7 @@ def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
         )
     )
     assert waited_status["status"]["description"] == "completed"
-    assert session.called("wait")["timeout"] == 120.0
+    assert batch_service.called("wait_for_completion")["timeout"] == 120.0
     # The state file written by `submit` is the other way back into the session.
     assert (
         payload(
@@ -414,7 +420,7 @@ def test_batch_submit_status_list_and_upo(runner, tmp_path) -> None:
             obj=runtime,
         )
     ) == {"invoices": [{"reference_number": "failed-ref"}]}
-    assert session.called("list_invoices")["page_size"] == 10
+    assert batch_service.called("list_invoices")["page_size"] == 10
 
     out = tmp_path / "batch-upo.xml"
     assert payload(
@@ -464,12 +470,13 @@ def test_batch_session_flags_fail_before_authentication(
     result = runner.invoke(app, cli_args(*args), obj=runtime)
 
     assert result.exit_code == 1
-    assert "Error:" in result.output
+    error = json.loads(result.output)["error"]
+    assert error["code"] == "UsageError"
     assert (
         "Use either --reference or --state-file, not both."
         if conflicting
         else "Provide --reference or --state-file."
-    ) in result.output
+    ) == error["message"]
     assert "Traceback" not in result.output
     assert authenticated == []
 

@@ -78,7 +78,7 @@ def test_auth_login_save_state_writes_secret_file(runner, tmp_path) -> None:
     assert stat.S_IMODE(state_file.stat().st_mode) == 0o600
 
 
-def test_auth_login_prints_tokens_in_text_mode(runner, tmp_path) -> None:
+def test_auth_login_masks_tokens_in_text_mode(runner, tmp_path) -> None:
     state_file = tmp_path / "auth.json"
     auth = FakeService(with_token=FakeAuthenticated(auth_state()))
 
@@ -99,8 +99,8 @@ def test_auth_login_prints_tokens_in_text_mode(runner, tmp_path) -> None:
     )
 
     assert result.exit_code == 0, result.output
-    assert "access_token: access-token" in result.output
-    assert "refresh_token: refresh-token" in result.output
+    assert "access_token: **********" in result.output
+    assert "refresh_token: **********" in result.output
 
 
 def test_auth_login_without_save_state_writes_nothing(runner, tmp_path) -> None:

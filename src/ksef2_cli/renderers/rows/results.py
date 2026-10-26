@@ -2,6 +2,8 @@
 
 import json
 
+from ksef2.fa3 import KsefInvoice
+
 from ksef2_cli.renderers.text import (
     PlainTextRenderer,
     format_fields,
@@ -48,6 +50,43 @@ from ksef2_cli.results import (
 
 
 def register() -> None:
+    @register_text(KsefInvoice)
+    def _(value: KsefInvoice, renderer: PlainTextRenderer) -> str:
+        body = value.body
+        lines = [
+            format_fields(
+                (
+                    ("invoice_number", body.invoice_number),
+                    ("issue_date", body.issue_date),
+                    ("currency", body.currency),
+                    ("seller", value.seller.name),
+                    ("seller_tax_id", value.seller.tax_id),
+                    ("buyer", value.buyer.name),
+                    ("buyer_tax_id", value.buyer.tax_id),
+                    ("generated_at", value.header.generation_timestamp),
+                )
+            )
+        ]
+        for index, row in enumerate(body.rows, 1):
+            lines.append(
+                format_row(
+                    (
+                        ("item", index),
+                        ("name", row.name),
+                        ("quantity", row.quantity),
+                        ("unit", row.unit_of_measure),
+                        ("net", row.net_amount),
+                        ("vat", row.vat_amount),
+                        ("gross", row.gross_amount),
+                    )
+                )
+            )
+        if body.summary_overrides is not None:
+            lines.append(
+                format_fields((("total_gross", body.summary_overrides.total_gross),))
+            )
+        return "\n".join(lines)
+
     @register_text(FocusedResult)
     def _(value: FocusedResult, renderer: PlainTextRenderer) -> str:
         return renderer.render(value.items)

@@ -1,6 +1,7 @@
 """Invoice export commands."""
 
 from pathlib import Path
+from functools import cache
 from typing import Annotated
 
 import typer
@@ -8,6 +9,7 @@ from ksef2.clients import AuthenticatedClient
 from ksef2.models import ExportResumeState, InvoiceExportStatusResponse
 
 from ksef2_cli.commands.invoices.filters import (
+    parse_invoice_dates,
     AmountMaxOption,
     AmountMinOption,
     AmountTypeOption,
@@ -37,7 +39,12 @@ from ksef2_cli.commands.invoices.models import (
     InvoiceRoleChoice,
 )
 from ksef2_cli.config import PdfPageSizeChoice
-from ksef2_cli.context import render_invoice_pdf, run_authenticated_command
+from ksef2_cli.context import (
+    get_settings,
+    render_invoice_pdf,
+    run_authenticated_command,
+)
+from ksef2_cli.runtime import create_pdf_exporter
 from ksef2_cli.invoice_workflows import (
     InvoiceExportDownloadInput,
     InvoiceExportFetchInput,
@@ -49,7 +56,6 @@ from ksef2_cli.invoice_workflows import (
     get_invoice_export_status,
     schedule_invoice_export,
 )
-from ksef2_cli.parsing import parse_iso_datetime
 from ksef2_cli.results import FocusedResult
 
 
@@ -79,7 +85,10 @@ def invoices_export(
         bool, typer.Option("--only-metadata", help="Export only metadata.")
     ] = False,
     compression_type: Annotated[
-        CompressionTypeChoice | None, typer.Option("--compression-type")
+        CompressionTypeChoice | None,
+        typer.Option(
+            "--compression-type", help="Export archive format: zip or tar_gz."
+        ),
     ] = None,
     handle_file: Annotated[
         Path | None,
@@ -92,12 +101,10 @@ def invoices_export(
 ) -> None:
     """Schedule an invoice export and optionally save its resumable state."""
 
+    @cache
     def load_input() -> InvoiceExportInput:
         return InvoiceExportInput(
-            date_from=parse_iso_datetime(date_from, option_name="--date-from"),
-            date_to=None
-            if date_to is None
-            else parse_iso_datetime(date_to, option_name="--date-to"),
+            **parse_invoice_dates(date_from, date_to),
             role=role,
             date_type=date_type,
             amount_type=amount_type,
@@ -145,19 +152,25 @@ def invoices_export_status(
 def invoices_export_fetch(
     ctx: typer.Context,
     handle_file: Annotated[
-        Path, typer.Option("--handle-file", exists=True, dir_okay=False)
+        Path, typer.Option("--handle-file", exists=True, dir_okay=False, help="Saved export handle containing the decryption state.")
     ],
-    output_dir: Annotated[Path, typer.Option("--out-dir", file_okay=False)] = Path(
+    output_dir: Annotated[Path, typer.Option("--out-dir", file_okay=False, help="Directory for downloaded export files.")] = Path(
         "downloads"
     ),
     wait: Annotated[
         bool, typer.Option("--wait", help="Wait for the export package.")
     ] = False,
-    timeout: Annotated[float, typer.Option("--timeout", min=1.0)] = 120.0,
-    poll_interval: Annotated[float, typer.Option("--poll-interval", min=0.1)] = 2.0,
+    timeout: Annotated[
+        float, typer.Option("--timeout", min=1.0, help="Maximum wait in seconds.")
+    ] = 120.0,
+    poll_interval: Annotated[
+        float,
+        typer.Option("--poll-interval", min=0.1, help="Seconds between status checks."),
+    ] = 2.0,
 ) -> None:
     """Fetch and decrypt an export package using a saved export handle."""
 
+    @cache
     def load_input() -> InvoiceExportFetchInput:
         return InvoiceExportFetchInput(
             handle=ExportResumeState.from_json(handle_file.read_text(encoding="utf-8")),
@@ -195,27 +208,33 @@ def invoices_export_download(
     invoicing_mode: InvoicingModeOption = None,
     attachment: AttachmentOption = None,
     self_invoicing: SelfInvoicingOption = None,
-    output_dir: Annotated[Path, typer.Option("--out-dir", file_okay=False)] = Path(
+    output_dir: Annotated[Path, typer.Option("--out-dir", file_okay=False, help="Directory for downloaded export files.")] = Path(
         "downloads"
     ),
-    only_metadata: Annotated[bool, typer.Option("--only-metadata")] = False,
+    only_metadata: Annotated[bool, typer.Option("--only-metadata", help="Export metadata without invoice XML files.")] = False,
     compression_type: Annotated[
-        CompressionTypeChoice | None, typer.Option("--compression-type")
+        CompressionTypeChoice | None,
+        typer.Option(
+            "--compression-type", help="Export archive format: zip or tar_gz."
+        ),
     ] = None,
-    timeout: Annotated[float, typer.Option("--timeout", min=1.0)] = 120.0,
-    poll_interval: Annotated[float, typer.Option("--poll-interval", min=0.1)] = 2.0,
+    timeout: Annotated[
+        float, typer.Option("--timeout", min=1.0, help="Maximum wait in seconds.")
+    ] = 120.0,
+    poll_interval: Annotated[
+        float,
+        typer.Option("--poll-interval", min=0.1, help="Seconds between status checks."),
+    ] = 2.0,
     handle_file: Annotated[
-        Path | None, typer.Option("--handle-file", dir_okay=False)
+        Path | None, typer.Option("--handle-file", dir_okay=False, help="Save resumable export state to this protected file.")
     ] = None,
 ) -> None:
     """Schedule, wait for, download, and decrypt an invoice export."""
 
+    @cache
     def load_input() -> InvoiceExportDownloadInput:
         return InvoiceExportDownloadInput(
-            date_from=parse_iso_datetime(date_from, option_name="--date-from"),
-            date_to=None
-            if date_to is None
-            else parse_iso_datetime(date_to, option_name="--date-to"),
+            **parse_invoice_dates(date_from, date_to),
             role=role,
             date_type=date_type,
             amount_type=amount_type,
@@ -271,7 +290,7 @@ def invoices_export_pdf(
     invoicing_mode: InvoicingModeOption = None,
     attachment: AttachmentOption = None,
     self_invoicing: SelfInvoicingOption = None,
-    output_dir: Annotated[Path, typer.Option("--out-dir", file_okay=False)] = Path(
+    output_dir: Annotated[Path, typer.Option("--out-dir", file_okay=False, help="Directory for downloaded export files.")] = Path(
         "downloads"
     ),
     pdf_dir: Annotated[
@@ -289,14 +308,22 @@ def invoices_export_pdf(
             help="PDF paper size. Defaults to the stylesheet setting.",
         ),
     ] = None,
-    only_metadata: Annotated[bool, typer.Option("--only-metadata")] = False,
+    only_metadata: Annotated[bool, typer.Option("--only-metadata", help="Export metadata without invoice XML files.")] = False,
     compression_type: Annotated[
-        CompressionTypeChoice | None, typer.Option("--compression-type")
+        CompressionTypeChoice | None,
+        typer.Option(
+            "--compression-type", help="Export archive format: zip or tar_gz."
+        ),
     ] = None,
-    timeout: Annotated[float, typer.Option("--timeout", min=1.0)] = 120.0,
-    poll_interval: Annotated[float, typer.Option("--poll-interval", min=0.1)] = 2.0,
+    timeout: Annotated[
+        float, typer.Option("--timeout", min=1.0, help="Maximum wait in seconds.")
+    ] = 120.0,
+    poll_interval: Annotated[
+        float,
+        typer.Option("--poll-interval", min=0.1, help="Seconds between status checks."),
+    ] = 2.0,
     handle_file: Annotated[
-        Path | None, typer.Option("--handle-file", dir_okay=False)
+        Path | None, typer.Option("--handle-file", dir_okay=False, help="Save resumable export state to this protected file.")
     ] = None,
 ) -> None:
     """Download an invoice export and render each invoice to PDF.
@@ -306,12 +333,10 @@ def invoices_export_pdf(
     written beside it, or into --pdf-dir when given.
     """
 
+    @cache
     def load_input() -> InvoiceExportPdfInput:
         return InvoiceExportPdfInput(
-            date_from=parse_iso_datetime(date_from, option_name="--date-from"),
-            date_to=None
-            if date_to is None
-            else parse_iso_datetime(date_to, option_name="--date-to"),
+            **parse_invoice_dates(date_from, date_to),
             role=role,
             date_type=date_type,
             amount_type=amount_type,
@@ -339,6 +364,20 @@ def invoices_export_pdf(
             handle_file=handle_file,
         )
 
+    exporter = None
+
+    def prepare() -> None:
+        nonlocal exporter
+        load_input()
+        settings = get_settings(ctx)
+        if not (
+            settings.runtime_overrides
+            and settings.runtime_overrides.invoice_pdf_renderer
+        ):
+            exporter = create_pdf_exporter(
+                environment=settings.environment, page_size=pdf_page_size
+            )
+
     # The renderer carries the paper size, so the workflow only hands it XML paths.
     pdf_page_size = paper_size.pdf_page_size if paper_size else None
     run_authenticated_command(
@@ -346,9 +385,11 @@ def invoices_export_pdf(
         lambda auth: export_invoices_to_pdf(
             auth,
             load_input(),
-            lambda invoice_xml_path: render_invoice_pdf(
-                ctx, invoice_xml_path, page_size=pdf_page_size
+            lambda invoice_xml_path: (
+                exporter.export_from_path(invoice_xml_path)
+                if exporter is not None
+                else render_invoice_pdf(ctx, invoice_xml_path, page_size=pdf_page_size)
             ),
         ),
-        validate=load_input,
+        validate=prepare,
     )

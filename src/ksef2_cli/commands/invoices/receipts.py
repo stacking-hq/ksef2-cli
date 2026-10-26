@@ -82,12 +82,15 @@ def invoices_status(
             batch = receipt.batch
             if batch is None:
                 raise ValueError("Receipt does not contain batch data.")
-            with auth.batch_session(state=batch.session_reference) as session:
-                status = (
-                    session.wait(timeout=timeout, poll_interval=poll_interval)
-                    if wait
-                    else session.get_status()
+            status = (
+                auth.batch.wait_for_completion(
+                    session=batch.session_reference,
+                    timeout=timeout,
+                    poll_interval=poll_interval,
                 )
+                if wait
+                else auth.batch.get_status(session=batch.session_reference)
+            )
             updated = receipt.model_copy(
                 update={
                     "batch": batch.model_copy(
@@ -225,12 +228,15 @@ def invoices_upo(
             ):
                 status = cached_status
             else:
-                with auth.batch_session(state=batch.session_reference) as session:
-                    sdk_status = (
-                        session.wait(timeout=timeout, poll_interval=poll_interval)
-                        if wait
-                        else session.get_status()
+                sdk_status = (
+                    auth.batch.wait_for_completion(
+                        session=batch.session_reference,
+                        timeout=timeout,
+                        poll_interval=poll_interval,
                     )
+                    if wait
+                    else auth.batch.get_status(session=batch.session_reference)
+                )
                 status = BatchSessionStatus.from_status(sdk_status)
             saved_upos = download_batch_upos(
                 auth=auth,
