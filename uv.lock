@@ -490,7 +490,7 @@ wheels = [
 
 [[package]]
 name = "ksef2"
-version = "1.0.0"
+version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "camel-converter" },
@@ -504,9 +504,9 @@ dependencies = [
     { name = "xsdata" },
     { name = "xsdata-pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bb/42/0f6f08cc93e0feb33a3b840e39e11dbe42c5251dceaa8e10285c45327219/ksef2-1.0.0.tar.gz", hash = "sha256:33dde45cf1561b22857a11d1cfc3ea4a059851dc0556cb8afc3e437b2c05d507", size = 1681113, upload-time = "2026-10-26T00:34:54.396Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a5/7a/564a9d9f7339292e859532375354a6bed61d7ea08fd7033103d50c219b68/ksef2-1.1.0.tar.gz", hash = "sha256:3fbff6304f390e51de62e3785a60f2f8b8aeb03ec10a5a7ba443b060a7a1a56a", size = 1772621, upload-time = "2026-10-26T22:29:17.974Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/64/6b/1532bd992a2ac69cb4203bcaeedb2eb8587147209f58310953ba39d5bc2f/ksef2-1.0.0-py3-none-any.whl", hash = "sha256:3dc6f8fbee7de2c5b3363d4cdeea48504658eef550a0205a84a36fb7bdba9d1f", size = 659309, upload-time = "2026-10-26T00:34:52.646Z" },
+    { url = "https://files.pythonhosted.org/packages/21/95/da4dc7ebbd69080e2298f391861bd675a634475ebccd10331451ab8144be/ksef2-1.1.0-py3-none-any.whl", hash = "sha256:b294b773f41c1eba21ec5c00afafa7359956acb1af63b4ab4a9668bc932783dc", size = 704917, upload-time = "2026-10-26T22:29:15.855Z" },
 ]
 
 [package.optional-dependencies]
