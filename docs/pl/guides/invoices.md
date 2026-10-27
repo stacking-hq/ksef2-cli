@@ -125,7 +125,7 @@ uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
 | `--pdf-dir DIR` | Gdzie trafiają pliki PDF. Domyślnie `--out-dir`, więc PDF leży obok swojego XML. |
 | `--paper-size` | `a4`, `a4-landscape`, `a3`, `a3-landscape`, `letter` albo `letter-landscape`. Pomiń, żeby zostawić papier z arkusza stylów, zwykle A4 w poziomie. |
 
-Każdy PDF niesie kod QR weryfikacji, który KSeF publikuje dla faktury. Kod powstaje z numeru KSeF, który własne `_metadata.json` paczki podaje dla tej faktury. Ten manifest jest pobierany razem z fakturami, ale nigdy nie jest renderowany. Faktura, której manifest nie opisuje, i tak jest renderowana, bez kodu QR.
+Każdy PDF zawiera kod QR do weryfikacji, który KSeF publikuje dla faktury. Kod powstaje z numeru KSeF, który własne `_metadata.json` paczki podaje dla tej faktury. Ten manifest jest pobierany razem z fakturami, ale nigdy nie jest renderowany. Faktura, której manifest nie opisuje, i tak jest renderowana, bez kodu QR.
 
 Renderowanie PDF używa WeasyPrint, które przychodzi z opcjonalnym dodatkiem `pdf`. Przed tą komendą zainstaluj CLI jako `ksef2-cli[pdf]`. Bez dodatku komenda podaje polecenie instalacji i zatrzymuje się. Każda inna komenda nadal działa. Zobacz [Instalacja](../getting-started/installation.md#generowanie-pdf).
 
@@ -172,7 +172,7 @@ uv run ksef2 --env test --nip "$KSEF2_NIP" --test-cert \
 
 `--recursive` obejmuje katalogi zagnieżdżone. Gdy w sesji interaktywnej któryś plik się nie powiedzie, komenda i tak próbuje pozostałe pliki, a po wypisaniu wyników poszczególnych plików kończy się kodem `1`.
 
-Dwa połączenia zatrzymują się, zanim cokolwiek zostanie wysłane. `--upo-dir` wymaga `--wait`, bo UPO nie ma czego pobierać, dopóki przetwarzanie się nie skończy. `--receipt` nazywa jeden plik, więc kilka faktur potrzebuje `--receipt-dir`.
+Dwa połączenia zatrzymują się, zanim cokolwiek zostanie wysłane. `--upo-dir` wymaga `--wait`, bo UPO nie ma czego pobierać, dopóki przetwarzanie się nie skończy. `--receipt` wskazuje jeden plik, więc kilka faktur potrzebuje `--receipt-dir`.
 
 ### Wyślij XML ze standardowego wejścia
 
@@ -188,7 +188,7 @@ CLI trzyma oryginalne bajty w pamięci i w wynikach oraz plikach `--receipt` uż
 
 KSeF przyjmuje fakturę w chwili, gdy dochodzi żądanie wysyłki. Wszystko później to CLI, które obserwuje wynik. Ctrl-C, `--wait`, które wyczerpie `--timeout`, zamknięty terminal i zabity kontener kończą komendę, a faktura zostaje wysłana. Żadne z tych zdarzeń nie mówi, że faktury nie wysłano.
 
-Komenda jest na to zbudowana. W sesji interaktywnej zapisuje plik `--receipt`, który niesie stan sesji i numer referencyjny faktury, gdy tylko KSeF przyjmie plik. W sesji wsadowej zapisuje plik `--receipt` z numerem referencyjnym sesji, zanim zacznie sprawdzać status. Przerwana w trakcie `--wait` wysyłka mówi o tym wprost (`... was submitted, but waiting stopped: ... do not submit the invoice again`) i kończy się kodem `130` przy Ctrl-C albo `1` w pozostałych przypadkach. Bez `--receipt` numery referencyjne zostają tylko w tym komunikacie błędu.
+Komenda jest na to zbudowana. W sesji interaktywnej zapisuje plik `--receipt`, który zawiera stan sesji i numer referencyjny faktury, gdy tylko KSeF przyjmie plik. W sesji wsadowej zapisuje plik `--receipt` z numerem referencyjnym sesji, zanim zacznie sprawdzać status. Przerwana w trakcie `--wait` wysyłka mówi o tym wprost (`... was submitted, but waiting stopped: ... do not submit the invoice again`) i kończy się kodem `130` przy Ctrl-C albo `1` w pozostałych przypadkach. Bez `--receipt` numery referencyjne zostają tylko w tym komunikacie błędu.
 
 Gdy wysyłka kończy się źle, sprawdź, co ma KSeF, zanim wyślesz cokolwiek ponownie:
 
@@ -234,10 +234,10 @@ Aby samemu trzymać stan sesji, przygotować paczkę raz i przesłać ją więce
 
 Wszystko powyżej prowadzi sesję, którą `invoices send` otwiera i zamyka za ciebie. Gdy potrzebujesz samej sesji, dwie grupy niższego poziomu działają na niej bezpośrednio, a trzecia podpowiada, która komenda UPO pasuje:
 
-- [Sesje interaktywne](online-sessions.md): `online open`, `send`, `status`, `list`, `invoice-status`, `upo` i `close`, z `--state-file` i `--keep-open` dla sesji, która ma przeżyć jedną komendę.
+- [Sesje interaktywne](online-sessions.md): `online open`, `send`, `status`, `list`, `invoice-status`, `upo` i `close`, z `--state-file` i `--keep-open` dla sesji, która ma trwać dłużej niż jedna komenda.
 - [Sesje wsadowe](batch-sessions.md): `batch submit`, `prepare`, `upload`, `status`, `list` i `upo`, łącznie z trybem offline i z odzyskaniem przesłania, które KSeF odrzucił.
 - [Sesje i UPO](sessions-and-upo.md): UPO dowolnej dawnej sesji z samego numeru referencyjnego, historia sesji faktur i sesje uwierzytelniania.
 
-Pliki stanu sesji (`--state-file`, `--save-state`), pliki `--receipt` przepływu faktur (`--receipt`, `--receipt-dir`) i pliki `--handle-file` to stan kontynuacji zapisany **otwartym tekstem**, z uprawnieniami tylko dla właściciela (`0600`). Plik `--receipt` sesji interaktywnej zawiera stan sesji do wznowienia, więc jej klucz AES i IV, dokładnie tak jak `online open --state-file`. Plik `--handle-file` niesie klucz eksportu i IV. Plik `--receipt` sesji wsadowej jest wyjątkiem i trzyma numery referencyjne. Tryb `0600` decyduje, kto może otworzyć plik. O zawartości nie mówi nic. Kopia w kopii zapasowej, w artefakcie CI, w warstwie Dockera albo w commicie jest ujawnionym kluczem, niezależnie od uprawnień po drodze. Katalog zapisany przez `batch prepare` trzyma ten klucz razem z zaszyfrowanymi treściami faktur.
+Pliki stanu sesji (`--state-file`, `--save-state`), pliki `--receipt` przepływu faktur (`--receipt`, `--receipt-dir`) i pliki `--handle-file` to stan kontynuacji zapisany **otwartym tekstem**, z uprawnieniami tylko dla właściciela (`0600`). Plik `--receipt` sesji interaktywnej zawiera stan sesji do wznowienia, więc jej klucz AES i IV, dokładnie tak jak `online open --state-file`. Plik `--handle-file` zawiera klucz eksportu i IV. Plik `--receipt` sesji wsadowej jest wyjątkiem i trzyma numery referencyjne. Tryb `0600` decyduje, kto może otworzyć plik. O zawartości nie mówi nic. Kopia w kopii zapasowej, w artefakcie CI, w warstwie Dockera albo w commicie jest ujawnionym kluczem, niezależnie od uprawnień po drodze. Katalog zapisany przez `batch prepare` trzyma ten klucz razem z zaszyfrowanymi treściami faktur.
 
 Traktuj je wszystkie tak, jak token. Trzymaj je poza repozytorium i wpisz do `.gitignore`. Nie wklejaj ich do zgłoszeń ani logów i usuń, gdy przepływ się skończy. Do przekazania dalej nadaje się numer referencyjny: sesji, faktury albo numer KSeF. `sessions upo` i `invoices status` potrafią z nimi dużo zrobić. Zobacz [Która komenda UPO pasuje](sessions-and-upo.md#która-komenda-upo-pasuje).

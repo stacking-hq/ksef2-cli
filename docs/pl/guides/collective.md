@@ -3,7 +3,7 @@ title: Identyfikatory zbiorcze
 description: Grupuj wysłane faktury pod identyfikatorem zbiorczym i odczytaj grupowanie w obie strony przez KSeF2 CLI.
 ---
 
-Identyfikator zbiorczy to numer KSeF, który grupuje faktury należące do siebie, na przykład rozliczane jedną płatnością. Grupa `collective` generuje takie identyfikatory i odczytuje grupowanie w obie strony. Każda komenda tutaj nazywa faktury numerem KSeF. Ta grupa nie przyjmuje lokalnych plików XML, więc najpierw wyślij faktury i zachowaj ich numery KSeF z UPO albo z `invoices metadata`.
+Identyfikator zbiorczy to numer KSeF, który grupuje faktury należące do siebie, na przykład rozliczane jedną płatnością. Grupa `collective` generuje takie identyfikatory i odczytuje grupowanie w obie strony. Wszystkie komendy w tej grupie wskazują faktury po numerze KSeF. Ta grupa nie przyjmuje lokalnych plików XML, więc najpierw wyślij faktury i zachowaj ich numery KSeF z UPO albo z `invoices metadata`.
 
 ## Wygeneruj identyfikator
 
@@ -49,7 +49,7 @@ uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" \
   --all
 ```
 
-`--date-from` jest wymagane i filtruje po czasie utworzenia. `--date-to` domyślnie oznacza teraz, więc sama data w `--date-from` bez `--date-to` znaczy „od tego dnia do teraz”. KSeF chce jednej jednoznacznej chwili dla obu granic. Data bez godziny, zapisana jako `2026-03-01` albo `01.03.2026`, to północ tego dnia w UTC. Data z czasem musi nieść przesunięcie, więc `2026-03-01T08:00:00Z` i `2026-03-01T08:00:00+01:00` są przyjmowane, a `2026-03-01T08:00:00` jest odrzucane, zanim cokolwiek zostanie wysłane. Dalej zawężasz przez `--number` dla jednego dokładnego identyfikatora, `--invoice-count-min` i `--invoice-count-max` dla wielkości grupy oraz `--current-context yes` dla identyfikatorów utworzonych w tym kontekście logowania albo `no` dla pozostałych.
+`--date-from` jest wymagane i filtruje po czasie utworzenia. `--date-to` domyślnie oznacza teraz, więc sama data w `--date-from` bez `--date-to` oznacza „od tego dnia do teraz”. KSeF chce jednej jednoznacznej chwili dla obu granic. Data bez godziny, zapisana jako `2026-03-01` albo `01.03.2026`, to północ tego dnia w UTC. Data z czasem musi mieć przesunięcie, więc `2026-03-01T08:00:00Z` i `2026-03-01T08:00:00+01:00` są przyjmowane, a `2026-03-01T08:00:00` jest odrzucane, zanim cokolwiek zostanie wysłane. Dalej zawężasz przez `--number` dla jednego dokładnego identyfikatora, `--invoice-count-min` i `--invoice-count-max` dla wielkości grupy oraz `--current-context yes` dla identyfikatorów utworzonych w tym kontekście logowania albo `no` dla pozostałych.
 
 ## Idź za grupowaniem
 

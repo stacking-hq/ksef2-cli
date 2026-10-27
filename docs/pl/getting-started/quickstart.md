@@ -3,7 +3,7 @@ title: Szybki start
 description: Uwierzytelnij się w środowisku testowym, pobierz metadane faktur i wyślij fakturę przez KSeF2 CLI.
 ---
 
-Ten szybki start korzysta ze środowiska testowego i z certyfikatu testowego generowanego przez SDK. W środowisku przedprodukcyjnym (demo) i produkcyjnym użyj prawdziwego certyfikatu XAdES albo tokena KSeF. Domyślne środowisko to już `test`, więc `--env test` poniżej jest podane wprost i nie jest wymagane. Komenda, która nie nazywa środowiska ani profilu, łączy się ze środowiskiem testowym. Jawne `--env production` albo profil z `environment = "production"` nadal oznacza środowisko produkcyjne.
+Ten szybki start korzysta ze środowiska testowego i z certyfikatu testowego generowanego przez SDK. W środowisku przedprodukcyjnym (demo) i produkcyjnym użyj prawdziwego certyfikatu XAdES albo tokena KSeF. Domyślne środowisko to już `test`, więc `--env test` poniżej jest podane wprost i nie jest wymagane. Komenda, która nie podaje środowiska ani profilu, łączy się ze środowiskiem testowym. Jawne `--env production` albo profil z `environment = "production"` nadal oznacza środowisko produkcyjne.
 
 ## 1. Sprawdź CLI
 
@@ -31,7 +31,7 @@ Uwierzytelnij się tym profilem i wypisz zamaskowane tokeny wraz z czasem wygaś
 uv run ksef2 --profile test-company --json auth login
 ```
 
-Każdy token wraca skrócony do przedrostka i przyrostka, obok czasu wygaśnięcia. Log albo wklejony komentarz nie zawiera wtedy niczego, czym dałoby się ponownie uwierzytelnić. `--show-tokens` wypisuje surowe tokeny na okaziciela. Komenda, która zapisuje stan, zostaje zamaskowana także z tą flagą.
+Każdy token jest wypisywany w skrócie: tylko początek i koniec, obok czasu wygaśnięcia. Log albo wklejony komentarz nie zawiera wtedy niczego, czym dałoby się ponownie uwierzytelnić. `--show-tokens` wypisuje surowe tokeny na okaziciela. Komenda, która zapisuje stan, zostaje zamaskowana także z tą flagą.
 
 Aby zachować dane uwierzytelniające na kolejne komendy, zapisz je:
 
@@ -39,7 +39,7 @@ Aby zachować dane uwierzytelniające na kolejne komendy, zapisz je:
 uv run ksef2 --profile test-company --json auth login --save-state ksef2-auth.json
 ```
 
-Zapisany plik trzyma tokeny na okaziciela otwartym tekstem i powstaje z trybem `0600`. Ten tryb odcina innych użytkowników. Zawartość pozostaje zapisana otwartym tekstem, więc trzymaj plik poza repozytorium i poza commitem.
+Zapisany plik trzyma tokeny na okaziciela otwartym tekstem i powstaje z trybem `0600`. Ten tryb blokuje dostęp innym użytkownikom systemu. Zawartość pozostaje zapisana otwartym tekstem, więc trzymaj plik poza repozytorium i poza commitem.
 
 Opcje globalne, takie jak `--profile`, `--env`, `--nip`, `--test-cert` i `--json`, muszą stać przed grupą komend.
 
@@ -67,7 +67,7 @@ uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
 
 ## 4. Wyślij jedną fakturę i pobierz UPO
 
-Potrzebujesz XML faktury do wysyłki? `fa3 draft-example` i `fa3 build` tworzą go lokalnie, bez danych uwierzytelniających. Zobacz [Faktury FA(3) lokalnie](../guides/fa3.md).
+Jeśli nie masz jeszcze XML faktury, utworzysz go lokalnie przez `fa3 draft-example` i `fa3 build`, bez danych uwierzytelniających. Zobacz [Faktury FA(3) lokalnie](../guides/fa3.md).
 
 ```bash
 uv run ksef2 --profile test-company \
@@ -101,19 +101,19 @@ uv run ksef2 --profile test-company \
   invoices send invoices/ --mode batch --wait --upo-dir upos
 ```
 
-Plik `--receipt` to stan do wznowienia. Plik z sesji interaktywnej niesie klucz AES sesji i IV otwartym tekstem, więc CLI zapisuje te pliki z trybem `0600`. Należą poza repozytorium, tak jak stan uwierzytelnienia.
+Plik `--receipt` to stan do wznowienia. Plik z sesji interaktywnej zawiera klucz AES sesji i IV zapisane otwartym tekstem, więc CLI zapisuje te pliki z trybem `0600`. Nie trzymaj ich w repozytorium, tak samo jak stanu uwierzytelnienia.
 
 Gdy wysyłka zostanie przerwana albo `--wait` wyczerpie czas, to jeszcze nie dowód, że faktury nie przyjęto. KSeF może już ją mieć. Zanim wyślesz ten sam XML ponownie, odczytaj plik `--receipt` albo zapytaj przez `invoices status --receipt FILE`.
 
 ## Co wypisuje CLI
 
-Udane wywołanie pisze na standardowe wyjście: domyślnie zwykły tekst, a z `--json` jeden dokument JSON. Błędy komendy idą na standardowe wyjście błędów i zostawiają standardowe wyjście puste. Dokończone `invoices send` z odrzuconymi pozycjami zapisuje wynik na standardowe wyjście i kończy się kodem 1. W trybie JSON błąd komendy to jeden obiekt:
+Gdy wywołanie się powiedzie, wynik trafia na standardowe wyjście: domyślnie zwykły tekst, a z `--json` jeden dokument JSON. Błędy komendy idą na standardowe wyjście błędów i zostawiają standardowe wyjście puste. Dokończone `invoices send` z odrzuconymi pozycjami zapisuje wynik na standardowe wyjście i kończy się kodem 1. W trybie JSON błąd komendy to jeden obiekt:
 
 ```json
 {"error": {"type": "RemoteServiceError", "title": "KSeF rejected the request", "message": "...", "details": [], "hints": [], "exit_code": 1, "ksef": {"status_code": 400, "ksef_code": 21405, "trace_id": "..."}}}
 ```
 
-`type` nazywa klasę błędu CLI, a `title` podaje krótki opis. `details`, `hints` i `exit_code` są zawsze. Obiekt `ksef` pojawia się tylko wtedy, gdy KSeF odpowiedział, i niesie `status_code`, `ksef_code` oraz `trace_id` tej usługi. Nieoczekiwany błąd CLI dodaje `report_url`, a `--verbose` dodaje `traceback`. Odrzucony wiersz polecenia zgłasza `"type": "UsageError"` z `"exit_code": 2`.
+`type` podaje klasę błędu CLI, a `title` podaje krótki opis. `details`, `hints` i `exit_code` są zawsze. Obiekt `ksef` pojawia się tylko wtedy, gdy KSeF odpowiedział, i zawiera `status_code`, `ksef_code` oraz `trace_id` tej usługi. Nieoczekiwany błąd CLI dodaje `report_url`, a `--verbose` dodaje `traceback`. Odrzucony wiersz polecenia zgłasza `"type": "UsageError"` z `"exit_code": 2`.
 
 | Kod wyjścia | Znaczenie |
 | --- | --- |

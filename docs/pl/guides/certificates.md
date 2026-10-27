@@ -41,7 +41,7 @@ uv run ksef2 --profile prod-xades --json certificates enrollment-data
 }
 ```
 
-Odpowiedź niesie też `name`, `surname`, `serial_number`, `unique_identifier` i `organization_name`, gdy KSeF ma je dla tego podmiotu. Użyj tych wartości jako podmiotu wniosku, który zbudujesz w następnym kroku. Nie wymyślaj własnej pisowni tych pól.
+Odpowiedź zawiera też `name`, `surname`, `serial_number`, `unique_identifier` i `organization_name`, gdy KSeF ma je dla tego podmiotu. Użyj tych wartości jako podmiotu wniosku, który zbudujesz w następnym kroku. Nie wymyślaj własnej pisowni tych pól.
 
 ## Zbuduj klucz i wniosek
 
@@ -73,7 +73,7 @@ uv run ksef2 --profile prod-xades --json \
 }
 ```
 
-Ta odpowiedź znaczy, że KSeF przyjął wniosek. Nie znaczy, że cokolwiek wydał. Zachowaj `reference_number`. `--type` wybiera `authentication` (domyślnie) albo `offline`, a `--valid-from` przyjmuje datę z czasem w ISO 8601, gdy certyfikat ma zacząć obowiązywać później niż teraz.
+Ta odpowiedź oznacza tylko, że KSeF przyjął wniosek, a nie że wystawił certyfikat. Zachowaj `reference_number`. `--type` wybiera `authentication` (domyślnie) albo `offline`, a `--valid-from` przyjmuje datę z czasem w ISO 8601, gdy certyfikat ma zacząć obowiązywać później niż teraz.
 
 Dodaj `--wait`, żeby komenda trwała, aż KSeF skończy. Wynikiem staje się status wniosku:
 
@@ -95,7 +95,7 @@ uv run ksef2 --profile prod-xades --json \
 }
 ```
 
-`status_code` 100 znaczy, że KSeF nadal pracuje, a 200, że certyfikat istnieje. Każdy inny kod kończy komendę błędem i podaje przy tym opis oraz szczegóły statusu. Odrzucony wniosek widać w kodzie wyjścia.
+`status_code` 100 oznacza, że KSeF nadal pracuje, a 200, że certyfikat istnieje. Każdy inny kod kończy komendę błędem i podaje przy tym opis oraz szczegóły statusu. Odrzucony wniosek widać w kodzie wyjścia.
 
 Sprawdzanie statusu wniosku czeka domyślnie 60 sekund, ze sprawdzeniem raz na sekundę. `max_poll_attempts` i `poll_interval` profilu ustawiają obie liczby, a `--auth-poll-interval` nadpisuje tylko odstęp. W odróżnieniu od `auth login` to oczekiwanie ignoruje `--auth-timeout`.
 

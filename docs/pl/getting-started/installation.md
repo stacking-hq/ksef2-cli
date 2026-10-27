@@ -78,7 +78,7 @@ Dozwolone wartości:
 - `demo`
 - `test`
 
-Wybrany profil podaje środowisko, gdy nie przekażesz `--env`, i ma wtedy pierwszeństwo przed wartością domyślną. Profil z `environment = "production"` nadal uwierzytelnia się w środowisku produkcyjnym. `--env` w wierszu polecenia nadpisuje ten profil na czas jednego wywołania:
+Gdy nie podasz `--env`, środowisko bierze się z profilu, który ma wtedy pierwszeństwo przed wartością domyślną. Profil z `environment = "production"` nadal uwierzytelnia się w środowisku produkcyjnym. `--env` w wierszu polecenia nadpisuje ten profil na czas jednego wywołania:
 
 ```bash
 uv run ksef2 --profile prod-client --env test --json auth login

@@ -3,9 +3,9 @@ title: Sesje wsadowe
 description: Wyślij XML faktur jako jedną sesję wsadową KSeF, przygotuj paczkę raz i prześlij ją ponownie oraz odczytaj status, odrzucone faktury i strony UPO w KSeF2 CLI.
 ---
 
-Sesja wsadowa niesie wiele faktur jako jeden przepływ KSeF. KSeF przyjmuje paczkę ZIP złożoną z plików XML, podzieloną na części i zaszyfrowaną przed przesłaniem. Ścieżka wsadowa ma więc etapy, których nie ma sesja interaktywna: przygotowanie, przesłanie, zamknięcie, oczekiwanie, a potem odczyt wyników poszczególnych faktur. `invoices send --mode batch` uruchamia je wszystkie jedną komendą. Grupy `batch` używaj, gdy potrzebujesz stanu sesji, chcesz przygotować paczkę raz i przesłać ją więcej niż raz albo musisz odzyskać przesłanie, które KSeF odrzucił. Zobacz [Przepływy faktur](invoices.md#wyślij-faktury-jako-paczkę).
+W sesji wsadowej wysyłasz wiele faktur naraz, w jednej sesji KSeF. KSeF przyjmuje paczkę ZIP złożoną z plików XML, podzieloną na części i zaszyfrowaną przed przesłaniem. Ścieżka wsadowa ma więc etapy, których nie ma sesja interaktywna: przygotowanie, przesłanie, zamknięcie, oczekiwanie, a potem odczyt wyników poszczególnych faktur. `invoices send --mode batch` uruchamia je wszystkie jedną komendą. Grupy `batch` używaj, gdy potrzebujesz stanu sesji, chcesz przygotować paczkę raz i przesłać ją więcej niż raz albo musisz odzyskać przesłanie, które KSeF odrzucił. Zobacz [Przepływy faktur](invoices.md#wyślij-faktury-jako-paczkę).
 
-Sprawdź sufit, zanim wybierzesz wielkość paczki. `limits get context` podaje `batch_session.max_invoices` i limit rozmiaru jednej faktury dla bieżącego kontekstu logowania. KSeF egzekwuje oba. Zobacz [Limity](limits.md#odczytaj-obowiązujące-limity).
+Zanim ustalisz wielkość paczki, sprawdź limity. `limits get context` podaje `batch_session.max_invoices` i limit rozmiaru jednej faktury dla bieżącego kontekstu logowania. KSeF egzekwuje oba. Zobacz [Limity](limits.md#odczytaj-obowiązujące-limity).
 
 ## Wyślij paczkę jedną komendą
 
@@ -25,9 +25,9 @@ To przygotowuje paczkę, otwiera sesję wsadową, przesyła każdą część, za
 | `--offline` | Deklaruje tryb offline dla paczki. |
 | `--max-part-size BYTES` | Dzieli ZIP na mniejsze części, z limitem tego rozmiaru przed szyfrowaniem. Pomiń, żeby użyć wartości domyślnej SDK. |
 | `--wait` | Czeka, aż KSeF skończy przetwarzać zamkniętą sesję. |
-| `--timeout`, `--poll-interval` | Budżet oczekiwania: 120 sekund, sprawdzany co 2 sekundy, o ile nie podasz inaczej. |
+| `--timeout`, `--poll-interval` | Maksymalny czas oczekiwania: 120 sekund, status sprawdzany co 2 sekundy, o ile nie podasz inaczej. |
 
-`--wait` zwraca status sesji, więc wynik niesie i podsumowanie stanu, i rozstrzygnięcie:
+`--wait` zwraca status sesji, więc wynik zawiera zarówno podsumowanie stanu, jak i rozstrzygnięcie:
 
 ```text
 state_file: batch-state.json
@@ -54,7 +54,7 @@ parts: 2
 digest: e6c4f3f11decada4ab73c73d9f788a13d357a3471f4439b4a354ae70ff7caff3
 ```
 
-`--out` (`-o`) jest wymagane. `--form`, `--offline` i `--max-part-size` znaczą tu to samo co przy `submit`. Skrót obejmuje części, więc dwie paczki odróżnisz bez otwierania ich.
+`--out` (`-o`) jest wymagane. `--form`, `--offline` i `--max-part-size` oznaczają tu to samo co przy `submit`. Skrót obejmuje części, więc dwie paczki odróżnisz bez otwierania ich.
 
 Zapisaną paczkę przesyłasz do nowej sesji przez `--prepared`:
 
@@ -71,7 +71,7 @@ Artefakt trzyma klucz sesji i treści faktur, obie **otwartym tekstem** pod tą 
 
 ## Wznów przesłanie, które KSeF odrzucił
 
-Gdy magazyn KSeF odrzuci przesłanie, te same dwa pliki niosą naprawę. Nieudane `submit` zostawia stan przerwanej sesji w `--state-file`, a `batch upload` wysyła zapisane części do tej sesji, bez otwierania nowej:
+Gdy magazyn KSeF odrzuci przesłanie, te same dwa pliki pozwalają naprawić wysyłkę. Nieudane `submit` zostawia stan przerwanej sesji w `--state-file`, a `batch upload` wysyła zapisane części do tej sesji, bez otwierania nowej:
 
 ```bash
 uv run ksef2 --profile prod-token \
@@ -80,9 +80,9 @@ uv run ksef2 --profile prod-token \
   --wait
 ```
 
-Obie opcje są wymagane. Plik stanu nazywa sesję i jej wstępnie podpisane adresy przesłania. Artefakt niesie dokładnie te części, których oczekuje KSeF, a skrót treści jest z nimi sprawdzany. Odzyskanie nie potrzebuje więc nowych faktur ani nowej paczki. Podłączenie innej paczki do tej sesji kończy się błędem przed przesłaniem. Ponowne `batch submit --prepared` otwiera nową sesję. To też jest dobra odpowiedź, gdy stara sesja już wygasła.
+Obie opcje są wymagane. Plik stanu wskazuje sesję i jej wstępnie podpisane adresy przesłania. Artefakt zawiera dokładnie te części, których oczekuje KSeF, a skrót treści jest z nimi sprawdzany. Odzyskanie nie potrzebuje więc nowych faktur ani nowej paczki. Podłączenie innej paczki do tej sesji kończy się błędem przed przesłaniem. Ponowne `batch submit --prepared` otwiera nową sesję. To też jest dobra odpowiedź, gdy stara sesja już wygasła.
 
-Bez `--state-file` nie ma do czego ponownie podłączyć części. Komunikat błędu nazywa drugą drogę: przygotuj faktury raz, a potem prześlij zapisaną paczkę.
+Bez `--state-file` nie ma do czego ponownie podłączyć części. Komunikat błędu podpowiada inne rozwiązanie: przygotuj faktury raz, a potem prześlij zapisaną paczkę.
 
 ## Przerwana sesja wsadowa nie oznacza, że paczki nie wysłano
 
@@ -117,7 +117,7 @@ uv run ksef2 --profile prod-token \
   batch list --state-file batch-state.json --failed
 ```
 
-Dlatego przerwane `submit` z przykładu powyżej każe uruchomić `batch status --reference REFERENCE`. Utracony plik stanu nie zasłania tego, co trzyma KSeF. `--state-file` robi więcej niż odczyt po numerze. Niesie klucz AES sesji i IV, więc komenda otwiera sesję ponownie i pyta przez nią, bez wywołania API usługi. Tej postaci używaj, gdy plik już masz pod ręką. Trzymaj go przy sesji wsadowej, dopóki KSeF z nią nie skończy. Ponowne otwarcie potrzebuje tych kluczy. Wiersz `state`, który wypisują komendy, to ta sama sesja z zamaskowanymi kluczami, więc nie jest drogą powrotną.
+Dlatego przerwane `submit` z przykładu powyżej każe uruchomić `batch status --reference REFERENCE`. Utracony plik stanu nie zasłania tego, co trzyma KSeF. `--state-file` robi więcej niż odczyt po numerze. Zawiera klucz AES sesji i IV, więc komenda otwiera sesję ponownie i pyta przez nią, bez wywołania API usługi. Tej postaci używaj, gdy plik już masz pod ręką. Trzymaj go przy sesji wsadowej, dopóki KSeF z nią nie skończy. Ponowne otwarcie potrzebuje tych kluczy. Wiersz `state`, który wypisują komendy, to ta sama sesja z zamaskowanymi kluczami, więc nie da się z niego wznowić sesji.
 
 `batch status` czyta to samo podsumowanie co `submit --wait` i może czekać na tych samych zasadach (`--wait`, `--timeout` 120, `--poll-interval` 2). Jego liczniki należą do sesji, więc zakończona sesja nadal może zgłaszać odrzucone faktury. `batch list` mówi które: domyślnie faktury przyjęte, a z `--failed` odrzucone, gdzie kod statusu KSeF i szczegóły wyjaśniają każde odrzucenie. Faktury przyjęte i odrzucone to osobne strony. Przy uzgadnianiu paczki czytaj obie. `--page-size` przyjmuje wartości od 10 do 1000 i domyślnie wynosi 10. `continuation_token` poprzedniej strony przekaż do `--continuation-token`, żeby iść dalej.
 

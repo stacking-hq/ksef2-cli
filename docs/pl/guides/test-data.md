@@ -47,7 +47,7 @@ uv run ksef2 --env test --json \
   --all
 ```
 
-`env.sh` eksportuje `KSEF2_NIP`, `KSEF2_TOKEN`, `KSEF2_CERT` i `KSEF2_KEY`. CLI zapisuje ten plik i klucz prywatny z uprawnieniami tylko dla właściciela (`0600`). Wartość tokena pojawia się raz, w tym wyniku i w tym pliku, a wynik `--json` tej komendy też ją niesie. Trzymaj terminal i katalog poza logami i commitami. Sprzątanie obejmuje tylko zdalne dane testowe, więc katalog `.ksef2-sandbox` usuń sam, gdy skończysz.
+`env.sh` eksportuje `KSEF2_NIP`, `KSEF2_TOKEN`, `KSEF2_CERT` i `KSEF2_KEY`. CLI zapisuje ten plik i klucz prywatny z uprawnieniami tylko dla właściciela (`0600`). Wartość tokena pojawia się raz, w tym wyniku i w tym pliku, a wartość jest też w wyniku `--json` tej komendy. Trzymaj terminal i katalog poza logami i commitami. Sprzątanie obejmuje tylko zdalne dane testowe, więc katalog `.ksef2-sandbox` usuń sam, gdy skończysz.
 
 | Opcja | Skutek |
 | --- | --- |
@@ -118,7 +118,7 @@ enforcement_operations  subunit_manage          vat_ue_manage
 collective_identifier_manage
 ```
 
-`--description` opisuje nadanie i domyślnie wynosi `Granted by ksef2-cli`. Pasujące cofnięcie nazywa tę samą parę, bez uprawnień:
+`--description` opisuje nadanie i domyślnie wynosi `Granted by ksef2-cli`. Pasujące cofnięcie wskazuje tę samą parę, bez uprawnień:
 
 ```bash
 uv run ksef2 --env test testdata revoke-permissions \
@@ -167,7 +167,7 @@ valid_to: 2026-03-01T12:00:00+00:00
 updated: yes
 ```
 
-`--serial-number` to 16 znaków szesnastkowych, czyli to, co `certificates list` i `certificates retrieve` podają dla certyfikatu, który posiadasz. CLI odrzuca numer seryjny, którego KSeF i tak by nie przyjął. `--valid-to` przyjmuje datę z czasem w ISO 8601 z przesunięciem UTC, bo endpoint działa na jednej chwili, a znacznik bez strefy żadnej nie nazywa. Data bez godziny, na przykład `2026-03-01`, to północ tego dnia w UTC. Data z czasem bez przesunięcia jest odrzucana, zanim cokolwiek zostanie wysłane. Komenda istnieje po to, żeby certyfikat szybko się skończył i dało się zobaczyć, co robi ścieżka odnowienia. Nie planuj wydłużania ważności tą komendą.
+`--serial-number` to 16 znaków szesnastkowych, czyli to, co `certificates list` i `certificates retrieve` podają dla certyfikatu, który posiadasz. CLI odrzuca numer seryjny, którego KSeF i tak by nie przyjął. `--valid-to` przyjmuje datę z czasem w ISO 8601 z przesunięciem UTC, bo endpoint działa na jednej chwili, a znacznik bez strefy nie określa żadnej chwili. Data bez godziny, na przykład `2026-03-01`, to północ tego dnia w UTC. Data z czasem bez przesunięcia jest odrzucana, zanim cokolwiek zostanie wysłane. Komenda istnieje po to, żeby certyfikat szybko się skończył i dało się zobaczyć, co robi ścieżka odnowienia. Nie planuj wydłużania ważności tą komendą.
 
 ## Powiązane strony
 

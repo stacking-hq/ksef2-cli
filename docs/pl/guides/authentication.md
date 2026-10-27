@@ -13,7 +13,7 @@ ksef2 [ROOT OPTIONS] invoices metadata [COMMAND OPTIONS]
 
 ## Do którego środowiska trafia logowanie
 
-Domyślne środowisko to `test`. Wybrany profil podaje środowisko, gdy nie przekażesz `--env`, a `--env` ma pierwszeństwo przed profilem. Dla pracy produkcyjnej nic się tu nie zmieniło: `--env production` nadal uwierzytelnia w środowisku produkcyjnym, tak samo profil z `environment = "production"`. Zmieniło się zachowanie zapasowe. Dane uwierzytelniające, które wcześniej trafiały do produkcji przez samo pominięcie środowiska, teraz trafiają do środowiska testowego. W każdej komendzie, którą zapisujesz w skrypcie albo wklejasz, nazwij środowisko albo profil, który je niesie.
+Domyślne środowisko to `test`. Gdy nie podasz `--env`, środowisko bierze się z profilu, a `--env` ma pierwszeństwo przed profilem. Dla pracy produkcyjnej nic się tu nie zmieniło: `--env production` nadal uwierzytelnia w środowisku produkcyjnym, tak samo profil z `environment = "production"`. Zmieniło się zachowanie zapasowe. Dane uwierzytelniające, które wcześniej trafiały do produkcji przez samo pominięcie środowiska, teraz trafiają do środowiska testowego. W każdej komendzie, którą zapisujesz w skrypcie albo wklejasz, nazwij środowisko albo profil, z którego się ono bierze.
 
 Certyfikat testowy działa tylko w środowisku testowym. `--test-cert` wobec innego środowiska kończy się kodem `2`, zanim CLI wyśle jakiekolwiek żądanie. Tak samo kończy się profil, który łączy uwierzytelnianie `test_certificate` ze środowiskiem innym niż testowe. Aby wyprzeć metodę z profilu i zostawić jego pozostałe wartości domyślne, podaj prawdziwe dane uwierzytelniające.
 
@@ -142,7 +142,7 @@ uv run ksef2 --env production --auth-state "$XDG_RUNTIME_DIR/ksef2-auth.json" --
 
 Tej postaci używaj w skrypcie. `auth refresh` przyjmuje też `--refresh-token` oraz zmienną `KSEF2_REFRESH_TOKEN`, gdy nie masz pliku stanu. Token w wierszu polecenia widzi każdy proces na maszynie i zostaje w historii powłoki, więc w pierwszej kolejności korzystaj z pliku. Oba źródła wykluczają się wzajemnie, a sprawdzenie odbywa się przed wysłaniem żądania.
 
-Odpowiedź jest zamaskowana w obu trybach wyniku, tak samo jak przy `auth login`. Nowy token dostępu (`accessToken`) pokazuje tylko pierwsze osiem i ostatnie cztery znaki obok `valid_until`, chyba że podasz `--show-tokens`. `--save-state FILE` pozwala skryptowi zachować odświeżoną wartość bez wypisywania jej. Przy `--auth-state` i bez `--save-state` odświeżony stan zastępuje plik źródłowy w miejscu. Kopia zapisana gdzie indziej potrzebuje tego samego pliku stanu, bo tylko on nadal niesie token odświeżający i termin jego ważności. `--save-state` bez `--auth-state` kończy się błędem, bo taki zapis zgubiłby ten termin:
+Odpowiedź jest zamaskowana w obu trybach wyniku, tak samo jak przy `auth login`. Nowy token dostępu (`accessToken`) pokazuje tylko pierwsze osiem i ostatnie cztery znaki obok `valid_until`, chyba że podasz `--show-tokens`. `--save-state FILE` pozwala skryptowi zachować odświeżoną wartość bez wypisywania jej. Przy `--auth-state` i bez `--save-state` odświeżony stan zastępuje plik źródłowy w miejscu. Kopia zapisana gdzie indziej potrzebuje tego samego pliku stanu, bo tylko w nim nadal jest token odświeżający i termin jego ważności. `--save-state` bez `--auth-state` kończy się błędem, bo taki zapis zgubiłby ten termin:
 
 ```bash
 uv run ksef2 --env production --auth-state "$XDG_RUNTIME_DIR/ksef2-auth.json" --json \
@@ -170,7 +170,7 @@ uv run ksef2 --env production --json auth resume --state-file "$XDG_RUNTIME_DIR/
 
 `auth login`, `auth resume` i `auth refresh` maskują tokeny w tekście i w JSON. Surowe wartości wypisuje `--show-tokens`. Dane, których da się użyć ponownie, zachowuje `--save-state FILE` przy logowaniu i wznowieniu. Z `--save-state` wynik zostaje zamaskowany także przy `--show-tokens` i dochodzi pole `state_file` z zapisaną ścieżką. `auth resume` zachowuje się poza tym jak `auth login`. Gdy zapisuje z powrotem do pliku, który odczytał, ten plik zachowuje tryb `0600`.
 
-Każda inna komenda może użyć tego samego stanu. Wskaż go globalną opcją `--auth-state` albo zmienną `KSEF2_AUTH_STATE`, bez nazywania metody uwierzytelniania:
+Każda inna komenda może użyć tego samego stanu. Wskaż go globalną opcją `--auth-state` albo zmienną `KSEF2_AUTH_STATE`, bez podawania metody uwierzytelniania:
 
 ```bash
 uv run ksef2 --env production --auth-state "$XDG_RUNTIME_DIR/ksef2-auth.json" --json \
@@ -180,7 +180,7 @@ uv run ksef2 --env production --auth-state "$XDG_RUNTIME_DIR/ksef2-auth.json" --
   --all
 ```
 
-Plik stanu zapisuje tokeny. Środowiska, w którym je wydano, w tym pliku nie ma. Środowisko nadal pochodzi z `--env` albo z profilu. Wznawiany stan potrzebuje tego samego środowiska, w którym się zalogowano. Gdy nie nazwiesz żadnego z nich, jest to teraz środowisko testowe.
+Plik stanu zapisuje tokeny. Środowiska, w którym je wydano, w tym pliku nie ma. Środowisko nadal pochodzi z `--env` albo z profilu. Wznawiany stan potrzebuje tego samego środowiska, w którym się zalogowano. Gdy nie podasz żadnego z nich, jest to teraz środowisko testowe.
 
 `--auth-state` jest jedną z metod uwierzytelniania, więc połączenie go z `--token`, `--test-cert`, `--cert`/`--key` albo `--p12` kończy się błędem. Komenda, która wznawia stan, odświeża własny token dostępu i zapisuje stan końcowy z powrotem do tego samego pliku. Plik zostaje aktualny i zachowuje tryb `0600`. Komenda, która się nie powiedzie, zostawia plik bez zmian. Gdy zapisany token odświeżający też wygasł, komenda zatrzymuje się i prosi o nowe `auth login --save-state`.
 

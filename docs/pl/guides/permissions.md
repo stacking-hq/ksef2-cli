@@ -81,11 +81,11 @@ uv run ksef2 --profile prod-xades --json \
   --target-value 1234567890
 ```
 
-`--target-type` to `nip`, `all_partners` albo `internal_id`, a `--target-value` nazywa kontrahenta. Pomiń oba, gdy nadanie nie ma być ograniczone do jednego celu. `--permission` przyjmuje `invoice_read`, `invoice_write` albo `collective_identifier_manage`.
+`--target-type` to `nip`, `all_partners` albo `internal_id`, a `--target-value` wskazuje kontrahenta. Pomiń oba, gdy nadanie nie ma być ograniczone do jednego celu. `--permission` przyjmuje `invoice_read`, `invoice_write` albo `collective_identifier_manage`.
 
 ## Nadaj uprawnienia jednostki podrzędnej
 
-Nadanie dla jednostki podrzędnej nazywa kontekst logowania, w którym obowiązuje. Tym różni się od zwykłego nadania osobie:
+Przy nadaniu dla jednostki podrzędnej wskazujesz kontekst logowania, w którym obowiązuje. Tym różni się od zwykłego nadania osobie:
 
 ```bash
 uv run ksef2 --profile prod-xades --json \
@@ -148,7 +148,7 @@ uv run ksef2 --profile prod-xades --json \
 }
 ```
 
-Kod `100` znaczy, że KSeF nadal stosuje zmianę, a `200`, że skończył. Cokolwiek innego, na przykład `400` albo `500`, kończy komendę jako błąd, a komunikat niesie opis zwrócony przez KSeF. `--wait` sprawdza status przez 60 sekund, co sekundę, i żadna opcja CLI tego budżetu nie zmienia.
+Kod `100` oznacza, że KSeF nadal stosuje zmianę, a `200`, że skończył. Cokolwiek innego, na przykład `400` albo `500`, kończy komendę jako błąd, a komunikat zawiera opis zwrócony przez KSeF. `--wait` sprawdza status przez 60 sekund, co sekundę, i żadna opcja CLI tego czasu oczekiwania nie zmienia.
 
 Bez `--wait`, albo po oczekiwaniu, które przekroczyło czas, sprawdź numer referencyjny samodzielnie:
 
@@ -167,7 +167,7 @@ Role posiadane przez uwierzytelniony podmiot:
 uv run ksef2 --profile prod-xades permissions entity-roles --all
 ```
 
-Wszystko inne idzie przez `permissions query` z treścią JSON. Rodzaj wybiera postać zapytania, `--payload` nazywa plik, a `--page-size`, `--page-offset` i `--all` stronicują wynik tak samo jak inne komendy listujące.
+Wszystko inne idzie przez `permissions query` z treścią JSON. Rodzaj wybiera postać zapytania, `--payload` wskazuje plik, a `--page-size`, `--page-offset` i `--all` stronicują wynik tak samo jak inne komendy listujące.
 
 `--page-size` ustawia liczbę pozycji na żądanie API, także z `--all`. `--all` wymaga, żeby `--page-offset` było równe 0, czyli swojej wartości domyślnej, i odrzuca przesunięcie inne niż zero.
 
@@ -209,7 +209,7 @@ uv run ksef2 --profile prod-xades --json \
   permissions query entities --payload entities.json
 ```
 
-Upoważnienia są podzielone kierunkiem, więc `query_type` jest wymagane. W `authorizations.json` wartość `granted` znaczy wydane przez ten podmiot, a `received` wydane dla niego:
+Upoważnienia są podzielone kierunkiem, więc `query_type` jest wymagane. W `authorizations.json` wartość `granted` oznacza wydane przez ten podmiot, a `received` wydane dla niego:
 
 ```json
 {
@@ -235,9 +235,9 @@ Dla rodzajów bez pól wymaganych `{}` jest poprawną treścią i zwraca wszystk
 | `subordinate-entities` | `subordinate_entity_type`, `subordinate_entity_value`, `role` |
 | `subunits` | `id`, `subunit_type`, `subunit_value`, `permission_type`, `subunit_name` |
 
-Każde `id` to napis o długości 36 znaków, więc odczytaj je z listy, zamiast pisać je sam. Wiersze `subordinate-entities` w ogóle nie niosą `id`. Mówią o rolach i nic nie mówią o ich cofaniu.
+Każde `id` to napis o długości 36 znaków, więc odczytaj je z listy, zamiast pisać je sam. Wiersze `subordinate-entities` nie mają pola `id`. Mówią o rolach i nic nie mówią o ich cofaniu.
 
-Tryb tekstowy wypisuje jeden blok `key: value` na rekord i pomija pola, które nic nie niosą. Skrypt powinien prosić o `--json`.
+Tryb tekstowy wypisuje jeden blok `key: value` na rekord i pomija puste pola. Skrypt powinien prosić o `--json`.
 
 ## Cofnij
 

@@ -5,7 +5,7 @@ description: Profile, zmienne środowiskowe, tryby wyniku i lokalne pliki konfig
 
 KSeF2 CLI może działać bez lokalnego pliku konfiguracji. W CI i na maszynach współdzielonych zostaw CLI bez tego pliku. Na komputerze, na którym rozwijasz integrację, utwórz nazwane profile, żeby codzienne komendy nie powtarzały `--env`, `--nip` i ścieżek uwierzytelniania. SDK czyta ten sam plik profilu przez `client.authentication.with_profile()`.
 
-Bez profilu i bez `--env` środowisko to `test`. Profil niesie środowisko, gdy go nie nazwiesz, a `--env` ma pierwszeństwo przed profilem. Praca produkcyjna potrzebuje `--env production` albo profilu z `environment = "production"`.
+Bez profilu i bez `--env` środowisko to `test`. Gdy nie podasz `--env`, środowisko bierze się z profilu, a `--env` ma pierwszeństwo przed profilem. Praca produkcyjna potrzebuje `--env production` albo profilu z `environment = "production"`.
 
 ## Pokaż ścieżkę aktywnej konfiguracji
 
@@ -75,7 +75,7 @@ uv run ksef2 profile create slow-prod \
   --max-poll-attempts 90
 ```
 
-Oba ustawienia zostają nieustawione, gdy je pominiesz. SDK czyta je tak samo, więc `client.authentication.with_profile()` sprawdza status do tego samego terminu. Oba pola pojawiają się w `profile show`, gdy profil je niesie.
+Oba ustawienia zostają nieustawione, gdy je pominiesz. SDK czyta je tak samo, więc `client.authentication.with_profile()` sprawdza status do tego samego terminu. Oba pola pojawiają się w `profile show`, gdy profil je zawiera.
 
 ## Wybierz profil
 
@@ -236,7 +236,7 @@ uv run ksef2 --json auth login --token 2>error.json
 | `title` | Krótki opis, który CLI wybrało dla tej porażki. |
 | `message` | Jedno zdanie o porażce, czytelne dla człowieka. |
 | `details`, `hints`, `exit_code` | Zawsze obecne. Obie listy są puste, gdy CLI nie ma nic do dodania. |
-| `ksef` | Obecne, gdy KSeF odpowiedział. Niesie `status_code`, `exception_code` i `message` tej usługi oraz `ksef_code`, `trace_id`, `details` albo `response`, gdy CLI je ma. Przy zgłoszeniu incydentu podaj `trace_id`. |
+| `ksef` | Obecne, gdy KSeF odpowiedział. Zawiera `status_code`, `exception_code` i `message` tej usługi oraz `ksef_code`, `trace_id`, `details` albo `response`, gdy CLI je ma. Przy zgłoszeniu incydentu podaj `trace_id`. |
 | `report_url` | Obecne przy błędzie, który CLI traktuje jak usterkę własną. |
 | `traceback` | Obecne z `--verbose` i tylko przy takim błędzie. |
 
@@ -286,4 +286,4 @@ Każdy plik kontynuacji, który zapisuje CLI, jest materiałem uwierzytelniając
 | `KSEF2_P12` | Nadpisanie ścieżki archiwum PKCS#12/PFX |
 | `KSEF2_P12_PASSWORD` | Nadpisanie hasła PKCS#12/PFX |
 
-Nazwy `KSEF2_*` powyżej to te, które CLI czyta samodzielnie. Profil nazywa własne zmienne z sekretami, na przykład `auth.token_env`, i te nazwy wybierasz sam.
+Nazwy `KSEF2_*` powyżej to te, które CLI czyta samodzielnie. Profil wskazuje własne zmienne z sekretami, na przykład `auth.token_env`, i te nazwy wybierasz sam.

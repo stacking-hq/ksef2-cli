@@ -149,7 +149,7 @@ Użycie: `ksef2 batch submit [OPTIONS] [INVOICE_PATHS]...`
 
 Przygotuj sesję wsadową, prześlij części, zamknij ją i opcjonalnie poczekaj.
 
-Podaj pliki faktur, żeby przygotować je za jednym razem, albo --prepared, żeby przesłać paczkę zapisaną przez batch prepare. To droga ponowienia po nieudanym przesłaniu.
+Podaj pliki faktur, żeby przygotować je za jednym razem, albo --prepared, żeby przesłać paczkę zapisaną przez batch prepare. Tak ponawiasz wysyłkę po nieudanym przesłaniu.
 
 | Opcja | Typ | Domyślnie | Zmienna środowiskowa | Opis |
 | --- | --- | --- | --- | --- |
@@ -167,7 +167,7 @@ Podaj pliki faktur, żeby przygotować je za jednym razem, albo --prepared, żeb
 
 Wyślij zapisane części ponownie do sesji wsadowej, której przesłanie się nie powiodło.
 
-Plik stanu niesie numer referencyjny sesji, klucze i instrukcje przesłania. Artefakt niesie dokładnie te części, których oczekuje KSeF. Odzyskanie nie potrzebuje nowych faktur ani nowej paczki.
+Plik stanu zawiera numer referencyjny sesji, klucze i instrukcje przesłania. Artefakt zawiera dokładnie te części, których oczekuje KSeF. Odzyskanie nie potrzebuje nowych faktur ani nowej paczki.
 
 | Opcja | Typ | Domyślnie | Zmienna środowiskowa | Opis |
 | --- | --- | --- | --- | --- |

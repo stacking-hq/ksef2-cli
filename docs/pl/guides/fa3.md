@@ -31,7 +31,7 @@ cat draft.json | uv run ksef2 fa3 build --in - --out invoice.xml
 | `--pretty` / `--no-pretty` | Wcięcie XML. Włączone domyślnie. |
 | `--validate` / `--no-validate` | Sprawdzenie XML względem schematu FA(3) przed zapisem. Włączone domyślnie. |
 
-`--no-validate` pomija tylko sprawdzenie schematu. Builder nadal odrzuca szkice, z których nie da się zrobić faktury, a komunikat nazywa brakującą część:
+`--no-validate` pomija tylko sprawdzenie schematu. Builder nadal odrzuca szkice, z których nie da się zrobić faktury, a komunikat wskazuje brakującą część:
 
 ```text
 Error: Invoice seller is required but not set.

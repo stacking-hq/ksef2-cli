@@ -5,7 +5,7 @@ description: Odczytaj limity kontekstu logowania, podmiotu i częstości wywoła
 
 Limity decydują, jak dużą paczkę możesz wysłać, jak często możesz wywoływać API i ile certyfikatów możesz posiadać. Grupa `limits` czyta liczby, które KSeF stosuje do bieżącego kontekstu logowania, a w środowisku testowym pozwala je nadpisać. Odczytaj obowiązujące wartości, zanim wybierzesz wielkość paczki albo odstęp ponowienia. Zaszyte w kodzie wartości domyślne z dokumentacji psują się w dniu, w którym kontekst dostaje inne.
 
-Są trzy rodzaje i te same trzy słowa nazywają je wszędzie w tej grupie:
+Są trzy rodzaje. W całej tej grupie występują pod tymi samymi trzema nazwami:
 
 | Rodzaj | Co obejmuje |
 | --- | --- |
@@ -37,7 +37,7 @@ uv run ksef2 --profile prod-token --json limits get context
 }
 ```
 
-`batch_session.max_invoices` to liczba faktur, które może nieść jedna sesja wsadowa, a `max_invoice_size_mb` to sufit jednej faktury. Te dwie liczby ustawiają wielkość paczki dla `invoices send --mode batch` i grupy `batch`.
+`batch_session.max_invoices` to maksymalna liczba faktur w jednej sesji wsadowej, a `max_invoice_size_mb` to maksymalny rozmiar jednej faktury. Te dwie liczby ustawiają wielkość paczki dla `invoices send --mode batch` i grupy `batch`.
 
 Dwa pozostałe odczyty:
 
@@ -70,7 +70,7 @@ Odczyt API zwraca jeden obiekt na grupę endpointów, każdy z polami `per_secon
 }
 ```
 
-Każda z tych grup pojawia się w odpowiedzi: `online_session`, `online_session_close`, `batch_session`, `batch_session_close`, `invoice_send`, `invoice_status`, `session_list`, `session_invoice_list`, `session_misc`, `invoice_metadata`, `invoice_export`, `invoice_export_status`, `invoice_download`, `collective_identifier`, `other`, `anonymous` i `global_`. Ostatnia jest sufitem nad pozostałymi, więc podniesienie jednej grupy dochodzi dokładnie do tego sufitu.
+Każda z tych grup pojawia się w odpowiedzi: `online_session`, `online_session_close`, `batch_session`, `batch_session_close`, `invoice_send`, `invoice_status`, `session_list`, `session_invoice_list`, `session_misc`, `invoice_metadata`, `invoice_export`, `invoice_export_status`, `invoice_download`, `collective_identifier`, `other`, `anonymous` i `global_`. Ostatnia ogranicza wszystkie pozostałe, więc limitu żadnej grupy nie podniesiesz powyżej `global_`.
 
 W trybie tekstowym każdy zagnieżdżony obiekt wypisuje się jako jedna zwarta wartość JSON we własnym wierszu. Da się to przeczytać. Skryptowi trudno to sparsować. Gdy skrypt potrzebuje liczby, użyj `--json` i `jq`:
 
@@ -130,7 +130,7 @@ uv run ksef2 --env test --profile test-admin --json \
   limits set subject --payload subject.json
 ```
 
-Nadpisanie API potrzebuje każdej grupy wymienionej powyżej, każdej z trzema oknami. Praktyczna droga do tego pliku to odczyt bieżących wartości i ich edycja:
+Nadpisanie API potrzebuje każdej grupy wymienionej powyżej, każdej z trzema oknami. Najprościej przygotować ten plik, odczytując bieżące wartości i je edytując:
 
 ```bash
 uv run ksef2 --env test --profile test-admin --json \
@@ -165,7 +165,7 @@ uv run ksef2 --env test --profile test-admin --json limits reset subject
 }
 ```
 
-Komenda resetu przyjmuje `api`, `session` i `subject`, a `limits get` i `limits set` przyjmują `api`, `context` i `subject`. Sesja i kontekst nazywają to samo dwoma różnymi słowami, więc `limits set context` idzie w parze z `limits reset session`. Odczyt złego rodzaju w złej komendzie kończy się na liście wyboru, zanim cokolwiek zostanie wysłane.
+Komenda resetu przyjmuje `api`, `session` i `subject`, a `limits get` i `limits set` przyjmują `api`, `context` i `subject`. Sesja i kontekst to ta sama rzecz pod dwiema nazwami, więc `limits set context` idzie w parze z `limits reset session`. Odczyt złego rodzaju w złej komendzie kończy się na liście wyboru, zanim cokolwiek zostanie wysłane.
 
 ## Skopiuj częstości produkcyjne do środowiska testowego
 

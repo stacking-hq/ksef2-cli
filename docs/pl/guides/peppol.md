@@ -65,7 +65,7 @@ uv run ksef2 --json peppol providers --page-size 10
 ]
 ```
 
-`id` to identyfikator PEPPOL dostawcy, `name` to nazwa wyświetlana, którą trzyma KSeF i która bywa tym samym napisem, a `date_created` to moment wpisania rekordu do rejestru. Tryb tekstowy pomija pola, które nic nie niosą, więc `name` może zniknąć z wiersza, podczas gdy `--json` zawsze podaje to pole.
+`id` to identyfikator PEPPOL dostawcy, `name` to nazwa wyświetlana, którą trzyma KSeF i która bywa tym samym napisem, a `date_created` to moment wpisania rekordu do rejestru. Tryb tekstowy pomija puste pola, więc `name` może zniknąć z wiersza, podczas gdy `--json` zawsze podaje to pole.
 
 ## Zachowaj listę u siebie
 

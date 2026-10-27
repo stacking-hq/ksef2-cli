@@ -58,7 +58,7 @@ uv run ksef2 --profile prod-xades --auth-timeout 120 --auth-poll-interval 2 \
   --wait
 ```
 
-Budżet oczekiwania to `--auth-timeout` sekund, domyślnie `60`, sprawdzany co `--auth-poll-interval` sekund, domyślnie `1`. Profil, który ustawia `max_poll_attempts`, daje budżet `max_poll_attempts` razy swój `poll_interval`, gdy pominiesz `--auth-timeout`. Zobacz [Opcje cyklicznego sprawdzania](authentication.md#opcje-cyklicznego-sprawdzania).
+Maksymalny czas oczekiwania to `--auth-timeout` sekund, domyślnie `60`, sprawdzany co `--auth-poll-interval` sekund, domyślnie `1`. Profil, który ustawia `max_poll_attempts`, wyznacza czas oczekiwania jako `max_poll_attempts` razy swój `poll_interval`, gdy pominiesz `--auth-timeout`. Zobacz [Opcje cyklicznego sprawdzania](authentication.md#opcje-cyklicznego-sprawdzania).
 
 Sprawdzanie odbywa się po tym, jak KSeF zwrócił dane uwierzytelniające, i zanim CLI cokolwiek wypisze. Limit czasu albo status `failed` lub `revoked` kończy komendę błędem, a wartość tokena nigdy nie dochodzi do terminala. Gdy utrata tej wartości ma znaczenie, podziel pracę na dwa kroki: wygeneruj bez `--wait`, zapisz sekret, a potem sprawdzaj status przez `tokens status`.
 
@@ -110,7 +110,7 @@ uv run ksef2 --profile prod-token --json \
 }
 ```
 
-Odpowiedź znaczy, że KSeF przyjął unieważnienie. Uruchom `tokens status` i poczekaj na `revoked`, zanim usuniesz ostatnią kopię sekretu.
+Odpowiedź oznacza, że KSeF przyjął unieważnienie. Uruchom `tokens status` i poczekaj na `revoked`, zanim usuniesz ostatnią kopię sekretu.
 
 ## Zachowaj token na kolejne komendy
 
