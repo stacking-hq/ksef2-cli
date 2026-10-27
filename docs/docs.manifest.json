@@ -5,7 +5,8 @@
   "name_pl": "KSeF2 CLI",
   "min_pages": 1,
   "locales": [
-    "en"
+    "en",
+    "pl"
   ],
   "sidebar": {
     "link": "intro.md",
@@ -73,7 +74,7 @@
           {
             "label": "Online sessions",
             "translations": {
-              "pl": "Sesje online"
+              "pl": "Sesje interaktywne"
             },
             "path": "guides/online-sessions.md"
           },
