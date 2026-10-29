@@ -35,6 +35,7 @@ Issues = "https://github.com/stacking-hq/ksef2-cli/issues"
 [dependency-groups]
 dev = [
     "coverage>=7.14,<8",
+    "jsonschema>=4.23,<5",
     "pytest>=9.0.3",
 ]
 

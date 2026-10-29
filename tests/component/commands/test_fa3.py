@@ -12,7 +12,8 @@ from typing import Any
 import pytest
 from conftest import cli_args, payload, plain
 from ksef2 import Environment
-from ksef2.fa3 import InvoiceBuilder
+from jsonschema import Draft202012Validator
+from ksef2.fa3 import InvoiceBuilder, KsefInvoiceDraft
 from ksef2.renderers import InvoicePDFExporter
 from rich.cells import cell_len
 from typer.testing import CliRunner
@@ -183,6 +184,95 @@ def test_draft_example_writes_file(runner, tmp_path) -> None:
     body = payload(result)
     assert body["path"] == str(out)
     assert json.loads(out.read_text(encoding="utf-8"))["body"]["invoice_number"]
+
+
+@pytest.mark.parametrize("json_output", [False, True])
+def test_schema_stdout_is_the_complete_sdk_validation_schema(
+    runner, monkeypatch, json_output
+) -> None:
+    def no_client(*args, **kwargs):
+        pytest.fail("Schema export must not create a KSeF client")
+
+    monkeypatch.setattr(runtime, "Client", no_client)
+    args = ["--no-config"] + (["--json"] if json_output else [])
+    schema = payload(runner.invoke(app, args + ["fa3", "schema"]))
+
+    assert isinstance(schema, dict)
+    assert schema == KsefInvoiceDraft.model_json_schema(mode="validation")
+    Draft202012Validator.check_schema(schema)
+    definitions = schema["$defs"]
+    assert definitions["InvoiceRow"]["properties"]["vat_rate"]["anyOf"][0] == {
+        "$ref": "#/$defs/VatRate"
+    }
+    assert set(definitions["VatRate"]["enum"]) == {
+        "23", "22", "8", "7", "5", "4", "3", "0", "zw", "np", "oo"
+    }
+    assert "bank_accounts" in definitions["InvoicePayment"]["properties"]
+    assert "corrected_invoices" in definitions["CorrectionInvoiceContext"]["properties"]
+    assert definitions["InvoiceAddress"]["required"] == [
+        "country_code", "address_line_1"
+    ]
+
+    def check_refs(node):
+        if isinstance(node, dict):
+            if "$ref" in node:
+                assert node["$ref"].startswith("#/$defs/")
+                assert node["$ref"].removeprefix("#/$defs/") in definitions
+            for value in node.values():
+                check_refs(value)
+        elif isinstance(node, list):
+            for value in node:
+                check_refs(value)
+
+    check_refs(schema)
+    example = payload(runner.invoke(app, ["--no-config", "fa3", "draft-example"]))
+    validator = Draft202012Validator(schema)
+    validator.validate(example)
+    example["body"]["rows"][0]["vat_rate"] = "24"
+    errors = list(validator.iter_errors(example))
+    assert any(list(error.path) == ["body"] for error in errors)
+
+
+@pytest.mark.parametrize("option", ["--out", "-o"])
+def test_schema_writes_json_file_and_reports_size(runner, tmp_path, option) -> None:
+    out = tmp_path / "nested" / "schema.json"
+    result = runner.invoke(app, cli_args("fa3", "schema", option, str(out)))
+
+    body = payload(result)
+    assert body["path"] == str(out)
+    assert body["bytes"] == out.stat().st_size
+    schema = json.loads(out.read_text(encoding="utf-8"))
+    assert schema == payload(runner.invoke(app, ["--no-config", "fa3", "schema"]))
+    Draft202012Validator.check_schema(schema)
+
+
+@pytest.mark.parametrize(
+    "section, value",
+    [
+        ("seller", {"address": {"country_code": "PL"}}),
+        ("body", {"payment": {"bank_accounts": [{}]}}),
+        ("body", {"additional_description": [{"key": "", "value": "x"}]}),
+    ],
+)
+def test_schema_enforces_nested_required_fields_and_constraints(
+    runner, section, value
+) -> None:
+    schema = payload(runner.invoke(app, ["--no-config", "fa3", "schema"]))
+    errors = list(Draft202012Validator(schema).iter_errors({section: value}))
+
+    assert errors
+    assert list(errors[0].path) == [section]
+
+
+def test_schema_reports_file_write_error(runner, tmp_path) -> None:
+    blocker = tmp_path / "file"
+    blocker.write_text("occupied", encoding="utf-8")
+    result = runner.invoke(
+        app, cli_args("fa3", "schema", "--out", str(blocker / "schema.json"))
+    )
+
+    assert result.exit_code == 1
+    assert "Can't access" in result.output
 
 
 def test_inspect_reads_invoice_back_from_xml(runner, invoice_file) -> None:
