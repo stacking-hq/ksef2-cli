@@ -20,6 +20,33 @@ Without `--out` the draft prints to stdout. The draft is a plain JSON object wit
 builder computes the amounts and the VAT summary, so the draft has no totals to
 keep in sync.
 
+## Consult the draft schema
+
+```bash
+uv run ksef2 fa3 schema
+uv run ksef2 fa3 schema --out schema.json
+```
+
+`schema` exports the installed SDK's public `KsefInvoiceDraft` validation schema.
+Stdout is a JSON Schema object, including with the global `--json` option.
+`--out` writes that object to a UTF-8 file and reports its path and byte count,
+just like `draft-example`.
+
+Consult `properties` and `$defs` for additional fields, nested payment and
+correction data, required fields, constraints, and accepted enum values such as
+VAT rates. The CLI exports the SDK schema without modifying it. Schema details
+and validation behavior follow the installed SDK version. A draft can match the
+JSON Schema and still fail builder or XML validation, for example when required
+invoice parties are missing. SDK 1.1.0 also accepts unknown nested fields;
+upstream fixes are tracked in [SDK #334](https://github.com/stacking-hq/ksef2/issues/334)
+and [SDK #335](https://github.com/stacking-hq/ksef2/issues/335).
+
+When an assistant prepares a draft, start with `draft-example`, consult `schema`
+before adding fields, then run `build` and `inspect`. Compare every position,
+quantity, VAT rate, and computed total with the user's request before sending
+anything. Schema validation does not replace that comparison or runtime
+validation.
+
 ## 2. Build the XML
 
 ```bash
