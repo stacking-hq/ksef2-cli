@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PYPROJECT = ROOT / "pyproject.toml"
 UV_LOCK = ROOT / "uv.lock"
 
-EXPECTED_VERSION = "1.0.0"
+EXPECTED_VERSION = "1.1.0"
 EXPECTED_SDK_SPECIFIER = ">=1.1,<2"
 
 
