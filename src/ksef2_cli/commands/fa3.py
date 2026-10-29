@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from ksef2.fa3 import InvoiceBuilder, parse_invoice_xml
+from ksef2.fa3 import InvoiceBuilder, KsefInvoiceDraft, parse_invoice_xml
 from ksef2.renderers import InvoiceXSLTRenderer
 
 from ksef2_cli.context import get_settings, run_command
@@ -220,6 +220,35 @@ def fa3_render(
         return saved[0] if len(saved) == 1 else saved
 
     run_command(ctx, operation)
+
+
+@app.command("schema")
+def fa3_schema(
+    ctx: typer.Context,
+    out: Annotated[
+        Path | None,
+        typer.Option(
+            "--out",
+            "-o",
+            dir_okay=False,
+            help="Where to write the JSON Schema. Defaults to stdout.",
+        ),
+    ] = None,
+) -> None:
+    """Print the SDK's JSON Schema for FA(3) invoice drafts."""
+
+    def operation() -> object:
+        content = json.dumps(
+            KsefInvoiceDraft.model_json_schema(mode="validation"),
+            ensure_ascii=False,
+            indent=2,
+        )
+        if out is not None:
+            return _write(out, content)
+        typer.echo(content)
+        return None
+
+    run_command(ctx, operation, render_result=out is not None)
 
 
 @app.command("draft-example")

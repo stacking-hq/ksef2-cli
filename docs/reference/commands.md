@@ -392,6 +392,14 @@ Render invoice XML to HTML, and optionally to PDF.
 | `--code-lookups`, `--no-code-lookups` | - | false | - | Resolve country and tax-office codes using the SDK's bundled official lists, without network access. |
 | `--ksef-number` | TEXT | - | - | With --pdf: the accepted KSeF number of this invoice. It prints under a verification QR for the selected --env. Omit it for a draft PDF. |
 
+### `fa3 schema`
+
+Print the SDK's JSON Schema for FA(3) invoice drafts.
+
+| Option | Type | Default | Env var | Help |
+| --- | --- | --- | --- | --- |
+| `--out`, `-o` | FILE | - | - | Where to write the JSON Schema. Defaults to stdout. |
+
 ## `invoices`
 
 ### `invoices download`
