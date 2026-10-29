@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ksef2-cli"
-version = "1.0.0"
+version = "1.1.0"
 description = "Command-line interface for the ksef2 Python SDK"
 readme = "README.md"
 requires-python = ">=3.12"
