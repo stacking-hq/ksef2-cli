@@ -51,7 +51,7 @@ from ksef2_cli.io import (
     write_text_file,
 )
 from ksef2_cli.parsing import parse_optional_bool
-from ksef2_cli.results import FocusedResult, SavedFile
+from ksef2_cli.results import FocusedResult, InvoiceMetadataAllResult, SavedFile
 
 
 def _safe_filename(value: str, suffix: str) -> str:
@@ -619,7 +619,7 @@ def build_invoices_filter(inputs: InvoiceFilterInput) -> InvoicesFilter:
 
 def query_invoice_metadata(
     auth: AuthenticatedClient, inputs: InvoiceMetadataInput
-) -> QueryInvoicesMetadataResponse | list[InvoiceMetadata]:
+) -> QueryInvoicesMetadataResponse | InvoiceMetadataAllResult:
     filters = build_invoices_filter(inputs)
     params = InvoiceMetadataParams(
         page_size=inputs.page_size,
@@ -629,7 +629,20 @@ def query_invoice_metadata(
 
     search = auth.invoices.search(filters=filters, params=params)
     if inputs.all_pages:
-        return list(search)
+        responses = iter(search.responses())
+        final = next(responses)
+        invoices = list(final.invoices)
+        page_count = 1
+        for final in responses:
+            invoices.extend(final.invoices)
+            page_count += 1
+        return InvoiceMetadataAllResult(
+            invoices=invoices,
+            has_more=final.has_more,
+            is_truncated=final.is_truncated,
+            permanent_storage_hwm_date=final.permanent_storage_hwm_date,
+            page_count=page_count,
+        )
     return search.first_response()
 
 

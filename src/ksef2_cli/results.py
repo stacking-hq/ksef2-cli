@@ -1,5 +1,7 @@
 """Typed CLI-owned command results."""
 
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Generic, TypeVar
 
@@ -7,6 +9,7 @@ from ksef2.models import (
     AuthTokens,
     BatchSessionResumeState,
     Identifier,
+    InvoiceMetadata,
     OnlineSessionResumeState,
     Permission,
     RefreshedToken,
@@ -330,3 +333,14 @@ class FocusedResult(CliResult, Generic[PayloadT, ItemT]):
 
     payload: PayloadT
     items: list[ItemT]
+
+
+@dataclass(frozen=True)
+class InvoiceMetadataAllResult:
+    """Merged metadata with flags and HWM from the final API response."""
+
+    invoices: list[InvoiceMetadata]
+    has_more: bool
+    is_truncated: bool
+    permanent_storage_hwm_date: datetime | None
+    page_count: int

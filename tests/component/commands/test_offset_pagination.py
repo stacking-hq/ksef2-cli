@@ -67,6 +67,13 @@ def test_all_nonzero_offset_fails_before_auth_or_client(
 
 
 class MetadataPager(FakePager):
+    def responses(self):
+        for page in self._pages:
+            yield SimpleNamespace(
+                invoices=list(page), has_more=False, is_truncated=False,
+                permanent_storage_hwm_date=None,
+            )
+
     def first_response(self):
         return {"invoices": self.first_page()}
 
@@ -108,8 +115,11 @@ def test_pagination_preserves_page_size_and_single_page_offset(
     )
 
     expected = first_page + second_page if all_pages else first_page
-    if command == "invoices metadata" and not all_pages:
+    if command == "invoices metadata":
         expected = {"invoices": expected}
+        if all_pages:
+            expected.update(has_more=False, is_truncated=False,
+                            permanent_storage_hwm_date=None, page_count=2)
     assert payload(result) == expected
     params = service.called(method)["params"]
     assert params.page_size == 12

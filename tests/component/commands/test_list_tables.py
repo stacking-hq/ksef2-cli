@@ -396,6 +396,9 @@ def test_metadata_table_and_envelope(runner):
     )
 
     class Search(FakePager):
+        def responses(self):
+            yield response
+
         def first_response(self):
             return response
 
@@ -576,3 +579,91 @@ def test_inventory_is_explicit():
         "permissions entity-roles",
     }
     assert render_list("online send", [session_invoice()]) is None
+
+
+@pytest.mark.parametrize("output_flags", [["--json"], ["--output", "json"], ["-o", "json"]])
+@pytest.mark.parametrize("case", ["empty", "single", "multiple", "empty_final"])
+def test_metadata_all_preserves_final_response(runner, output_flags, case):
+    invoice = metadata()
+    first = QueryInvoicesMetadataResponse(
+        invoices=[invoice], has_more=True, is_truncated=True,
+        permanent_storage_hwm_date=STAMP,
+    )
+    final = QueryInvoicesMetadataResponse(
+        invoices=[] if case in {"empty", "empty_final"} else [invoice],
+        has_more=False, is_truncated=False, permanent_storage_hwm_date=None,
+    )
+    responses = [first, final] if case in {"multiple", "empty_final"} else [final]
+    consumed = []
+
+    class Search:
+        def responses(self):
+            for response in responses:
+                consumed.append(response)
+                yield response
+
+    service = FakeService(search=Search())
+    result = runner.invoke(
+        app,
+        ["--no-config", *output_flags, "invoices", "metadata",
+         "--date-from", "2026-01-01", "--date-to", "2026-01-02", "--all"],
+        obj=fake_runtime(auth=SimpleNamespace(invoices=service)),
+    )
+    assert result.exit_code == 0, result.output
+    expected_invoices = [] if case == "empty" else [invoice.model_dump(mode="json", by_alias=True)]
+    if case == "multiple":
+        expected_invoices *= 2
+    assert json.loads(result.output) == {
+        "invoices": expected_invoices,
+        "has_more": False,
+        "is_truncated": False,
+        "permanent_storage_hwm_date": None,
+        "page_count": len(responses),
+    }
+    assert consumed == responses
+    assert len(service.calls) == 1
+
+
+def test_metadata_all_retains_nonnull_final_hwm_and_flags(runner):
+    final = QueryInvoicesMetadataResponse(
+        invoices=[], has_more=True, is_truncated=True,
+        permanent_storage_hwm_date=STAMP,
+    )
+
+    class Search:
+        def responses(self):
+            yield QueryInvoicesMetadataResponse(
+                invoices=[metadata()], has_more=False, is_truncated=False,
+            )
+            yield final
+
+    result = runner.invoke(
+        app, ["--no-config", "--json", "invoices", "metadata",
+              "--date-from", "2026-01-01", "--date-to", "2026-01-02", "--all"],
+        obj=fake_runtime(auth=SimpleNamespace(invoices=FakeService(search=Search()))),
+    )
+    assert result.exit_code == 0, result.output
+    body = json.loads(result.output)
+    assert body["has_more"] is True
+    assert body["is_truncated"] is True
+    assert body["permanent_storage_hwm_date"] == "2026-01-02T03:04:05.678000+02:00"
+    assert body["page_count"] == 2
+
+
+def test_metadata_all_pagination_error_does_not_print_partial_results(runner):
+    class Search:
+        def responses(self):
+            yield QueryInvoicesMetadataResponse(
+                invoices=[metadata()], has_more=True, is_truncated=False,
+            )
+            raise ValueError("Pagination failed")
+
+    result = runner.invoke(
+        app, ["--no-config", "--json", "invoices", "metadata",
+              "--date-from", "2026-01-01", "--date-to", "2026-01-02", "--all"],
+        obj=fake_runtime(auth=SimpleNamespace(invoices=FakeService(search=Search()))),
+    )
+    assert result.exit_code != 0
+    body = json.loads(result.output)
+    assert "Pagination failed" in body["error"]["message"]
+    assert "invoices" not in body
