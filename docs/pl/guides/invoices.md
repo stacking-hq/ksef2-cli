@@ -20,6 +20,16 @@ uv run ksef2 --env test --nip "$KSEF2_NIP" --token "$KSEF2_TOKEN" --json \
 
 `invoices metadata --page-size 12` zwraca jedną stronę, do 12 pozycji. `--all` pobiera każdą stronę, z najwyżej 12 pozycjami na żądanie API. `--all` wymaga, żeby `--page-offset` było równe 0, czyli swojej wartości domyślnej. Przesunięcie inne niż zero wybiera jedną stronę i nie łączy się z `--all`.
 
+**Zmiana formatu JSON:** `--all` zwraca teraz obiekt zamiast samej tablicy.
+Zmień `jq '.[]'` na `jq '.invoices[]'`. Pole `invoices` zawiera połączone faktury
+w kolejności SDK. Pola `has_more`, `is_truncated` i `permanent_storage_hwm_date`
+pochodzą z ostatniej odpowiedzi API, również gdy ostatnia strona jest pusta.
+Brak HWM daje `null`. Pole `page_count` liczy wszystkie pobrane odpowiedzi,
+łącznie z pustymi stronami. Puste zapytanie ma więc `page_count` równe 1.
+Błąd paginacji kończy komendę bez wypisywania częściowych wyników.
+JSON pojedynczej strony nie zmienia formatu i nie zawiera `page_count`.
+Wyjście tekstowe pozostaje bez zmian.
+
 `invoices metadata`, `invoices export`, `invoices export-download` i `invoices export-pdf` przyjmują te same filtry, więc zapytanie dostrojone na metadanych powtarza się bez zmian na eksporcie:
 
 - Okno: `--date-from` (wymagane) i `--date-to` po polu nazwanym przez `--date-type` (`issue_date`, `invoicing_date`, `permanent_storage`)

@@ -30,7 +30,7 @@ from ksef2.models import (
 )
 from ksef2.models import TokenInfo
 
-from ksef2_cli.results import ProfileListItem, ProfileListResult
+from ksef2_cli.results import InvoiceMetadataAllResult, ProfileListItem, ProfileListResult
 from ksef2_cli.renderers.table import (
     Column as C,
     amount,
@@ -360,6 +360,8 @@ def render_list(
                 "Permanent storage HWM (UTC): "
                 + utc_datetime(result.permanent_storage_hwm_date)
             )
+    elif isinstance(result, InvoiceMetadataAllResult):
+        rows = result.invoices
     elif isinstance(result, SessionInvoicesResponse):
         rows = result.invoices
         if result.continuation_token is not None:

@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from rich.cells import cell_len
 
-from ksef2 import KSeFInvoiceRejectedError, KSeFSessionError, KSeFValidationError
+from ksef2 import KSeFInvoiceRejectedError, KSeFSessionError
 
 from conftest import (
     FakeService,
@@ -63,7 +63,7 @@ class FakeSearch:
     """Stand-in for ``InvoiceSearchPager``, what ``invoices.search()`` returns.
 
     Built with the pages a search would walk: ``first_response()`` reports the
-    first page as a metadata response, iterating yields every item.
+    first page as a metadata response, ``responses()`` yields complete pages.
     """
 
     def __init__(self, *pages: list[Any]) -> None:
@@ -71,6 +71,13 @@ class FakeSearch:
 
     def first_response(self) -> dict[str, Any]:
         return {"invoices": list(self._pages[0])}
+
+    def responses(self):
+        for page in self._pages:
+            yield SimpleNamespace(
+                invoices=list(page), has_more=False, is_truncated=False,
+                permanent_storage_hwm_date=None,
+            )
 
     def __iter__(self) -> Iterator[Any]:
         return (item for page in self._pages for item in page)
@@ -260,7 +267,11 @@ def test_invoices_metadata_query_and_all(runner) -> None:
         ),
         obj=runtime,
     )
-    assert payload(result) == [{"ksef_number": "ksef-1"}, {"ksef_number": "ksef-2"}]
+    assert payload(result) == {
+        "invoices": [{"ksef_number": "ksef-1"}, {"ksef_number": "ksef-2"}],
+        "has_more": False, "is_truncated": False,
+        "permanent_storage_hwm_date": None, "page_count": 2,
+    }
 
 
 def test_invoices_metadata_parses_date_options(runner) -> None:

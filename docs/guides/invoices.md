@@ -28,6 +28,27 @@ Add `--all` to fetch every page, with up to 12 items per API request.
 `--all` requires `--page-offset` to be 0, its default. A nonzero offset
 selects a single page and cannot be combined with `--all`.
 
+**Breaking JSON output change:** `--all` now returns an object instead of a
+bare array. Update `jq '.[]'` to `jq '.invoices[]'`. Single-page JSON output
+keeps its existing shape, and text output is unchanged.
+
+```json
+{
+  "invoices": [],
+  "has_more": false,
+  "is_truncated": false,
+  "permanent_storage_hwm_date": null,
+  "page_count": 1
+}
+```
+
+`invoices` merges the pages in SDK order. `has_more`, `is_truncated`, and
+`permanent_storage_hwm_date` come from the final API response, including an empty
+final page. An absent HWM is `null`. `page_count` counts fetched responses,
+including empty pages, so an empty query has a count of 1. Pagination errors fail
+the command rather than printing partial results. Single-page output does not
+include `page_count`.
+
 `invoices metadata`, `invoices export`, `invoices export-download`, and
 `invoices export-pdf` accept the same filters, so a query you tuned against
 metadata replays unchanged on an export:
