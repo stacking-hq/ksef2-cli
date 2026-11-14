@@ -49,7 +49,7 @@ uv run ksef2 --version
 ```
 
 ```text
-ksef2-cli 1.0.0
+ksef2-cli 1.2.0
 ksef2 1.1.0
 ```
 
